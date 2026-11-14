@@ -70,17 +70,20 @@ type Service struct {
 	auth     core.Auth
 	chat     Chatter
 	// Ephemeral vibe-search collections (vibe_ephemeral.go).
-	vibeRefiner core.VibeRefiner
-	vibe        *vibeRegistry
-	vibeTTL     time.Duration
-	vibeMax     int
-	scorer      atomic.Pointer[scorerBox]
-	art         *artwork.Renderer
-	images      *artwork.Images
-	catCfg      func() config.Catalog
-	kinds       *KindRegistry
-	traktCfg    func() config.Trakt
-	sealer      config.FieldSealer
+	describeMu     sync.Mutex
+	describeJobs   map[string]*describeJob
+	describeDrafts map[string]*describeDraft
+	describeActive int
+	vibe           *vibeRegistry
+	vibeTTL        time.Duration
+	vibeMax        int
+	scorer         atomic.Pointer[scorerBox]
+	art            *artwork.Renderer
+	images         *artwork.Images
+	catCfg         func() config.Catalog
+	kinds          *KindRegistry
+	traktCfg       func() config.Trakt
+	sealer         config.FieldSealer
 
 	liveTTL     time.Duration
 	tick        time.Duration

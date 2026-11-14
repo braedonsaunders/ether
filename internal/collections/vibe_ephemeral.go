@@ -2,19 +2,18 @@ package collections
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/lru"
 )
 
 // Ephemeral collections are the browseable grids synthesized from vibe
-// searches ("90s thrillers under 100 mins"). They live only in memory:
+// searches once the configured AI has generated a collection spec. They live only in memory:
 // per viewer, in a bounded LRU with a TTL. Their keys are KindSmart
 // keys in the reserved ephemeral payload range (core.EphemeralSmartBase up to core.EphemeralSmartEnd)
 // so every existing collection path serves them. Rating one promotes
@@ -25,37 +24,18 @@ import (
 const (
 	defaultVibeTTL = 6 * time.Hour
 	defaultVibeMax = 512
-	vibeTopItems   = 50
 )
 
-// WithVibeRefiner installs the optional LLM refiner consulted when the
-// deterministic parser cannot read a query.
-func WithVibeRefiner(r core.VibeRefiner) Option {
-	return func(s *Service) { s.SetVibeRefiner(r) }
-}
-
-// SetVibeRefiner installs the refiner after construction.
-func (s *Service) SetVibeRefiner(r core.VibeRefiner) {
-	s.depsMu.Lock()
-	s.vibeRefiner = r
-	s.depsMu.Unlock()
-}
-
-func (s *Service) vibeRefinerDep() core.VibeRefiner {
-	s.depsMu.RLock()
-	defer s.depsMu.RUnlock()
-	return s.vibeRefiner
-}
-
 type ephemeralEntry struct {
-	key        core.RatingKey
-	owner      int64
-	vibe       core.VibeQuery
-	created    time.Time
-	promoted   core.RatingKey
-	childCount int
-	poster     string
-	backdrop   string
+	key         core.RatingKey
+	owner       int64
+	spec        core.CollectionSpec
+	created     time.Time
+	promoted    core.RatingKey
+	childCount  int
+	descriptive string
+	poster      string
+	backdrop    string
 }
 
 type vibeRegistry struct {
@@ -155,17 +135,6 @@ func (r *vibeRegistry) update(key core.RatingKey, fn func(*ephemeralEntry)) {
 	}
 }
 
-// vibeSig identifies a viewer's resolved vibe for de-duplication.
-func vibeSig(owner int64, v core.VibeQuery) string {
-	b, _ := json.Marshal(struct {
-		F core.Filter
-		S core.SortOrder
-		D bool
-		K core.RatingKey
-	}{v.Filter, v.Sort, v.Desc, v.SimilarKey})
-	return fmt.Sprintf("%d|%s", owner, b)
-}
-
 func vibeOwner(user *core.User) int64 {
 	if user == nil {
 		return 0
@@ -175,154 +144,22 @@ func vibeOwner(user *core.User) int64 {
 
 // VibeCollection implements core.VibeSearcher.
 func (s *Service) VibeCollection(ctx context.Context, user *core.User, query string) (*core.Collection, []core.Title, bool, error) {
-	v, ok := ParseVibe(query)
-	if !ok {
-		if r := s.vibeRefinerDep(); r != nil {
-			bctx, cancel := context.WithTimeout(ctx, 1200*time.Millisecond)
-			rv, rok, err := r.RefineVibe(bctx, user, query)
-			cancel()
-			if err == nil && rok {
-				v, ok = rv, true
-				if v.Query == "" {
-					v.Query = query
-				}
-			}
-		}
-	}
-	if !ok {
+	result, err := s.DescribeSearch(ctx, user, query, false)
+	if err != nil || result.State != "ready" || result.Spec == nil || len(result.Items) == 0 {
 		return nil, nil, false, nil
 	}
-	if err := s.resolveVibe(ctx, &v); err != nil {
-		// An unresolvable person/seed means it probably was a title
-		// search after all; let plain search have it.
-		s.log.Debug("collections: vibe unresolved", "query", query, "err", err)
-		return nil, nil, false, nil
-	}
-	// Rating-based discovery needs a meaningful sample. Keep this floor even
-	// when a sparse row relaxes its rating threshold.
-	if (v.Filter.MinRating > 0 || v.Sort == core.SortRating) && v.Filter.MinVotes < 20 {
-		v.Filter.MinVotes = 20
-	}
-	owner := vibeOwner(user)
-	sig := vibeSig(owner, v)
+
 	reg := s.vibeReg()
-	if e, found := reg.bySig(sig, s.now()); found {
-		page, err := s.ephemeralPage(ctx, user, e, 0, vibeTopItems)
-		if err != nil {
-			return nil, nil, false, err
-		}
-		if page.Total == 0 {
-			return nil, nil, false, nil
-		}
-		s.rememberEphemeral(e, page)
-		c := ephemeralCollection(e, page.Total)
-		return &c, page.Items, true, nil
+	sig := fmt.Sprintf("ai:%d|%s", vibeOwner(user), strings.Join(strings.Fields(strings.ToLower(query)), " "))
+	e, found := reg.bySig(sig, s.now())
+	if !found {
+		e = &ephemeralEntry{key: reg.nextKey(), owner: vibeOwner(user), created: s.now(), descriptive: query, spec: *result.Spec}
+		reg.put(sig, e)
 	}
-	e := &ephemeralEntry{key: reg.nextKey(), owner: owner, vibe: v, created: s.now()}
-	page, err := s.ephemeralPage(ctx, user, e, 0, vibeTopItems)
-	if err != nil {
-		return nil, nil, false, err
-	}
-	// One bounded retry broadens only the rating threshold: language, genre,
-	// votes, runtime, identity and viewer restrictions stay in force. Similar
-	// seeds have their own bounded candidate set and are left alone.
-	if page.Total < 20 && e.vibe.SimilarKey == 0 && e.vibe.Filter.MinRating > 6.5 {
-		original := e.vibe.Filter.MinRating
-		e.vibe.Filter.MinRating = max(6.5, original-1)
-		broader, browseErr := s.ephemeralPage(ctx, user, e, 0, vibeTopItems)
-		if browseErr != nil {
-			return nil, nil, false, browseErr
-		}
-		if broader.Total > page.Total {
-			page = broader
-		} else {
-			e.vibe.Filter.MinRating = original
-		}
-	}
-	if page.Total == 0 {
-		return nil, nil, false, nil
-	}
-	s.rememberEphemeral(e, page)
-	reg.put(sig, e)
-	c := ephemeralCollection(e, page.Total)
-	return &c, page.Items, true, nil
-}
-
-// resolveVibe fills in Filter.Person / SimilarKey / studio names.
-func (s *Service) resolveVibe(ctx context.Context, v *core.VibeQuery) error {
-	if v.PersonName != "" && v.Filter.Person == 0 {
-		bctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		r, err := s.names.resolve(bctx, "person", ref{Name: v.PersonName}, "")
-		cancel()
-		if err == nil && r.ID > 0 {
-			v.Filter.Person = r.ID
-			if r.Name != "" {
-				v.Title = r.Name + " " + mediaNoun(v.Filter.Type, "Films")
-			}
-			v.PersonName = ""
-		} else if studio, found := s.studioByName(ctx, v.PersonName); found {
-			v.Filter.Studio = studio
-			v.Title = studio + " " + mediaNoun(v.Filter.Type, "Movies")
-			v.PersonName = ""
-		} else {
-			return fmt.Errorf("person %q: no catalogue match", v.PersonName)
-		}
-	}
-	if v.SimilarSeed != "" && v.SimilarKey == 0 {
-		var types []core.MediaType
-		if v.Filter.Type != "" {
-			types = []core.MediaType{v.Filter.Type}
-		}
-		hits, err := s.cat.Search(ctx, v.SimilarSeed, types, 5)
-		if err != nil {
-			return err
-		}
-		seed, found := pickSeed(hits, v.SimilarSeed)
-		if !found {
-			return fmt.Errorf("seed %q: no catalogue match", v.SimilarSeed)
-		}
-		v.SimilarKey = seed.Key
-		if v.Filter.Type == "" {
-			v.Filter.Type = seed.Type
-		}
-		v.Title = mediaNoun(v.Filter.Type, "Titles") + " Like " + seed.Title
-	}
-	if v.Title == "" {
-		v.Title = "Generated Collection"
-	}
-	if v.Sort == "" {
-		v.Sort, v.Desc = core.SortPopularity, true
-	}
-	return nil
-}
-
-// pickSeed prefers an exact (normalized) title match over the first hit.
-func pickSeed(hits []core.Title, seed string) (core.Title, bool) {
-	want := normName(seed)
-	for _, h := range hits {
-		if normName(h.Title) == want {
-			return h, true
-		}
-	}
-	if len(hits) > 0 {
-		return hits[0], true
-	}
-	return core.Title{}, false
-}
-
-// studioByName matches a name against the catalogue's studio facet.
-func (s *Service) studioByName(ctx context.Context, name string) (string, bool) {
-	facets, err := s.cat.Facet(ctx, "", "studio")
-	if err != nil {
-		return "", false
-	}
-	want := normName(name)
-	for _, f := range facets {
-		if normName(f.Key) == want {
-			return f.Key, true
-		}
-	}
-	return "", false
+	s.rememberEphemeral(e, core.Page{Items: result.Items, Total: len(result.Items)})
+	c := ephemeralCollection(e, len(result.Items))
+	c.Type = result.Items[0].Type
+	return &c, result.Items, true, nil
 }
 
 func (r *vibeRegistry) listFor(owner int64, now time.Time) []*ephemeralEntry {
@@ -347,17 +184,14 @@ func (r *vibeRegistry) listFor(owner int64, now time.Time) []*ephemeralEntry {
 
 // ephemeralCollection renders an entry as a core.Collection.
 func ephemeralCollection(e *ephemeralEntry, total int) core.Collection {
-	f := e.vibe.Filter
-	f.MaxContentRating = ""
-	typ := f.Type
-	if typ == "" {
+	typ := core.MediaType(e.spec.MediaType)
+	if typ != core.TypeMovie && typ != core.TypeShow {
 		typ = core.TypeMovie
 	}
 	return core.Collection{
-		Key: e.key, Title: e.vibe.Title, Kind: "smart", Type: typ,
-		Summary:     fmt.Sprintf("Generated from your search for %q. Rate it to keep it as your own collection.", e.vibe.Query),
-		Filter:      &f,
-		Sort:        e.vibe.Sort,
+		Key: e.key, Title: e.spec.Name, Kind: "smart", Type: typ,
+		Summary:     fmt.Sprintf("Generated from your search for %q. Rate it to keep it as your own collection.", e.descriptive),
+		Sort:        core.SortOrder(e.spec.Sort),
 		OwnerUserID: e.owner,
 		PosterPath:  e.poster, BackdropPath: e.backdrop,
 		ChildCount: total, UpdatedAt: e.created,
@@ -384,9 +218,8 @@ func (s *Service) rememberEphemeral(e *ephemeralEntry, page core.Page) {
 	})
 }
 
-// ephemeralPage computes members live: Browse with the vibe filter, or
-// the catalogue's Similar list filtered in memory for "like X" vibes.
-// The viewer's content-rating ceiling is applied on every serve.
+// ephemeralPage reads the same AI cache as search. No model wait or catalogue
+// scan occurs while a protocol browses an ephemeral collection.
 func (s *Service) ephemeralPage(ctx context.Context, user *core.User, e *ephemeralEntry, offset, limit int) (core.Page, error) {
 	if limit <= 0 {
 		limit = 50
@@ -394,92 +227,18 @@ func (s *Service) ephemeralPage(ctx context.Context, user *core.User, e *ephemer
 	if offset < 0 {
 		offset = 0
 	}
-	f := e.vibe.Filter
-	if user != nil {
-		f.MaxContentRating = user.MaxContentRating
-	}
-	if e.vibe.SimilarKey != 0 {
-		all, err := s.cat.Similar(ctx, e.vibe.SimilarKey, 100)
+	if e.descriptive != "" {
+		result, err := s.DescribeSearch(ctx, user, e.descriptive, false)
 		if err != nil {
 			return core.Page{}, err
 		}
-		var kept []core.Title
-		for _, t := range all {
-			if t.Key != e.vibe.SimilarKey && vibeTitleMatches(t, f) {
-				kept = append(kept, t)
-			}
-		}
-		total := len(kept)
+		total := len(result.Items)
 		if offset >= total {
 			return core.Page{Items: []core.Title{}, Total: total}, nil
 		}
-		return core.Page{Items: kept[offset:pageEnd(offset, limit, total)], Total: total}, nil
+		return core.Page{Items: result.Items[offset:pageEnd(offset, limit, total)], Total: total}, nil
 	}
-	return s.cat.Browse(ctx, core.BrowseQuery{
-		Filter: f, Sort: e.vibe.Sort, Desc: e.vibe.Desc,
-		Offset: offset, Limit: limit,
-	})
-}
-
-// vibeTitleMatches applies a vibe filter to one title in memory (the
-// Similar path). Rating constraints require a known rating and vote count;
-// other unknown fields on the title do not exclude it.
-func vibeTitleMatches(t core.Title, f core.Filter) bool {
-	if t.Adult {
-		return false
-	}
-	if f.Type != "" && t.Type != f.Type {
-		return false
-	}
-	if len(f.Genres) > 0 && len(t.Genres) > 0 && !anyIn(t.Genres, f.Genres) {
-		return false
-	}
-	if f.YearFrom > 0 && t.Year > 0 && t.Year < f.YearFrom {
-		return false
-	}
-	if f.YearTo > 0 && t.Year > 0 && t.Year > f.YearTo {
-		return false
-	}
-	if f.MinVotes > 0 && t.VoteCount < f.MinVotes {
-		return false
-	}
-	if f.MinRating > 0 && t.Rating < f.MinRating {
-		return false
-	}
-	if f.MaxRuntime > 0 && t.Runtime > 0 && t.Runtime > f.MaxRuntime {
-		return false
-	}
-	if f.MinRuntime > 0 && t.Runtime > 0 && t.Runtime < f.MinRuntime {
-		return false
-	}
-	if len(f.Languages) > 0 && t.Language != "" && !stringsIn(f.Languages, t.Language) {
-		return false
-	}
-	if len(f.Countries) > 0 && len(t.Countries) > 0 && !anyIn(t.Countries, f.Countries) {
-		return false
-	}
-	if f.MaxContentRating != "" && contentrating.Exceeds(t.ContentRating, f.MaxContentRating) {
-		return false
-	}
-	return true
-}
-
-func anyIn(have, want []string) bool {
-	for _, h := range have {
-		if stringsIn(want, h) {
-			return true
-		}
-	}
-	return false
-}
-
-func stringsIn(list []string, v string) bool {
-	for _, e := range list {
-		if e == v {
-			return true
-		}
-	}
-	return false
+	return core.Page{}, core.ErrNotFound
 }
 
 // getEphemeral serves Collections.Get for an ephemeral key.
@@ -497,7 +256,7 @@ func (s *Service) getEphemeral(ctx context.Context, user *core.User, key core.Ra
 	}
 	s.rememberEphemeral(e, page)
 	c := ephemeralCollection(e, page.Total)
-	if len(page.Items) > 0 && e.vibe.Filter.Type == "" {
+	if len(page.Items) > 0 && e.spec.MediaType == MediaMixed {
 		c.Type = page.Items[0].Type
 	}
 	return &c, nil
@@ -524,7 +283,7 @@ func (s *Service) ephemeralItems(ctx context.Context, user *core.User, key core.
 func (s *Service) listEphemeral(user *core.User, t core.MediaType) []core.Collection {
 	var out []core.Collection
 	for _, e := range s.vibeReg().listFor(vibeOwner(user), s.now()) {
-		if t != "" && e.vibe.Filter.Type != "" && e.vibe.Filter.Type != t {
+		if t != "" && e.spec.MediaType != MediaMixed && core.MediaType(e.spec.MediaType) != t {
 			continue
 		}
 		c := ephemeralCollection(e, e.childCount)
@@ -551,30 +310,16 @@ func (s *Service) PromoteEphemeral(ctx context.Context, user *core.User, key cor
 		c, err := s.Get(ctx, user, e.promoted)
 		return c, err == nil, err
 	}
-	f := e.vibe.Filter
-	f.MaxContentRating = ""
-	if e.vibe.SimilarKey != 0 {
-		// A "like X" vibe has no filter form; save the seed's genres
-		// and type with the vibe's other constraints instead.
-		seed, err := s.cat.Get(ctx, e.vibe.SimilarKey)
-		if err != nil {
-			return nil, false, err
-		}
-		f.Type = seed.Type
-		if len(f.Genres) == 0 {
-			f.Genres = seed.Genres
-		}
-	}
-	created, err := s.CreateSmart(ctx, core.Collection{
-		Title:   e.vibe.Title,
-		Summary: fmt.Sprintf("Saved from your search for %q.", e.vibe.Query),
-		Filter:  &f, Sort: e.vibe.Sort, Type: f.Type, OwnerUserID: user.ID,
-	})
+	spec := cloneSpec(e.spec)
+	row, err := s.insertRow(ctx, spec, user.ID)
+
 	if err != nil {
 		return nil, false, err
 	}
-	s.vibeReg().update(key, func(live *ephemeralEntry) { live.promoted = created.Key })
-	return created, true, nil
+	s.vibeReg().update(key, func(live *ephemeralEntry) { live.promoted = row.key() })
+	c := ephemeralCollection(e, e.childCount)
+	c.Key = row.key()
+	return &c, true, nil
 }
 
 var _ core.VibeSearcher = (*Service)(nil)
