@@ -683,7 +683,18 @@ func (s *Service) Resolve(ctx context.Context, req core.ResolveRequest) (*core.R
 	}
 }
 
-func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile core.QualityProfile) (*core.Resolution, error) {
+func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile core.QualityProfile) (resolved *core.Resolution, resolveErr error) {
+	var selector, slotRelease string
+	defer func() {
+		if resolved != nil {
+			copy := *resolved
+			copy.VersionSelector = ""
+			if slotRelease != "" && copy.Release.ID == slotRelease {
+				copy.VersionSelector = selector
+			}
+			resolved = &copy
+		}
+	}()
 	started := time.Now()
 	// An indexer that was paused or did not answer leaves the search
 	// incomplete; nothing found then does not prove the title unavailable.
@@ -860,6 +871,58 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 		trace.Err = err.Error()
 		return nil, err
 	}
+	// Logical version selectors are resolved only after normal discovery and
+	// policy gates. A missing slot falls back exactly like an unavailable
+	// explicit release, never bypassing the owner's profile.
+	if slot, ok := parseVersionSlot(req.Prefer); ok {
+		plan := s.configuredSlots(profile, req.Client, core.MaxVariants)
+		selected := -1
+		for i, configured := range plan {
+			if configured == slot {
+				selected = i
+				break
+			}
+		}
+		cands = pinFirst(cands, pinID)
+		pool := cands
+		auto := core.Release{}
+		if len(cands) > 0 {
+			auto = cands[0].rel
+		}
+		if s.resolverCfg().OfferHigherVersions && slot.Kind != "auto" && slot.Kind != "alternative" {
+			if relaxed, ok := relaxedVariantProfile(profile, req.Client); ok {
+				if ranked, _, e := s.rankCandidates(ctx, req, sreq, relaxed, results, &trace, pinID); e == nil {
+					pool = acceptableVariantAudio(clearIdentityVariants(ranked))
+				}
+			}
+		}
+		picks := slotChoices(plan, pool, auto)
+		if selected >= 0 && selected < len(picks) && picks[selected].ID != "" {
+			selector, slotRelease = req.Prefer, picks[selected].ID
+			found := false
+			for _, c := range cands {
+				if c.rel.ID == slotRelease {
+					found = true
+					break
+				}
+			}
+			if !found {
+				for _, c := range pool {
+					if c.rel.ID == slotRelease {
+						cands = append(cands, c)
+						break
+					}
+				}
+			}
+			req.Prefer = slotRelease
+		} else {
+			if req.PreferredOnly {
+				return nil, core.ErrNotAvailable
+			}
+			req.Prefer = ""
+		}
+	}
+
 	// Speculative work (warm-ups, detail discovery) never runs a rescue: it
 	// is Play's second pass. What speculative work did not find proves
 	// nothing about the title, so it is not remembered unavailable either.

@@ -1933,3 +1933,10 @@ func storeVerifiedGUID(db *sql.DB, key core.RatingKey, guid string, tmdb int64, 
 	_, err := db.Exec(`INSERT INTO plexguid_identity(rating_key,guid,tmdb,title,year,credits_rule) VALUES(?,?,?,?,?,2)`, int64(key), guid, tmdb, title, year)
 	return err
 }
+
+func (t testEditions) VersionSlots(ctx context.Context, req core.ResolveRequest, max int, labels bool) ([]core.ReleaseVariant, error) {
+	if slots, ok := t.src.(frontend.VersionSlots); ok {
+		return slots.VersionSlots(ctx, req, max, labels)
+	}
+	return nil, nil
+}

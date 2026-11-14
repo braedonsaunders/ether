@@ -3,7 +3,6 @@ package sessions
 import (
 	"context"
 	"database/sql"
-	"log/slog"
 	"sync"
 	"time"
 
@@ -44,7 +43,6 @@ type VariantIDs struct {
 	db     *sql.DB
 	byID   map[int64]variantEntry
 	byPair map[VariantRef]int64
-	loaded bool
 	// pending holds ids whose last_seen write is queued for the flusher.
 	pending map[int64]struct{}
 	now     func() time.Time
@@ -57,33 +55,18 @@ func NewVariantIDs(db *sql.DB, now func() time.Time) *VariantIDs {
 	return &VariantIDs{db: db, byID: map[int64]variantEntry{}, byPair: map[VariantRef]int64{}, pending: map[int64]struct{}{}, now: now}
 }
 
-// loadLocked reads persisted mappings once; the caller holds mu.
-func (r *VariantIDs) loadLocked() {
-	if r.loaded {
+// Persisted mappings are fetched by indexed key on demand. Browsing one
+// page must never load the registry for the entire library.
+func (r *VariantIDs) loadIDLocked(id int64) {
+	if _, ok := r.byID[id]; ok || r.db == nil {
 		return
 	}
-	r.loaded = true
-	if r.db == nil {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	rows, err := r.db.QueryContext(ctx, `SELECT media_id, rating_key, release_id, last_seen FROM variants_ids`)
-	if err != nil {
-		return
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var id, rk, seen int64
-		var rel string
-		if rows.Scan(&id, &rk, &rel, &seen) == nil {
-			ref := VariantRef{Key: core.RatingKey(rk), ReleaseID: rel}
-			r.byID[id] = variantEntry{ref: ref, seen: seen}
-			r.byPair[ref] = id
-		}
-	}
-	if err := rows.Err(); err != nil {
-		slog.Default().Warn("plex: variant ids not fully loaded", "err", err)
+	var rk, seen int64
+	var release string
+	if err := r.db.QueryRow(`SELECT rating_key,release_id,last_seen FROM variants_ids WHERE media_id=?`, id).Scan(&rk, &release, &seen); err == nil {
+		ref := VariantRef{Key: core.RatingKey(rk), ReleaseID: release}
+		r.byID[id] = variantEntry{ref: ref, seen: seen}
+		r.byPair[ref] = id
 	}
 }
 
@@ -95,7 +78,14 @@ func (r *VariantIDs) IDFor(key core.RatingKey, releaseID string) int64 {
 	ref := VariantRef{Key: key, ReleaseID: releaseID}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.loadLocked()
+	if r.db != nil {
+		if _, cached := r.byPair[ref]; !cached {
+			var id int64
+			if err := r.db.QueryRow(`SELECT media_id FROM variants_ids WHERE rating_key=? AND release_id=?`, int64(key), releaseID).Scan(&id); err == nil {
+				r.loadIDLocked(id)
+			}
+		}
+	}
 	if id, ok := r.byPair[ref]; ok {
 		r.touchLocked(id)
 		return id
@@ -106,6 +96,7 @@ func (r *VariantIDs) IDFor(key core.RatingKey, releaseID string) int64 {
 	}
 	id := VariantHash(key, releaseID)
 	for {
+		r.loadIDLocked(id)
 		existing, ok := r.byID[id]
 		if !ok || existing.ref == ref {
 			break
@@ -131,7 +122,7 @@ func (r *VariantIDs) IDFor(key core.RatingKey, releaseID string) int64 {
 func (r *VariantIDs) Lookup(id int64) (VariantRef, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.loadLocked()
+	r.loadIDLocked(id)
 	e, ok := r.byID[id]
 	if ok {
 		r.touchLocked(id)

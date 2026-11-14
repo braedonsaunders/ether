@@ -203,7 +203,12 @@ func (m *Manager) WithCachedVariantInfo(ctx context.Context, user *core.User, ti
 	}
 	out := append([]core.ReleaseVariant(nil), variants...)
 	for i := range out {
-		if info, ok := m.CachedVariantInfo(ctx, user.ID, title.Key, out[i].ID); ok {
+		// Menu identity may be a logical slot; probes belong to its concrete source.
+		release := out[i].Release.ID
+		if release == "" {
+			release = out[i].ID
+		}
+		if info, ok := m.CachedVariantInfo(ctx, user.ID, title.Key, release); ok {
 			out[i].Info = info
 		}
 	}

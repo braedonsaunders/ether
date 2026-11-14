@@ -45,7 +45,7 @@ func (m *Manager) preparedResolution(ctx context.Context, s *session, profile co
 	}
 	if res == nil {
 		res = m.resumeResolution(ctx, s.ident.userID, s.ident.key, profile, s.caps, original)
-		if res != nil && prefer != "" && res.Release.ID != prefer {
+		if res != nil && prefer != "" && !res.MatchesVersion(prefer) {
 			res = nil // a picked version wins over the remembered release
 		}
 		if res != nil {
@@ -92,7 +92,7 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			if err == nil && pick != nil && pick.Release.ID == s.prefer {
+			if err == nil && pick != nil && pick.MatchesVersion(s.prefer) {
 				res = pick
 			} else if err == nil || errors.Is(err, core.ErrNotAvailable) {
 				res, cached, fromResume = auto, facts, remembered
@@ -128,7 +128,7 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 			fromResume = false
 			var err error
 			res, err = m.nextResolution(ctx, s, tried, alternates)
-			if err == nil && len(tried) == 0 && s.prefer != "" && !s.exact && res.Release.ID != s.prefer {
+			if err == nil && len(tried) == 0 && s.prefer != "" && !s.exact && !res.MatchesVersion(s.prefer) {
 				// The picked version fell back to normal ranking. Play the
 				// automatic choice the warm-up (or resume) already holds, so
 				// the opening prefetch is not wasted on another release, and
@@ -167,7 +167,7 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 		if s.caps.BroadcastReadyRelease != "" && cached == nil {
 			cached = m.persistedProbe(ctx, s.ident.userID, s.ident.key, res.Release.ID, res.NZB)
 		}
-		if s.exact && res.Release.ID != s.prefer {
+		if s.exact && !res.MatchesVersion(s.prefer) {
 			return nil, fmt.Errorf("%w: %w", core.ErrNotAvailable, core.ErrSourceChanged)
 		}
 		if len(res.NZB) > 0 {

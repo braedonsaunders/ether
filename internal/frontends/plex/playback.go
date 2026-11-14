@@ -903,7 +903,7 @@ func decisionItem(md *model.Metadata) {
 
 func (s *Server) decisionContainer(ctx context.Context, pr *Request, t *frontend.Title, ps *frontend.PlaySession, dec frontend.Decision, p playRequest) *model.MediaContainer {
 	mc := s.itemContainer(t.Type)
-	md := s.metadata(ctx, pr, t, renderOpts{detail: true})
+	md := s.metadata(ctx, pr, t, renderOpts{detail: true, media: true})
 	decisionItem(&md)
 	// With hasMDE=1 and direct play allowed, the client's own decision
 	// engine decides: PMS answers with the source media as direct play and
@@ -937,10 +937,23 @@ func (s *Server) decisionContainer(ctx context.Context, pr *Request, t *frontend
 	if plexAndroidClient(pr) && shown.BurnSubtitles && p.subtitles == "none" {
 		p.subtitles = "burn"
 	}
-	md.Media = []model.Media{s.decisionMedia(t, ps, shown, p, pr.User)}
+	chosen := s.decisionMedia(t, ps, shown, p, pr.User)
+	if pr.configuredSlots && len(md.Media) > 0 {
+		for i := range md.Media {
+			md.Media[i].Selected = nil
+			if len(md.Media[i].Part) > 0 {
+				md.Media[i].Part[0].Selected = nil
+			}
+			if md.Media[i].ID == chosen.ID {
+				md.Media[i] = chosen
+			}
+		}
+	} else {
+		md.Media = []model.Media{chosen}
+	}
 	s.addProbedStreamFeatures(ctx, t.Key, ps.Info, &md)
-	if md.Media[0].Duration > 0 {
-		md.Duration = md.Media[0].Duration
+	if chosen.Duration > 0 {
+		md.Duration = chosen.Duration
 	}
 	mc.Metadata = []model.Metadata{md}
 	mc.Size = 1

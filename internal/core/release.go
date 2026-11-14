@@ -139,6 +139,8 @@ type Release struct {
 // Resolution is the resolver's answer for a title and client: the winning
 // release, already health-checked, plus fallbacks for mid-stream failover.
 type Resolution struct {
+	// VersionSelector is the configured slot that this concrete release fulfilled.
+	VersionSelector string `json:"versionSelector,omitempty"`
 	// HealthVerified means the complete volume sample passed, rather than an
 	// optimistic start or an inconclusive health check.
 	HealthVerified  bool      `json:"healthVerified,omitempty"`
@@ -148,6 +150,11 @@ type Resolution struct {
 	NZB             []byte    `json:"-"`
 	Alternates      []Release `json:"alternates"` // next candidates, best first
 	ResolvedAt      time.Time `json:"resolvedAt"`
+}
+
+// MatchesVersion compares concrete picks and resolver-validated logical slots.
+func (r *Resolution) MatchesVersion(id string) bool {
+	return r != nil && (r.Release.ID == id || id != "" && r.VersionSelector == id)
 }
 
 // Media scopes a quality profile or rule. Every profile serves exactly one
