@@ -13,7 +13,7 @@
 # docker buildx per-arch builds pass TARGETARCH automatically.
 
 # ---- build the web console (embedded by go:embed) --------------------------
-FROM --platform=$BUILDPLATFORM node:22-alpine AS web
+FROM --platform=$BUILDPLATFORM node:25-alpine AS web
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN corepack enable && corepack prepare pnpm@10 --activate
 WORKDIR /src/web
