@@ -1,3 +1,4 @@
+import { WarmingControls } from "./WarmingControls";
 import { SubtabNav } from "../../components/layout";
 import { Badge, Button, Input, Spinner, cn, toast } from "@braedonsaunders/appkit-ui";
 import { ArrowLeft, ArrowUpRight, HardDrive, Network, Settings2, Sparkles } from "lucide-react";
@@ -441,7 +442,10 @@ export default function Cache() {
               <LibraryCaches />
             </div>
           ) : (
-            <div className="app-scroll mx-auto grid min-h-0 w-full max-w-[1600px] flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 sm:p-5 lg:grid-cols-12 lg:overflow-hidden">
+            <div className="app-scroll mx-auto grid min-h-0 w-full max-w-[1600px] flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 sm:p-5 lg:grid-cols-12">
+              <div className="lg:col-span-12">
+                <WarmingControls />
+              </div>
               <div className="lg:col-span-12">
                 <WarmNewArrivals />
               </div>

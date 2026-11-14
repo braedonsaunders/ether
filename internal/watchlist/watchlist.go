@@ -73,6 +73,8 @@ type Settings struct {
 	OverviewTranslate    bool               `json:"overviewTranslate"`
 }
 type Options struct {
+	OnAdded func() // wakes the bounded intent consumer after membership commits
+
 	Community        *plextv.CommunityClient
 	OwnerToken       func(context.Context) (string, error)
 	PlexLookup       func(context.Context, string) (core.RatingKey, error)
@@ -90,6 +92,7 @@ type Options struct {
 	PlexBaseURL      string
 	ClientIdentifier string
 	Now              func() time.Time
+	ManagedWarming   bool // route explicit intent through the budgeted cache planner
 	PrewarmBytes     int64
 	// Cache records why an arrival was warmed when it supports provenance.
 	Cache core.CacheProvenanceRecorder
@@ -465,6 +468,9 @@ func (s *Service) Remove(ctx context.Context, userID int64, key core.RatingKey) 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM watchlist_items WHERE user_id=? AND item_key=?`, userID, key); err != nil {
 		return err
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM watchlist_warm_intents WHERE user_id=? AND item_key=?`, userID, key); err != nil {
+		return err
+	}
 	// The show's handled episodes go with it (see forgetEpisodes).
 	if _, err := tx.ExecContext(ctx, `DELETE FROM watchlist_episodes WHERE user_id=? AND item_key=?`, userID, key); err != nil {
 		return err
@@ -480,9 +486,15 @@ func (s *Service) upsert(ctx context.Context, uid int64, source string, t core.T
 	if err != nil {
 		return err
 	}
+	if err := queueWarmAdd(ctx, s.db, uid, t.Key, s.o.Now().Unix()); err != nil {
+		return err
+	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO watchlist_items(user_id,item_key,source,title,added) VALUES(?,?,?,?,?) ON CONFLICT(user_id,item_key,source) DO UPDATE SET title=excluded.title`, uid, t.Key, source, string(raw), s.o.Now().Unix())
 	if err == nil {
 		s.gen.Add(1)
+		if s.o.OnAdded != nil {
+			s.o.OnAdded()
+		}
 	}
 	return err
 }
@@ -500,6 +512,9 @@ func (s *Service) replace(ctx context.Context, u *core.User, source string, ts [
 		keys[t.Key] = true
 		raw, err := json.Marshal(t)
 		if err != nil {
+			return err
+		}
+		if err := queueWarmAdd(ctx, tx, u.ID, t.Key, s.o.Now().Unix()); err != nil {
 			return err
 		}
 		if _, err = tx.ExecContext(ctx, `INSERT INTO watchlist_items(user_id,item_key,source,title,added) VALUES(?,?,?,?,?) ON CONFLICT(user_id,item_key,source) DO UPDATE SET title=excluded.title`, u.ID, t.Key, source, string(raw), s.o.Now().Unix()); err != nil {
@@ -538,6 +553,9 @@ func (s *Service) replace(ctx context.Context, u *core.User, source string, ts [
 		return err
 	}
 	s.gen.Add(1)
+	if s.o.OnAdded != nil {
+		s.o.OnAdded()
+	}
 	return nil
 }
 
@@ -825,7 +843,7 @@ func (s *Service) checkSet(ctx context.Context, cfg Settings, userID int64, poli
 				}
 			}
 		}
-		if cfg.Prewarm && warmed == 0 && s.o.Engine != nil {
+		if !s.o.ManagedWarming && cfg.Prewarm && warmed == 0 && s.o.Engine != nil {
 			if s.prewarm(ctx, res) == nil {
 				_, err := s.db.ExecContext(ctx, `UPDATE watchlist_items SET warmed=1 WHERE user_id=? AND item_key=?`, userID, t.Key)
 				if err != nil {

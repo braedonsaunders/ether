@@ -40,7 +40,11 @@ type Engine interface {
 }
 
 type Deps struct {
-	Shared *SharedStore // nil for a node-local shelf
+	WatchlistPosition func(context.Context, int64, core.RatingKey) (core.WatchStatus, error)
+	Allowed           func(*core.User, *core.Title) bool
+	WatchlistIntents  func(context.Context) ([]WarmIntent, error)
+	WatchlistDone     func(context.Context, WarmIntent) error
+	Shared            *SharedStore // nil for a node-local shelf
 	// Household returns active members of the configured household scope.
 	Household func(context.Context, string) ([]core.User, error)
 	State     WatchReader
@@ -111,7 +115,8 @@ type Manager struct {
 	wake   chan struct{}
 	// settings is the preload configuration of the last pass: a change
 	// gives failed titles another try at once.
-	settings string
+	settings   string
+	intentPass bool
 	// failed holds titles waiting out failureBackoff (guarded by mu).
 	failed map[core.RatingKey]failure
 }
@@ -310,7 +315,7 @@ func (m *Manager) Run(ctx context.Context) {
 	}
 }
 func enabled(c config.Cache) bool {
-	return c.PreloadEnabled && c.Mode != "off" && c.PreloadBudgetBytes > 0
+	return !c.DisableSpeculation && c.Mode != "off" && ((c.PreloadEnabled && c.PreloadBudgetBytes > 0) || len(c.KeepWarmTitles) > 0)
 }
 
 var errPlaybackActive = errors.New("Waiting for live playback to finish")
@@ -332,7 +337,7 @@ func (m *Manager) allowed() error {
 	if paused {
 		return errors.New("Preloading is paused")
 	}
-	if !enabled(c) {
+	if !m.enabled(c) {
 		return errors.New("Managed preloading is disabled")
 	}
 	if !c.PreloadDuringPlayback && m.deps.Active != nil && m.deps.Active() {
@@ -431,7 +436,23 @@ func (m *Manager) forget(key core.RatingKey) error {
 }
 func (m *Manager) pass(ctx context.Context) error {
 	cfg := m.deps.Config()
+	if m.deps.WatchlistIntents != nil {
+		intents, err := m.deps.WatchlistIntents(ctx)
+		if err != nil {
+			return err
+		}
+		m.mu.Lock()
+		m.intentPass = len(intents) > 0
+		m.mu.Unlock()
+		defer func() { m.mu.Lock(); m.intentPass = false; m.mu.Unlock() }()
+	}
 	limit := cfg.PreloadBudgetBytes
+	if !cfg.PreloadEnabled || limit <= 0 {
+		limit = cfg.BudgetBytes
+	}
+	if limit <= 0 {
+		limit = 1<<63 - 1
+	} // zero cache budget means unlimited
 	if cfg.BudgetBytes > 0 {
 		limit = min(limit, cfg.BudgetBytes)
 	}
@@ -458,7 +479,7 @@ func (m *Manager) pass(ctx context.Context) error {
 	sort.Slice(snapshot.Items, func(i, j int) bool { return snapshot.Items[i].Updated.Before(snapshot.Items[j].Updated) })
 	allocated, count := snapshot.Allocated, len(snapshot.Items)
 	for _, it := range snapshot.Items {
-		if !enabled(cfg) || !contentAllowed(cfg, it.Key) || allocated > limit || count > maxTitles || m.deps.Cache.ReleaseBytes(it.ReleaseID) == 0 {
+		if !m.enabled(cfg) || (!contentAllowed(cfg, it.Key) && !keptWarm(cfg, it.Key)) || allocated > limit || count > maxTitles || m.deps.Cache.ReleaseBytes(it.ReleaseID) == 0 {
 			allocated -= max(it.Size, m.deps.Cache.ReleaseBytes(it.ReleaseID))
 			count--
 			if err := m.forget(it.Key); err != nil {
@@ -485,7 +506,7 @@ func (m *Manager) pass(ctx context.Context) error {
 			}
 		}
 	}
-	if !enabled(cfg) {
+	if !m.enabled(cfg) {
 		m.state("disabled", "Enable a preload allocation to build a local shelf")
 		return nil
 	}
@@ -509,7 +530,7 @@ func (m *Manager) pass(ctx context.Context) error {
 	// Slide each successfully planned show's shelf forward. Old episodes
 	// return to ordinary retention; transient metadata failures preserve pins.
 	for _, it := range m.localStatus().Items {
-		if it.Key.Kind() == core.KindEpisode && plan.Shows[rootKey(it.Key)] && !wantedKeys[it.Key] {
+		if !wantedKeys[it.Key] && !plan.UnavailableShows[rootKey(it.Key)] {
 			if err := m.forget(it.Key); err != nil {
 				return err
 			}
@@ -517,7 +538,9 @@ func (m *Manager) pass(ctx context.Context) error {
 	}
 	ranks := map[core.RatingKey]int{}
 	for i, title := range candidates {
-		ranks[title.Title.Key] = i
+		if _, exists := ranks[title.Title.Key]; !exists {
+			ranks[title.Title.Key] = i
+		}
 	}
 	for _, it := range m.localStatus().Items {
 		if plan.UnavailableShows[rootKey(it.Key)] {
@@ -534,6 +557,9 @@ func (m *Manager) pass(ctx context.Context) error {
 		existing, ok := m.items[title.Key]
 		m.mu.Unlock()
 		if ok && existing.Complete && existing.StoredBytes > 0 && m.deps.Cache.ReleaseBytes(existing.ReleaseID) >= existing.StoredBytes {
+			if candidate.intent != nil {
+				m.finishIntent(ctx, *candidate.intent)
+			}
 			continue
 		}
 		m.mu.Lock()
@@ -550,7 +576,11 @@ func (m *Manager) pass(ctx context.Context) error {
 			break
 		}
 		job, cancel := context.WithTimeout(ctx, 6*time.Hour)
-		err = m.fill(job, owner, &title, limit, maxTitles, ranks, core.CacheShelfDetail{ReasonCodes: candidate.ReasonCodes, Score: candidate.Score, State: "reserved"})
+		viewer := owner
+		if candidate.intent != nil {
+			viewer = &candidate.intent.User
+		}
+		err = m.fill(job, viewer, &title, limit, maxTitles, ranks, core.CacheShelfDetail{ReasonCodes: candidate.ReasonCodes, Score: candidate.Score, State: "reserved"})
 		if err == nil {
 			m.mu.Lock()
 			delete(m.failed, title.Key)
@@ -560,6 +590,9 @@ func (m *Manager) pass(ctx context.Context) error {
 			m.items[title.Key] = it
 			m.mu.Unlock()
 			err = m.save()
+			if err == nil && candidate.intent != nil {
+				m.finishIntent(ctx, *candidate.intent)
+			}
 		}
 		cancel()
 		if ctx.Err() != nil {
@@ -608,6 +641,11 @@ func (m *Manager) fill(ctx context.Context, owner *core.User, title *core.Title,
 	}
 	size := src.Size()
 	defer src.Close()
+	for _, reason := range shelf.ReasonCodes {
+		if reason == "watchlist" {
+			size = min(size, int64(8<<20))
+		}
+	}
 	if size <= 0 || size > limit {
 		return errors.New("source size unknown or larger than the preload allocation")
 	}
@@ -765,4 +803,13 @@ func (m *Manager) releaseSizes() func(string) int64 {
 		return func(id string) int64 { return sizes[id] }
 	}
 	return m.deps.Cache.ReleaseBytes
+}
+
+func keptWarm(cfg config.Cache, k core.RatingKey) bool {
+	for _, pin := range cfg.KeepWarmTitles {
+		if pin == rootKey(k) {
+			return true
+		}
+	}
+	return false
 }

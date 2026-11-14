@@ -657,7 +657,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
   const maintenance = createMaintenance();
   const experience = createExperienceMock();
   const sites = createSitesMock();
-  const cacheMock = createCacheMock(opts.cacheRestart);
+  const cacheMock = createCacheMock(opts.cacheRestart, (key) => byKey.get(String(key))?.title);
   const liveTV = createLiveTVMock(catalog, opts.liveTVEmpty);
   const onAir = createOnAirMock(liveTV, opts.onAirLayout);
   const calendar = createCalendarMock();

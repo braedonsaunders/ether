@@ -67,7 +67,7 @@ func selectionHarness(t *testing.T) (*Manager, *config.Cache, *selectionCatalog,
 	m, c, _, _ := harness(t)
 	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
 	cat := &selectionCatalog{children: map[core.RatingKey][]core.Title{}}
-	w := &watchFake{history: map[int64][]core.HistoryEntry{}, progress: map[int64][]core.WatchStatus{}}
+	w := &watchFake{history: map[int64][]core.HistoryEntry{1: {{Key: core.MovieKey(999), ViewedAt: now}}}, progress: map[int64][]core.WatchStatus{}}
 	m.deps.Catalog = cat
 	m.deps.State = w
 	m.deps.Now = func() time.Time { return now }
@@ -281,4 +281,112 @@ func TestHouseholdFailureDoesNotRotateExistingShelf(t *testing.T) {
 		t.Fatal("history outage discarded shelf")
 	}
 	_ = c
+}
+
+// Priority is lexicographic, including eviction under a tight byte allocation:
+// neither an owner blend weight of zero nor extreme popularity can outrank
+// continuation or a pin, and idle viewers never start catalogue work.
+func TestWarmPriorityUnderTightBudget(t *testing.T) {
+	m, c, cat, w, now := selectionHarness(t)
+	show := series(cat, 10, 0.01, now)
+	pinned, popular := movie(2, .01, now), movie(3, 1e9, now)
+	cat.items = append(cat.items, pinned, popular)
+	c.PreloadEpisodesAhead = 1
+	c.PreloadBudgetBytes = 2 * (32<<20 + 32) // exactly two fixture sources plus overhead
+	c.PreloadMaxTitles = 10
+	c.PreloadSource = "popular"
+	completed(w, 1, core.EpisodeKey(10, 1, 1), now.Add(-time.Minute))
+	// First fill with speculative movies so priority must also displace old pins.
+	saved := cat.items
+	cat.items = []core.Title{pinned, popular}
+	if err := m.pass(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	cat.items = saved
+	c.KeepWarmTitles = []core.RatingKey{pinned.Key}
+	plan, err := m.selectCandidates(context.Background(), *c, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := core.EpisodeKey(show.Key.TMDB(), 1, 2)
+	if len(plan.Candidates) != 3 || plan.Candidates[0].Key != next || plan.Candidates[1].Key != pinned.Key || plan.Candidates[2].Key != popular.Key {
+		t.Fatalf("wrong priority: %+v", plan.Candidates)
+	}
+	if err := m.pass(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	items := m.Status().Items
+	if m.Status().Ready != 2 {
+		t.Fatalf("tight allocation: %+v", items)
+	}
+	for _, it := range items {
+		if it.ReleaseID != "" && it.Key != next && it.Key != pinned.Key {
+			t.Fatalf("speculation displaced priority title: %+v", it)
+		}
+	}
+	// Explicit watchlist events are below pins but above any recommendation,
+	// sorted newest first, and a watched show starts at that viewer's next ep.
+	watchShow := series(cat, 20, .001, now)
+	older := movie(4, .001, now)
+	cat.items = append(cat.items, older)
+	completed(w, 1, core.EpisodeKey(20, 1, 2), now.Add(-20*24*time.Hour))
+	intents := []WarmIntent{{UserID: 1, User: core.User{ID: 1}, Key: older.Key, Added: now.Add(-time.Hour)}, {UserID: 1, User: core.User{ID: 1}, Key: watchShow.Key, Added: now}}
+	m.deps.WatchlistIntents = func(context.Context) ([]WarmIntent, error) { return intents, nil }
+	m.deps.WatchlistDone = func(_ context.Context, done WarmIntent) error {
+		for i, it := range intents {
+			if it.Key == done.Key {
+				intents = append(intents[:i], intents[i+1:]...)
+				break
+			}
+		}
+		return nil
+	}
+	plan, err = m.selectCandidates(context.Background(), *c, 10)
+	watchNext := core.EpisodeKey(20, 1, 3)
+	if err != nil || len(plan.Candidates) < 5 || plan.Candidates[0].Key != next || plan.Candidates[1].Key != pinned.Key || plan.Candidates[2].Key != watchNext || plan.Candidates[3].Key != older.Key {
+		t.Fatalf("watchlist priority/continuation: %+v %v", plan, err)
+	}
+	c.PreloadBudgetBytes = 3 * (32<<20 + 32)
+	if err := m.pass(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range m.Status().Items {
+		if it.ReleaseID != "" && it.Key != next && it.Key != pinned.Key && it.Key != watchNext {
+			t.Fatalf("speculation displaced watchlist: %+v", it)
+		}
+	}
+	if len(intents) != 1 || intents[0].Key != older.Key {
+		t.Fatalf("intent wasn't consumed once: %+v", intents)
+	}
+	// A cold show starts at the pilot, and an inactive viewer is discarded.
+	w.history = nil
+	w.progress = nil
+	cold := series(cat, 30, 1, now)
+	w.history = map[int64][]core.HistoryEntry{1: {{Key: core.MovieKey(999), ViewedAt: now}}}
+	coldEvents := []WarmIntent{{User: core.User{ID: 1}, Key: cold.Key, Added: now}}
+	coldCandidates, err := m.watchlistCandidates(context.Background(), *c, coldEvents)
+	if err != nil || len(coldCandidates) != 1 || coldCandidates[0].Key != core.EpisodeKey(30, 1, 1) {
+		t.Fatalf("cold watchlist show: %+v %v", coldCandidates, err)
+	}
+	m.deps.WatchlistIntents = nil
+	// Restore the continuation fixture for the speculation-off assertion.
+	cat.items = []core.Title{show, pinned, popular}
+	completed(w, 1, core.EpisodeKey(10, 1, 1), now.Add(-time.Minute))
+	c.SpeculativeWarming = "off"
+	plan, err = m.selectCandidates(context.Background(), *c, 10)
+	if err != nil || len(plan.Candidates) != 2 {
+		t.Fatalf("off lost continuation/pin: %+v %v", plan, err)
+	}
+	w.history = nil
+	w.progress = nil
+	c.SpeculativeWarming = "on"
+	plan, err = m.selectCandidates(context.Background(), *c, 10)
+	if err != nil || len(plan.Candidates) != 1 || plan.Candidates[0].Key != pinned.Key {
+		t.Fatalf("idle viewers started speculation: %+v %v", plan, err)
+	}
+	c.KeepWarmTitles = nil
+	plan, err = m.selectCandidates(context.Background(), *c, 10)
+	if err != nil || len(plan.Candidates) != 0 {
+		t.Fatalf("empty household did work: %+v %v", plan, err)
+	}
 }
