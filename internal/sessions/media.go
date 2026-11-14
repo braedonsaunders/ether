@@ -424,6 +424,9 @@ func (b *Broker) serveMedia(protocol frontend.Protocol, access *frontend.Session
 // on its own authorized path. Empty base preserves the existing media URLs.
 func (b *Broker) serveMediaAt(protocol frontend.Protocol, access *frontend.SessionAccess, w http.ResponseWriter, r *http.Request, liveBase string) {
 	mediasafety.SetHeaders(w)
+	if b.servePreview(protocol, access, w, r) {
+		return
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.NotFound(w, r)
 		return

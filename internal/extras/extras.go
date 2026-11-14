@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"log/slog"
+	"net/http"
 	"os/exec"
 	"sort"
 	"strings"
@@ -79,6 +80,8 @@ type CommandRunner func(ctx context.Context, name string, args []string) ([]byte
 
 // Options are the extras service dependencies.
 type Options struct {
+	CacheDir   string
+	CacheHTTP  *http.Client // optional injected transport for trailer downloads
 	Videos     VideoProvider
 	Config     func() config.Extras
 	Logger     *slog.Logger
@@ -97,14 +100,18 @@ type listEntry struct {
 
 // Service lists, registers and resolves extras. Safe for concurrent use.
 type Service struct {
-	videos     VideoProvider
-	cfgFn      func() config.Extras
-	log        *slog.Logger
-	now        func() time.Time
-	ttl        time.Duration
-	runner     CommandRunner
-	look       func(string) (string, error)
-	downloader *Downloader
+	cacheDir        string
+	cacheHTTP       *http.Client
+	cacheMu         sync.Mutex
+	cacheDownloadMu sync.Mutex
+	videos          VideoProvider
+	cfgFn           func() config.Extras
+	log             *slog.Logger
+	now             func() time.Time
+	ttl             time.Duration
+	runner          CommandRunner
+	look            func(string) (string, error)
+	downloader      *Downloader
 
 	mu       sync.Mutex
 	registry map[core.RatingKey]Extra
@@ -148,6 +155,7 @@ func New(o Options) *Service {
 		})
 	}
 	return &Service{
+		cacheDir: o.CacheDir, cacheHTTP: o.CacheHTTP,
 		videos: o.Videos, cfgFn: o.Config,
 		log: o.Logger.With("component", "extras"), now: o.Now,
 		ttl: o.CacheTTL, runner: o.Runner, look: o.LookPath,
