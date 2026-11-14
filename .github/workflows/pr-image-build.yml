@@ -1,50 +1,68 @@
+# Builds and publishes a preview image of one pull request, on demand only.
+# Real releases are published by release.yml; nothing here runs on its own.
 name: PR image build
 
-# Runs untrusted PR code: read-only token, uses no secrets and no registry
-# credentials. The only output is an OCI archive, which Publish PR image
-# treats as data.
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to build a preview image for
+        required: true
+        type: number
 
 permissions:
   contents: read
 
 concurrency:
-  group: pr-image-build-${{ github.event.pull_request.number }}
+  group: pr-image-build-${{ inputs.pr }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Build PR preview image
-    # Saves runner time only; this file comes from the PR, so it is not a
-    # security check. The publisher re-checks the live PR and author.
-    if: contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+    name: Build and publish PR preview image
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+      pull-requests: read
     steps:
+      - name: Resolve pull request head
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+        run: |
+          [[ "$PR" =~ ^[1-9][0-9]{0,8}$ ]]
+          sha=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}" --jq '.head.sha')
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ steps.pr.outputs.sha }}
           persist-credentials: false
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: Stage ffmpeg
         run: |
           scripts/fetch-ffmpeg.sh linux-amd64
-      - name: Build image without registry credentials
+      - name: Build and push
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr }}
+          HEAD_SHA: ${{ steps.pr.outputs.sha }}
         run: |
-          docker buildx build --platform linux/amd64 \
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker buildx build --platform linux/amd64 --push \
             --build-arg "VERSION=pr-${PR_NUMBER}" --build-arg "COMMIT=${HEAD_SHA}" \
             --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
             --label "org.opencontainers.image.version=pr-${PR_NUMBER}" \
             --label "org.opencontainers.image.description=Unreviewed preview of Ether PR #${PR_NUMBER}" \
-            --output type=oci,dest=pr-image.tar .
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: pr-image
-          path: pr-image.tar
-          retention-days: 1
-          compression-level: 0
+            --tag "$image:pr-${PR_NUMBER}" --tag "$image:pr-${PR_NUMBER}-${HEAD_SHA:0:12}" .
+          {
+            echo "### PR #${PR_NUMBER} preview image"
+            echo
+            echo "Unreviewed PR code. Only run it if you trust the author."
+            echo
+            echo "- \`$image:pr-${PR_NUMBER}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,6 +1,7 @@
 package mediabrowser
 
 import (
+	"bytes"
 	"errors"
 	"mime"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/webclient"
 )
@@ -74,6 +76,20 @@ func serveWeb(w http.ResponseWriter, r *http.Request, emby bool, client *webclie
 	}
 	w.Header().Set("Content-Type", webContentType(rel))
 	w.Header().Set("Cache-Control", webCacheControl(rel))
+	if webclient.SubtitleAdapterAsset(rel) {
+		raw, err := os.ReadFile(info)
+		if err == nil {
+			raw, err = webclient.AdaptSubtitles(rel, raw)
+		}
+		if err != nil {
+			http.Error(w, "web player unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		// Revalidate across Ether upgrades even though upstream filenames are hashed.
+		w.Header().Set("Cache-Control", "no-cache")
+		http.ServeContent(w, r, rel, time.Time{}, bytes.NewReader(raw))
+		return
+	}
 	http.ServeFile(w, r, info)
 }
 

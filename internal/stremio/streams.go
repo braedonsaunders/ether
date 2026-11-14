@@ -32,9 +32,10 @@ const (
 // ("movie" or "series") and id, whether whole-season packs are wanted, and
 // for an anime database id the episode's number inside that entry.
 type idLookup struct {
-	kind, id     string
-	packs        bool
-	entryEpisode int
+	kind, id       string
+	packs          bool
+	entryEpisode   int
+	specialEpisode int
 }
 
 // animeDatabases are the anime id prefixes Ether can map TMDB titles to,
@@ -53,8 +54,8 @@ func (b *Backend) lookupID(ctx context.Context, req core.SearchRequest) (idLooku
 	if req.Anime {
 		anime = b.svc.animeIDs()
 	}
-	look, ok := LookupStreams(ctx, *m, req, anime)
-	return idLookup{kind: look.Type, id: look.ID, packs: look.Packs, entryEpisode: look.EntryEpisode}, ok
+	look, ok := LookupStreams(ctx, *m, req, anime, b.svc.specials)
+	return idLookup{kind: look.Type, id: look.ID, packs: look.Packs, entryEpisode: look.EntryEpisode, specialEpisode: look.SpecialEpisode}, ok
 }
 
 // origin is the addon's scheme://host[:port], without credentials.

@@ -9,17 +9,6 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
-// The guide's on-now title gets the whole cold-tune window to open: the
-// opening ident holds the screen meanwhile, and a slow resolve is not a reason
-// to air something else. Stand-ins after a real failure get a short budget
-// each, so a hung "not available yet" still reaches the channel's fallback.
-var (
-	virtualAttemptBudget = 6 * time.Second
-	virtualOnNowBudget   = broadcastColdProgrammeWait
-)
-
-const virtualMaxAttempts = 4
-
 func (s *Service) knownUnavailable(ctx context.Context, key core.RatingKey) bool {
 	if key == 0 || s.o.Availability == nil {
 		return false

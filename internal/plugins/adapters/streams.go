@@ -124,6 +124,7 @@ type StreamSources struct {
 	now      func() time.Time
 	backends map[string]*addonBackend
 	anime    stremio.AnimeIDs
+	specials stremio.SpecialEpisodes
 	nzb      *http.Client
 }
 

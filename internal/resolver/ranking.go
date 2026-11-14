@@ -49,6 +49,10 @@ type rankKeys struct {
 
 // compareCandidates reports whether a ranks before b.
 func compareCandidates(a, b candidate) bool {
+	// Shared names never outrank evidence identifying the requested show.
+	if a.identityWeak != b.identityWeak {
+		return !a.identityWeak
+	}
 	// Gates.
 	if a.policy.Fallback != b.policy.Fallback {
 		return a.policy.Fallback < b.policy.Fallback

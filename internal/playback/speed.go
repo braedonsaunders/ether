@@ -237,6 +237,11 @@ func (m *Manager) checkSpeeds() {
 }
 
 func (m *Manager) checkSpeed(s *session, now time.Time) {
+	// Continuous channel decoders have no per-session HLS swap target. Their
+	// clock handles stalled sources and preserves the actual scheduled offset.
+	if s.caps.BroadcastBitrateKbps > 0 {
+		return
+	}
 	g := s.current()
 	if g == nil || s.isClosed() {
 		return

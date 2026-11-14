@@ -118,6 +118,11 @@ func LanguageName(v string) string {
 	case "portuguese (portugal)":
 		return LanguagePortuguesePortugal
 	}
+	for _, tag := range languages {
+		if strings.EqualFold(s, tag.token) {
+			return tag.name
+		}
+	}
 	if base, _, ok := strings.Cut(s, "-"); ok {
 		if _, known := isoLanguages[base]; !known && len(base) > 3 {
 			return s // already a parser name with a variant

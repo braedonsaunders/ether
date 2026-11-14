@@ -496,6 +496,25 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 			if channel != "" || (plan.Decision.Kind != "directplay" && ((i.protocol == "jellyfin" && intent.DeclaredCaps) || plan.Decision.Kind != "copy" || !plan.Decision.AudioCopy)) {
 				format = frontend.StreamHLS
 			}
+			// The progressive client requires an active playback demuxer. A
+			// direct-file plan becomes HLS (copy remux where codecs allow it),
+			// so all embedded text rides the same input read as the picture.
+			if i.protocol == "jellyfin" && channel == "" && format == frontend.StreamDirect && (plan.Media.Size == 0 || plan.Media.Size > 32<<20) {
+				progressive := false
+				for _, p := range body.DeviceProfile.SubtitleProfiles {
+					if p.Format == "ether-progressive-vtt" {
+						progressive = true
+					}
+				}
+				if progressive {
+					for _, track := range plan.Media.Streams {
+						if track.Type == "subtitle" && !track.External && (track.Codec == "subrip" || track.Codec == "srt" || track.Codec == "webvtt") {
+							format = frontend.StreamHLS
+							break
+						}
+					}
+				}
+			}
 			url, err := i.host.Sessions.StartStream(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID, frontend.StreamRequest{Format: format, Position: intent.Position})
 			if err != nil && format == frontend.StreamHLS && staticPlayable {
 				url, err = i.host.Sessions.StartStream(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID, frontend.StreamRequest{Format: frontend.StreamDirect, Position: intent.Position})
@@ -1097,12 +1116,13 @@ func noCompatibleStream(err error) bool {
 
 // PlaybackInfo errors must be successful protocol responses: jellyfin-web
 // reads ErrorCode only on a resolved request, and otherwise shows its generic
-// network error. Keep the underlying failure and stage in server diagnostics.
+// network error. Admission failures retain 503 and Retry-After so clients
+// can retry once capacity returns. Keep failure stages in server diagnostics.
 func (i *instance) playbackInfoError(w http.ResponseWriter, stage string, err error) {
 	if i.host.Log != nil {
 		i.host.Log.Warn("PlaybackInfo failed", "protocol", i.protocol, "stage", stage, "err", err)
 	}
-	if i.protocol != "jellyfin" {
+	if i.protocol != "jellyfin" || errors.Is(err, frontend.ErrSessionBusy) || errors.Is(err, frontend.ErrTranscodeCapacity) {
 		streamError(i.protocol, w, err)
 		return
 	}

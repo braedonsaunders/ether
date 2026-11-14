@@ -12,10 +12,11 @@ import (
 // packs are wanted, and, for an anime database id, the episode's number
 // inside that entry.
 type Lookup struct {
-	Type         string
-	ID           string
-	Packs        bool
-	EntryEpisode int
+	Type           string
+	ID             string
+	Packs          bool
+	SpecialEpisode int // mapped IMDb special number, zero for other lookups
+	EntryEpisode   int
 }
 
 // Route is the stream route path for the lookup.
@@ -29,12 +30,12 @@ func (l Lookup) Route() string {
 // (Episode 0) asks for the season's first episode and keeps only packs.
 // ok is false when the add-on cannot be asked, which skips it for this
 // title. anime may be nil (no anime lookups).
-func LookupStreams(ctx context.Context, m Manifest, req core.SearchRequest, anime AnimeIDs) (Lookup, bool) {
+func LookupStreams(ctx context.Context, m Manifest, req core.SearchRequest, anime AnimeIDs, specials SpecialEpisodes) (Lookup, bool) {
 	movie := req.Type == core.TypeMovie
 	switch {
 	case movie:
 	case req.Type == core.TypeEpisode || req.Type == core.TypeSeason:
-		if req.Season <= 0 {
+		if req.Season < 0 || (req.Season == 0 && (req.Type != core.TypeEpisode || req.Episode <= 0)) {
 			return Lookup{}, false
 		}
 	default:
@@ -58,10 +59,24 @@ func LookupStreams(ctx context.Context, m Manifest, req core.SearchRequest, anim
 		return Lookup{Type: typ, ID: fmt.Sprintf("%s:%d:%d", base, req.Season, ep), Packs: packs}
 	}
 	if imdb := IMDbID(req.IDs.IMDB); imdb != "" && m.takesPrefix(ResourceStream, "tt") {
+		if req.Season == 0 && !movie {
+			if specials == nil {
+				return Lookup{}, false
+			}
+			mapped, ok := specials.LookupSpecial(ctx, req)
+			if !ok || mapped <= 0 {
+				return Lookup{}, false
+			}
+			look := Lookup{Type: typ, ID: fmt.Sprintf("%s:0:%d", imdb, mapped), SpecialEpisode: mapped}
+			return look, true
+		}
 		return ask(imdb), true
 	}
 	if req.IDs.TMDB > 0 && m.takesPrefix(ResourceStream, "tmdb") {
 		return ask(fmt.Sprintf("tmdb:%d", req.IDs.TMDB)), true
+	}
+	if !movie && req.Season == 0 {
+		return Lookup{}, false
 	}
 	if req.IDs.TVDB > 0 && m.takesPrefix(ResourceStream, "tvdb") {
 		return ask(fmt.Sprintf("tvdb:%d", req.IDs.TVDB)), true

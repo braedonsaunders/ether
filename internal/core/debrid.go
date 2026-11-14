@@ -26,16 +26,22 @@ const (
 // ReleaseTarget is the episode wanted from a multi-file release such as a
 // season pack.
 type ReleaseTarget struct {
+	// FileName is the source-matched file hint, never proof of episode identity.
+	FileName string `json:"fileName,omitempty"`
 	// AbsoluteEpisode is the verified anime episode number across seasons.
 	AbsoluteEpisode int `json:"absoluteEpisode,omitempty"`
 	// Cour and CourEpisode identify the cour (part) and relative episode
 	// within a multi-cour anime season pack (0 when unmapped).
-	Cour         int    `json:"cour,omitempty"`
-	CourEpisode  int    `json:"courEpisode,omitempty"`
-	Season       int    `json:"season,omitempty"`
-	Episode      int    `json:"episode,omitempty"`
-	ShowYear     int    `json:"showYear,omitempty"`
-	EpisodeTitle string `json:"episodeTitle,omitempty"`
+	Cour          int      `json:"cour,omitempty"`
+	CourEpisode   int      `json:"courEpisode,omitempty"`
+	Season        int      `json:"season,omitempty"`
+	Episode       int      `json:"episode,omitempty"`
+	ShowYear      int      `json:"showYear,omitempty"`
+	EpisodeTitle  string   `json:"episodeTitle,omitempty"`
+	ShowTitles    []string `json:"showTitles,omitempty"`
+	SpecialTitles []string `json:"specialTitles,omitempty"`
+	// AddonSpecialEpisode is the verified IMDb number before catalogue renumbering.
+	AddonSpecialEpisode int `json:"addonSpecialEpisode,omitempty"`
 	// PackID is the untargeted release ID of a FullSeason pack before
 	// TargetReleaseID derives the per-episode ID (additive).
 	PackID string `json:"packId,omitempty"`
@@ -44,6 +50,10 @@ type ReleaseTarget struct {
 	ExpectedIDs IDs `json:"expectedIds,omitempty"`
 	ReportedIDs IDs `json:"reportedIds,omitempty"`
 }
+
+// ErrWrongContent is a request-specific release mismatch, never an account
+// failure or proof that the torrent is unusable for another title.
+var ErrWrongContent = fmt.Errorf("release contains different content: %w", ErrNotAvailable)
 
 // ErrNotCached reports that no debrid provider can serve a torrent release
 // instantly. It is a per-release skip, never proof the release is broken,

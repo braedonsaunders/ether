@@ -8,17 +8,14 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/langtag"
 )
 
-// RefineVibe implements core.VibeRefiner: it asks the model to map a
-// query the deterministic parser could not read ("rainy sunday movies
-// that feel like a warm hug") to the same structured filter. The reply
-// is strictly validated against the catalogue's vocabulary, results
-// (including "not a vibe") are cached, and the call runs under the
-// caller's context — the search path bounds it to about a second and
-// falls back to plain search on any failure.
+// RefineVibe returns cached structured filters immediately. A miss starts a
+// bounded background call; this request falls back to ordinary title search.
+// Both positive and negative answers are cached, and failures back off.
 func (s *Service) RefineVibe(ctx context.Context, u *core.User, query string) (core.VibeQuery, bool, error) {
-	if !s.Enabled() {
+	if !s.Enabled() || ctx.Err() != nil {
 		return core.VibeQuery{}, false, nil
 	}
 	query = strings.TrimSpace(query)
@@ -26,17 +23,63 @@ func (s *Service) RefineVibe(ctx context.Context, u *core.User, query string) (c
 		return core.VibeQuery{}, false, nil
 	}
 	key := strings.ToLower(query)
-	s.vibeMu.Lock()
-	if e, ok := s.vibeCache[key]; ok && s.now().Sub(e.at) < s.ttl {
-		s.vibeMu.Unlock()
-		return e.vibe, e.ok, nil
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, cached := s.vibeCache[key]
+	fresh := cached && s.now().Sub(e.at) < s.ttl
+	retry := !cached || e.failedAt.IsZero() || s.now().Sub(e.failedAt) >= s.backoff
+	if !fresh && retry && !s.vibeFlights[key] && len(s.vibeFlights) < 2 {
+		if s.vibeFlights == nil {
+			s.vibeFlights = map[string]bool{}
+		}
+		s.vibeFlights[key] = true
+		generation := s.generation
+		go s.refreshVibe(key, query, generation)
 	}
-	s.vibeMu.Unlock()
+	return e.vibe, e.ok, nil
+}
 
+func (s *Service) refreshVibe(key, query string, generation uint64) {
+	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
+	defer cancel()
+	v, ok, err := s.computeVibe(ctx, query)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if generation != s.generation {
+		return
+	}
+	delete(s.vibeFlights, key)
+	if s.vibeCache == nil {
+		s.vibeCache = map[string]vibeCacheEntry{}
+	}
+	e := s.vibeCache[key]
+	if err != nil {
+		e.failedAt = s.now()
+	} else {
+		e = vibeCacheEntry{vibe: v, ok: ok, at: s.now()}
+	}
+	if len(s.vibeCache) >= min(s.max, 512) {
+		var oldest string
+		var at time.Time
+		for k, entry := range s.vibeCache {
+			touched := entry.at
+			if entry.failedAt.After(touched) {
+				touched = entry.failedAt
+			}
+			if oldest == "" || touched.Before(at) {
+				oldest, at = k, touched
+			}
+		}
+		delete(s.vibeCache, oldest)
+	}
+	s.vibeCache[key] = e
+}
+
+func (s *Service) computeVibe(ctx context.Context, query string) (core.VibeQuery, bool, error) {
 	prompt := fmt.Sprintf(`A viewer typed this into a movie/TV search bar: %q.
 Decide whether it describes a browseable category (genres, era, mood, language, runtime, a person, a studio, or "like some title") rather than one specific title.
 Reply with JSON only, exactly: {"vibe":true,"title":"short collection title","type":"movie|show|","genres":[],"yearFrom":0,"yearTo":0,"minRating":0,"maxRuntimeMin":0,"minRuntimeMin":0,"languages":[],"countries":[],"personName":"","studio":"","similarTo":"","sort":"popularity|rating|released|title"}
-Use only these genres: %s. Languages are ISO 639-1 codes. If it is a specific title or you are unsure, reply {"vibe":false}.`, query, strings.Join(vibeGenreNames, ", "))
+Use only these genres: %s. Languages are ISO 639-1 codes (up to six distinct languages); for South Indian include te, ta, ml and kn. Choose a useful broad category rather than adding unrequested rating or country restrictions. If it is a specific title or you are unsure, reply {"vibe":false}.`, query, strings.Join(vibeGenreNames, ", "))
 
 	content, err := s.client.Chat(ctx, []Message{
 		{Role: "system", Content: "You translate search phrases into structured catalogue filters. Reply with JSON only."},
@@ -49,22 +92,14 @@ Use only these genres: %s. Languages are ISO 639-1 codes. If it is a specific ti
 	if ok {
 		v.Query = query
 	}
-	s.vibeMu.Lock()
-	if s.vibeCache == nil {
-		s.vibeCache = map[string]vibeCacheEntry{}
-	}
-	if len(s.vibeCache) > 512 {
-		s.vibeCache = map[string]vibeCacheEntry{}
-	}
-	s.vibeCache[key] = vibeCacheEntry{vibe: v, ok: ok, at: s.now()}
-	s.vibeMu.Unlock()
 	return v, ok, nil
 }
 
 type vibeCacheEntry struct {
-	vibe core.VibeQuery
-	ok   bool
-	at   time.Time
+	vibe     core.VibeQuery
+	ok       bool
+	at       time.Time
+	failedAt time.Time
 }
 
 // vibeGenreNames is the catalogue's genre vocabulary (TMDB movie and
@@ -153,12 +188,14 @@ func parseVibeJSON(content string) (core.VibeQuery, bool) {
 	if in.MinRuntimeMin >= 5 && in.MinRuntimeMin <= 600 {
 		v.Filter.MinRuntime = time.Duration(in.MinRuntimeMin) * time.Minute
 	}
-	for _, l := range in.Languages {
-		l = strings.ToLower(strings.TrimSpace(l))
-		if len(l) == 2 {
-			v.Filter.Languages = append(v.Filter.Languages, l)
+	seenLanguages := map[string]bool{}
+	for _, raw := range in.Languages {
+		tag, ok := langtag.ParseCompatible(raw)
+		if ok && len(tag.Primary) == 2 && !seenLanguages[tag.Primary] {
+			v.Filter.Languages = append(v.Filter.Languages, tag.Primary)
+			seenLanguages[tag.Primary] = true
 		}
-		if len(v.Filter.Languages) >= 3 {
+		if len(v.Filter.Languages) == 6 {
 			break
 		}
 	}

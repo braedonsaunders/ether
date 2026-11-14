@@ -237,7 +237,7 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 	}
 	rp := s.runPlanLocked(seg)
 	s.prepareRTXRunLocked(&rp, seg)
-	if s.softSubtitleStream != nil && enhancementSelected(rp.decision) {
+	if (s.softSubtitleStream != nil || len(s.textSubtitleStreams) > 0) && enhancementSelected(rp.decision) {
 		// The native enhancement process cannot expose a second output from
 		// its input. Use the regular encoder for this session's selected track.
 		s.fallbackRTXLocked("selected soft subtitle requires a shared encoder output", seg)
@@ -286,6 +286,16 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		spec.SoftSubtitlePath, pathErr = filepath.Abs(filepath.Join(s.dir, fmt.Sprintf("subtitle-%d.ass", s.runSeq)))
 		if pathErr != nil {
 			return pathErr
+		}
+	}
+	spec.TextSubtitlePaths = make(map[int]string)
+	for _, index := range s.textSubtitleStreams {
+		if track := findStream(s.info, index, "subtitle"); track != nil && !track.External && IsTextSubtitle(track.Codec) {
+			path, err := filepath.Abs(filepath.Join(s.dir, fmt.Sprintf("text-%d-%d.ass", index, s.runSeq)))
+			if err != nil {
+				return err
+			}
+			spec.TextSubtitlePaths[index] = path
 		}
 	}
 	if s.liveInput {
@@ -586,6 +596,11 @@ func (s *Session) stopRunLocked() {
 	r := s.cur
 	if r == nil {
 		return
+	}
+	if r.finished {
+		for _, path := range r.spec.TextSubtitlePaths {
+			s.removals.remove(path)
+		}
 	}
 	if r.finished && r.spec.SoftSubtitlePath != "" {
 		s.removals.remove(r.spec.SoftSubtitlePath)

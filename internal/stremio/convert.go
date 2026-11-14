@@ -34,7 +34,7 @@ type Converted struct {
 func Convert(streams []Stream, req core.SearchRequest, look Lookup, opts ConvertOptions) Converted {
 	var c Converted
 	c.Releases, c.SkippedNoHash, c.SkippedAmbiguous = convertWith(streams, req, look.Packs, convertOptions{
-		origin: opts.Origin, instance: opts.Instance, entryEpisode: look.EntryEpisode, sources: &c.Source,
+		origin: opts.Origin, instance: opts.Instance, entryEpisode: look.EntryEpisode, specialEpisode: look.SpecialEpisode, sources: &c.Source,
 	})
 	return c
 }

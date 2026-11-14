@@ -725,6 +725,10 @@ func cacheKey(c *Client, req core.SearchRequest) string {
 	// and Usenet streams and read flag languages.
 	// v5: anime BD/BDMux source tags and three-letter audio languages.
 	fmt.Fprint(h, "release-parse-v5|")
+	if req.Type == core.TypeEpisode && req.Season == 0 && (c.Config().IsStremio() || c.Config().IsAddon()) {
+		// Previously these routes cached empty answers without asking season 0.
+		fmt.Fprintf(h, "special-title-map-v1:%s|", req.EpisodeTitle)
+	}
 	if c.Config().IsBuiltin() && (req.Type == core.TypeEpisode || req.Type == core.TypeShow || req.Season > 0) {
 		// Built-in TV keywords no longer require the series premiere year.
 		// Do not reuse persisted empty answers from that narrower search.

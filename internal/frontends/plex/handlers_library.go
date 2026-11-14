@@ -973,7 +973,7 @@ func (s *Server) parseBrowse(ctx context.Context, sec Section, t frontend.MediaT
 			}
 		}
 	}
-	br.applySortParam(q.Get("sort"), t)
+	br.applySortParam(q.Get("sort"), t, false)
 	if share, ok := s.policy().(frontend.BrowseShareFilterPolicy); ok && u != nil {
 		// The plex.tv share predicate goes into the SQL, so pages fill
 		// and totals count only what this viewer may see.
@@ -983,7 +983,7 @@ func (s *Server) parseBrowse(ctx context.Context, sec Section, t frontend.MediaT
 	return br
 }
 
-func (br *browseRequest) applySortParam(raw string, t frontend.MediaType) {
+func (br *browseRequest) applySortParam(raw string, t frontend.MediaType, childIndexes bool) {
 	if strings.TrimSpace(raw) == "" {
 		if t == frontend.TypeEpisode || t == frontend.TypeSeason {
 			br.q.Sort, br.q.Desc = "", false
@@ -1000,6 +1000,10 @@ func (br *browseRequest) applySortParam(raw string, t frontend.MediaType) {
 		}
 		key, dir := parseSortTerm(term)
 		so, desc, lastViewed, ok := sortSpecFor(key, dir)
+		if childIndexes && key == "index" && (t == frontend.TypeSeason || t == frontend.TypeEpisode) {
+			// Within a show/season, packed keys follow season/episode index.
+			so, desc, lastViewed, ok = frontend.SortOrder("key"), dir == "desc", false, true
+		}
 		if !ok {
 			br.invalidSort = true
 			return

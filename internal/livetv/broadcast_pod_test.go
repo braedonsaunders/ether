@@ -18,6 +18,10 @@ type podSequenceDecoder struct {
 
 type alternatePodPlayback struct{ fakePlayback }
 
+func (p *alternatePodPlayback) ChannelReadyRelease(_ context.Context, _ *core.User, k core.RatingKey, _ core.ClientCaps) (string, bool) {
+	return "ready-second", k == core.MovieKey(2)
+}
+
 func (p *alternatePodPlayback) PrepareChannel(ctx context.Context, u *core.User, key core.RatingKey, caps core.ClientCaps, group string) (*core.PlaySession, error) {
 	if key == core.MovieKey(1) {
 		return nil, core.ErrNotAvailable

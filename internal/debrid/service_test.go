@@ -41,7 +41,7 @@ func TestPayloadRoundTripAndFileChoice(t *testing.T) {
 	if f, err := ChooseFile(pack, nil); err != nil || f.ID != "a" {
 		t.Fatalf("largest %+v %v", f, err)
 	}
-	if _, err := ChooseFile(pack, &core.ReleaseTarget{Season: 1, Episode: 9}); !errors.Is(err, core.ErrReleaseRejected) {
+	if _, err := ChooseFile(pack, &core.ReleaseTarget{Season: 1, Episode: 9}); !errors.Is(err, core.ErrWrongContent) {
 		t.Fatalf("missing episode: %v", err)
 	}
 	seasonDirs := []File{{ID: "x", Path: "Show/Season 2/Episode 05 - Name.mkv", Size: 10}, {ID: "y", Path: "Show/Season 2/2x06 Name.mkv", Size: 11}}

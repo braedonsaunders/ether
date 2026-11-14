@@ -5,18 +5,25 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"sync"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/markers"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
-// scheduleBroadcastPlanner snapshots the channel recipe. An edited recipe gets
-// a new planner when P4 replaces the channel output after lineup invalidation.
+type programmeSourceState struct {
+	excluded map[core.RatingKey][]string
+	key      core.RatingKey
+	release  string
+}
+
+// scheduleBroadcastPlanner snapshots the channel recipe and owns bounded
+// release exclusions for its currently prepared airings.
 type scheduleBroadcastPlanner struct {
+	sourceMu sync.Mutex
+	sources  map[string]*programmeSourceState
+
 	// standby memoizes the look's cached standby clip: the frame loop asks
 	// every step, and resolving it re-clones and re-hashes the scene
 	// document (about half a core per channel, with 250 ms frame-clock
@@ -189,6 +196,19 @@ func (p *scheduleBroadcastPlanner) programme(programme Programme, plannedAt ...t
 		_, liveMoment = p.s.o.Graphics.(liveMomentSource)
 	}
 	plan := broadcastPlan{mediaKey: programme.Item.Key, sourceOffset: programme.sourceOffset, interstitial: isInterstitial, liveMoment: liveMoment, fallback: programme.graphicsFallback, element: element, policy: programme.policyTag, programme: programme.Item.Key != 0, id: broadcastProgrammeID(programme), start: programme.Start, end: programme.End}
+	if plan.programme {
+		plan.failed = func(error) time.Time {
+			retry := p.s.o.Now().Add(15 * time.Second)
+			p.sourceMu.Lock()
+			if state := p.sources[plan.id]; state != nil && state.release != "" {
+				state.excluded[state.key] = append(state.excluded[state.key], state.release)
+				state.release = ""
+				retry = p.s.o.Now().Add(100 * time.Millisecond)
+			}
+			p.sourceMu.Unlock()
+			return retry
+		}
+	}
 	if isInterstitial {
 		plan.failed = func(err error) time.Time {
 			p.s.recordGraphicsSkip(p.channel, programme, err)
@@ -247,146 +267,7 @@ func (p *scheduleBroadcastPlanner) programme(programme Programme, plannedAt ...t
 			return decoder, release, err
 		}
 
-		candidates := p.s.virtualCandidates(c, programme)
-		if programme.Item.BreakReleaseID != "" && len(programme.Item.BreakPointsMS) > 0 {
-			candidates = []Programme{programme}
-		}
-		var last error = core.ErrNotAvailable
-		attempts := 0
-		for _, candidate := range candidates {
-			if attempts >= virtualMaxAttempts {
-				break
-			}
-			if candidate.Item.Key != programme.Item.Key {
-				p.s.mu.Lock()
-				ready := p.s.readyTitles[candidate.Item.Key]
-				p.s.mu.Unlock()
-				if !ready {
-					continue
-				}
-			}
-			if p.s.knownUnavailable(ctx, candidate.Item.Key) {
-				continue
-			}
-			if !p.s.allowed(ctx, &p.user, c, &candidate) {
-				continue
-			}
-			attempts++
-			var ps *core.PlaySession
-			var err error
-			budget := virtualAttemptBudget
-			if candidate.ID == programme.ID {
-				budget = virtualOnNowBudget
-			}
-			attempt, cancel := context.WithTimeout(ctx, budget)
-			group := "broadcast-" + c.ID
-			if c.Personal != nil {
-				group += "-viewer-" + strconv.FormatInt(p.user.ID, 10)
-			}
-			// Programme inputs overlap while a pod or next airing is prewarmed.
-			// They share one channel budget, but each keeps its own playback
-			// identity so preparing the next title cannot supersede this one.
-			caps := p.caps
-			caps.ClientID = "channel-input/" + plan.id
-			if candidate.Item.BreakReleaseID != "" && len(candidate.Item.BreakPointsMS) > 0 {
-				planned, ok := p.s.o.Playback.(interface {
-					PrepareChannelRelease(context.Context, *core.User, core.RatingKey, core.ClientCaps, string, string) (*core.PlaySession, error)
-				})
-				if !ok {
-					cancel()
-					last = core.ErrSourceChanged
-					continue
-				}
-				ps, err = planned.PrepareChannelRelease(attempt, &p.user, candidate.Item.Key, caps, group, candidate.Item.BreakReleaseID)
-				if err == nil {
-					pin, ok := p.s.o.Playback.(core.PlaybackRevisionPin)
-					if !ok {
-						err = core.ErrSourceChanged
-					} else {
-						err = pin.PinSourceRevision(attempt, ps.ID, candidate.Item.BreakRevision)
-					}
-					if err != nil {
-						p.s.o.Playback.Stop(ps.ID)
-					}
-				}
-			} else if grouped, ok := p.s.o.Playback.(core.ChannelPreparer); ok {
-				ps, err = grouped.PrepareChannel(attempt, &p.user, candidate.Item.Key, caps, group)
-			} else {
-				ps, err = p.s.o.Playback.Prepare(attempt, &p.user, candidate.Item.Key, caps)
-			}
-			cancel()
-			if err != nil {
-				last = err
-				continue
-			}
-			now := p.s.o.Now()
-			if len(plannedAt) > 0 && plannedAt[0].After(now) {
-				now = plannedAt[0]
-			}
-			if p.joinAt.After(now) {
-				now = p.joinAt
-			}
-			offset := time.Duration(0)
-			if candidate.Item.Key != programme.Item.Key {
-				sub, ok := joinStandIn(programme, candidate.Item, now)
-				if !ok {
-					p.s.o.Playback.Stop(ps.ID)
-					continue
-				}
-				candidate = sub
-				offset = sub.Offset(now)
-			} else {
-				at := now
-				if at.Before(programme.Start) {
-					at = programme.Start
-				}
-				offset = programme.Offset(at)
-			}
-			sourceWall := time.Now()
-			// A cold title seeks to its future join time. Anchor those decoded
-			// pictures there too, rather than treating them as already due.
-			if ahead := now.Sub(p.s.o.Now()); ahead > 0 {
-				sourceWall = sourceWall.Add(ahead)
-			}
-			// Alternate content occupies this same future airing. Anchoring it to
-			// preparation time would discard the parked decoder's opening frames
-			// as stale when a long pod or plugin interval finally ends.
-			if programme.Start.After(now) {
-				sourceWall = sourceWall.Add(programme.Start.Sub(now))
-			}
-			p.s.o.Logger.Debug("broadcast programme decoder start", "channel", c.ID, "programme", programme.ID, "playback", ps.ID, "offset", offset)
-			input := p.s.o.Playback.InputURL(ps.ID)
-			seeked := false
-			trim := offset
-			if index, ok := p.s.o.Playback.(interface {
-				IndexedInput(context.Context, string, time.Duration) (string, time.Duration, bool)
-			}); ok {
-				if url, remaining, ready := index.IndexedInput(ctx, input, offset); ready {
-					input = url
-					trim = remaining
-					seeked = true
-				}
-			}
-			audio := p.s.programmeAudioTrack(ctx, &p.user, ps.Info, candidate.Item.Key)
-			decoder, err := p.runner.StartDecoder(ctx, transcode.DecoderRequest{SessionID: group + "-" + candidate.ID, InputURL: input, Offset: trim, Seeked: seeked, Format: p.format, AudioIndex: audio})
-			if err != nil {
-				p.s.o.Playback.Stop(ps.ID)
-				last = err
-				continue
-			}
-			if programme.naturalBreaks && p.s.o.BreakAnalyzer != nil && candidate.Item.Key.Kind() == core.KindEpisode {
-				input := markers.PlaybackBreakInput(ps)
-				input.Info = core.MediaInfo{Duration: ps.Info.Duration, Size: ps.Info.Size, Estimated: ps.Info.Estimated}
-				if input.Revision != "" {
-					decoder = &breakTapDecoder{Decoder: decoder, tap: markers.NewBreakTap(ps.Info.Duration), input: input, format: p.format, at: offset, output: p.s.breakObserved}
-				}
-			}
-			if candidate.Item.Key != programme.Item.Key {
-				p.s.latchProgramme(candidate)
-			}
-			return &overlayDecoder{policy: p.s.programmePolicy(ctx, candidate), Decoder: decoder, wallStart: sourceWall, format: p.format, overlays: p.prepareProgrammeOverlays(ctx, programme, ps.Info.Chapters)}, func() { p.s.o.Playback.Stop(ps.ID) }, nil
-		}
-		return nil, nil, last
+		return p.openProgrammeSources(ctx, c, programme, plan, plannedAt)
 	}
 	return plan
 }
@@ -402,4 +283,27 @@ func broadcastProgrammeID(p Programme) string {
 	identity := fmt.Sprintf("%s/%s/%d/%s/%s/%s/%d/%d/%d", p.SourceID, p.Item.SourceID, p.Item.Key, p.Item.Slate, p.Item.ReelID, p.Item.ReelClipID, p.sourceOffset, p.Start.UnixNano(), p.End.UnixNano())
 	hash := sha256.Sum256([]byte(identity))
 	return fmt.Sprintf("%x-%s", hash[:8], p.ID)
+}
+
+// The first picture is part of source admission, then transferred exactly once
+// to the channel clock without restarting the decoder or losing opening audio.
+type primedProgrammeDecoder struct {
+	transcode.Decoder
+	first *transcode.RawFrame
+}
+
+func (d *primedProgrammeDecoder) Next(ctx context.Context) (transcode.RawFrame, error) {
+	if d.first != nil {
+		f := *d.first
+		d.first = nil
+		return f, nil
+	}
+	return d.Decoder.Next(ctx)
+}
+
+func (d *primedProgrammeDecoder) Diagnostics() string {
+	if source, ok := d.Decoder.(interface{ Diagnostics() string }); ok {
+		return source.Diagnostics()
+	}
+	return ""
 }

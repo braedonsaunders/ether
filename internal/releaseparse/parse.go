@@ -15,7 +15,7 @@ import (
 var (
 	reYear                 = regexp.MustCompile(`\b(188[89]|189\d|19\d{2}|20\d{2})\b`)
 	reTemporadaSE          = regexp.MustCompile(`(?i)(^|[^\p{L}\p{N}])T(\d{1,2})E(\d{1,3})\b`)
-	reSE                   = regexp.MustCompile(`(?i)\bS(\d{1,2})[\s\p{So}\x{FE0F}\x{200D}-]*E(\d{1,3})((?:\s*E\d{1,3})*)(?:\s*-\s*E?(\d{1,3}))?(?:v(\d))?\b`)
+	reSE                   = regexp.MustCompile(`(?i)\bS(\d{1,3})[\s\p{So}\x{FE0F}\x{200D}-]*E(\d{1,4})((?:\s*E\d{1,4})*)(?:\s*-\s*E?(\d{1,4}))?(?:v(\d))?\b`)
 	reSpanishCapUnderscore = regexp.MustCompile(`(?i)\b(Cap(?:[ií]tulo)?[.\s]*\d{1,4})_(\d{1,4})\b`)
 	reSpanishEpisode       = regexp.MustCompile(`(?i)\b(?:Cap|Cap[ií]tulo)\s*(\d{3,4})(?:\s*(?:-|al|a)\s*(?:Cap(?:[ií]tulo)?\s*)?(\d{1,4}))?\b`)
 	reSpanishShortEpisode  = regexp.MustCompile(`(?i)\b(?:Cap|Cap[ií]tulo)\s*0?([1-9]\d?)(?:\s*(?:-|al|a)\s*(?:Cap(?:[ií]tulo)?\s*)?0?([1-9]\d?))?\b`)
@@ -26,12 +26,12 @@ var (
 	reXEpisode             = regexp.MustCompile(`(?i)\b(\d{1,2})x(\d{1,3})(?:\s*-\s*(?:\d{1,2}x)?(\d{1,3}))?(?:\s+(?:из|of)\s+(\d{1,3}))?\b`)
 	reBareEpisode          = regexp.MustCompile(`(?i)\b(?:Episodes?\s*(\d{1,3})|Ep\s*(\d{1,3})|E(\d{2,3}))(?:\s*(?:-|~|to)\s*(?:Episodes?\s*|Ep\s*|E)?(\d{1,3}))?\b`)
 	reDashEpisode          = regexp.MustCompile(`(?i)\s-\s*(\d{2,3})\s+(?:\d{3,4}[pi]\b|BD\b|BLURAY\b|WEB|HDTV\b|DVD|X264\b|X265\b|HEVC\b|H264\b|H265\b|AV1\b|XVID\b)`)
-	reEpRange              = regexp.MustCompile(`(?i)E(\d{1,3})`)
+	reEpRange              = regexp.MustCompile(`(?i)E(\d{1,4})`)
 	// Anime absolute numbering and "Season N - EE" (parseAbsoluteEpisode,
 	// parseSeasonDashEpisode).
-	reAbsoluteBracket     = regexp.MustCompile(`(?i)(?:^|\s)-\s+(\d{1,4})(?:v\d{1,2})?(?:\s*[\[(]|\s*$|\s+(?:END|FINAL)\b)`)
-	reAbsoluteTag         = regexp.MustCompile(`(?i)\s-\s(\d{1,4})(?:v\d{1,2})?`)
-	reDashNumber          = regexp.MustCompile(`\s-\s(\d{1,4})(?:v\d{1,2})?\b`)
+	reAbsoluteBracket     = regexp.MustCompile(`(?i)(?:^|\s)-\s+(\d{1,4})(?:\s*v\d{1,2})?(?:\s*[\[(]|\s*$|\s+(?:END|FINAL)\b)`)
+	reAbsoluteTag         = regexp.MustCompile(`(?i)\s-\s(\d{1,4})(?:\s*v\d{1,2})?`)
+	reDashNumber          = regexp.MustCompile(`\s-\s(\d{1,4})(?:\s*v\d{1,2})?\b`)
 	reSeasonShortDashEp   = regexp.MustCompile(`(?i)\bS(\d{1,2})\s+-\s+(\d{1,4})(?:v\d{1,2})?\b`)
 	reSeasonDashEp        = regexp.MustCompile(`(?i)\b(?:Season|Saison|Stagione|Temporada)\s*(\d{1,2})\s+-\s+(\d{1,4})(?:v\d{1,2})?\b`)
 	reSeasonCourDashEp    = regexp.MustCompile(`(?i)\b(?:S(\d{1,2})|(?:Season|Saison|Stagione|Temporada)\s*(\d{1,2}))\s+(?:Part|Cour)\s*(\d{1,2})(?:\s+-\s+|\s+E?)(\d{1,3})(?:v(\d))?\b`)
@@ -82,6 +82,21 @@ var languages = []struct{ token, name string }{
 	{"PT-BR", LanguagePortugueseBrazil}, {"BRAZILIAN", LanguagePortugueseBrazil}, {"DUBLADO", LanguagePortugueseBrazil}, {"NACIONAL", LanguagePortugueseBrazil}, {"PT-PT", LanguagePortuguesePortugal},
 	{"ES-ES", LanguageSpanishSpain}, {"ES-MX", LanguageSpanishLatino}, {"ES-419", LanguageSpanishLatino},
 	{"EN-US", "english"}, {"EN-GB", "english"},
+	// Regional releases spell out languages as English names or endonyms.
+	// These use the same metadata floor and subtitle-position rules as scene tags.
+	{"MALAYALAM", "malayalam"}, {"KANNADA", "kannada"}, {"BENGALI", "bengali"}, {"MARATHI", "marathi"},
+	{"CROATIAN", "croatian"}, {"SERBIAN", "serbian"}, {"BOSNIAN", "bosnian"}, {"SLOVENIAN", "slovenian"},
+	{"SLOVAK", "slovak"}, {"ROMANIAN", "romanian"}, {"BULGARIAN", "bulgarian"}, {"MACEDONIAN", "macedonian"},
+	{"ALBANIAN", "albanian"}, {"LITHUANIAN", "lithuanian"}, {"LATVIAN", "latvian"}, {"ESTONIAN", "estonian"},
+	{"ICELANDIC", "icelandic"}, {"HEBREW", "hebrew"}, {"PERSIAN", "persian"}, {"URDU", "urdu"},
+	{"MALAY", "malay"}, {"TAGALOG", "tagalog"}, {"CATALAN", "catalan"}, {"AFRIKAANS", "afrikaans"},
+	{"GEORGIAN", "georgian"}, {"IRISH", "irish"}, {"MONGOLIAN", "mongolian"}, {"ROMANSH", "romansh"},
+	{"HRVATSKI", "croatian"}, {"SRPSKI", "serbian"}, {"BOSANSKI", "bosnian"}, {"SLOVENSKI", "slovenian"},
+	{"SLOVENSKY", "slovak"}, {"SLOVENSKÝ", "slovak"}, {"HRV", "croatian"}, {"FARSI", "persian"}, {"FILIPINO", "tagalog"},
+	{"DEUTSCH", "german"}, {"FRANÇAIS", "french"}, {"FRANCAIS", "french"}, {"POLSKI", "polish"},
+	{"ITALIANO", "italian"}, {"PORTUGUÊS", "portuguese"}, {"PORTUGUES", "portuguese"}, {"NEDERLANDS", "dutch"},
+	{"ČESKY", "czech"}, {"CESKY", "czech"}, {"MAGYAR", "hungarian"}, {"SUOMI", "finnish"},
+	{"SVENSKA", "swedish"}, {"NORSK", "norwegian"}, {"DANSK", "danish"}, {"TÜRKÇE", "turkish"}, {"TURKCE", "turkish"},
 }
 
 func normalizeSpanishCapRange(s string) string {
@@ -131,6 +146,11 @@ func Parse(name string) core.ReleaseInfo {
 		if markerAt < 0 || at < markerAt {
 			markerAt = at
 		}
+	}
+	// A parenthesized absolute number supplements, rather than replaces,
+	// the release's explicit season/episode numbering.
+	if abs, _, _ := seasonAbsoluteAnnotation(normStem); abs > 0 && len(info.Episodes) == 1 {
+		info.AbsoluteEpisodes = []int{abs}
 	}
 	var yearAt int
 	info.Year, yearAt = parseYearAtWithStem(normStem, spaced)
@@ -917,6 +937,26 @@ func parseAbsoluteEpisode(stem, spaced string) (episode, at int) {
 		}
 	}
 	return 0, -1
+}
+
+var reAbsoluteAnnotation = regexp.MustCompile(`^\s*\(\s*(\d{1,4})\s*\)`)
+
+// seasonAbsoluteAnnotation recognizes only a numeric parenthesis immediately
+// after a single S/E marker. Years retain their existing meaning.
+func seasonAbsoluteAnnotation(name string) (number, start, end int) {
+	marker := reSE.FindStringSubmatchIndex(name)
+	if marker == nil || marker[6] != marker[7] || marker[8] >= 0 {
+		return 0, 0, 0
+	}
+	annotation := reAbsoluteAnnotation.FindStringSubmatchIndex(name[marker[1]:])
+	if annotation == nil {
+		return 0, 0, 0
+	}
+	n, _ := strconv.Atoi(name[marker[1]+annotation[2] : marker[1]+annotation[3]])
+	if n <= 0 || n >= 1888 && n <= 2100 {
+		return 0, 0, 0
+	}
+	return n, marker[1], marker[1] + annotation[1]
 }
 
 // releaseTagFollows reports whether rest (the text after an episode

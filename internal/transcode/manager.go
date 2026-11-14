@@ -144,6 +144,7 @@ func WithOnChange(f func()) Option { return func(o *options) { o.onChange = f } 
 
 // Manager runs ffmpeg for Ether. It implements core.Transcoder.
 type Manager struct {
+	textCueMu    sync.Mutex
 	slotChanged  chan struct{}
 	slotViewers  int
 	slotHolders  []*transcodeSlot
@@ -982,6 +983,11 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 			segSizes:    map[int]int64{},
 			governorOn:  adapt.Governor && proto == core.ProtocolHLS && d.VideoCopy && v != nil,
 		},
+	}
+	s.textSubtitleStreams = append([]int(nil), req.TextSubtitleStreams...)
+	s.textSubtitleSource = req.TextSubtitleSource
+	if s.textSubtitleSource == "" {
+		s.textSubtitleSource = req.ReleaseID
 	}
 	if softSubtitleStream != nil {
 		s.softSubtitleInputIndex = *softSubtitleStream

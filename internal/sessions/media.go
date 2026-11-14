@@ -179,6 +179,15 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 			dec.Kind, dec.VideoCopy, dec.AudioCopy = core.DecisionRemux, true, true
 		}
 	} else {
+		if len(progressiveTextTracks(string(s.public.Protocol), s.caps, ps.Info)) > 0 && dec.Kind == core.DecisionDirectPlay {
+			// Negotiate the real segmented container/codecs, rather than
+			// assuming a direct-file codec can be copied into MPEG-TS.
+			options := s.opts
+			options.DirectPlay = false
+			options.SubtitleStream = -1
+			options.BurnSubtitles = false
+			dec = b.deps.Transcoder.Decide(ps.Info, s.caps, options)
+		}
 		var allowed bool
 		dec, allowed = b.hlsOutputDecision(ps, s.caps, s.opts, s.allowTranscoding, dec)
 		if !allowed {
@@ -196,9 +205,13 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 	}
 	b.transcodeStop(id)
 	request := core.HLSRequest{RequireIndependentProof: b.policy(s.public.Protocol).DistributedBindings, SessionID: id, ReleaseID: ps.SourceReleaseID(), InputURL: b.deps.Playback.InputURL(s.playID), Info: ps.Info, Decision: dec, StartOffset: req.Position, SegmentDuration: req.SegmentDuration, Protocol: proto}
+	request.TextSubtitleStreams = progressiveTextTracks(string(s.public.Protocol), s.caps, ps.Info)
+	if len(request.TextSubtitleStreams) > 0 {
+		request.TextSubtitleSource = sourceRevision(ps)
+	}
 	var hs core.HLSSession
 	var lease core.EncoderInputLease
-	if remote := b.deps.DistributedHLS; remote != nil && remote.Supports(request) {
+	if remote := b.deps.DistributedHLS; remote != nil && len(request.TextSubtitleStreams) == 0 && remote.Supports(request) {
 		hs, err = remote.StartDistributedHLS(context.WithoutCancel(ctx), viewer.ID, s.playID, sourceRevision(ps), request)
 	} else {
 		if remote := b.deps.DistributedHLS; remote != nil && remote.Allocated(id) {

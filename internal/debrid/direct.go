@@ -126,7 +126,7 @@ func (s *Service) DirectPayload(ctx context.Context, rel core.Release) ([]byte, 
 		return nil, fmt.Errorf("debrid: add-on stream %q opens only for Play: %w", rel.Name, core.ErrForegroundOnly)
 	}
 	base := Payload{Key: payloadKey(rel), ReleaseID: rel.ID, Kind: KindHTTP, Link: rel.StreamURL, URL: rel.StreamURL,
-		StreamProvider: rel.StreamProvider, Headers: rel.StreamHeaders, Origin: rel.StreamOrigin, Release: rel.Name}
+		StreamProvider: rel.StreamProvider, Headers: rel.StreamHeaders, Origin: rel.StreamOrigin, Release: rel.Name, Target: rel.Target}
 	pctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(pctx, http.MethodGet, rel.StreamURL, nil)
@@ -171,6 +171,13 @@ func (s *Service) DirectPayload(ctx context.Context, rel core.Release) ([]byte, 
 	}
 	base.Size = size
 	base.Path = directFileName(rel.Name, resp, ctype)
+	// If the HTTP server supplies no filename, directFileName uses our
+	// catalogue-renumbered release label, rather than an IMDb filename.
+	if base.Target != nil && base.Target.Season == 0 && base.Path == rel.Name+videoTypes[ctype] {
+		target := *base.Target
+		target.AddonSpecialEpisode = 0
+		base.Target = &target
+	}
 	if final := resp.Request.URL.String(); final != "" {
 		base.URL = final // the addon's redirect target; the link stays in Link
 	}

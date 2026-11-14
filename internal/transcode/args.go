@@ -24,6 +24,7 @@ type runSpec struct {
 	SilenceAudio     bool
 	// Only a retry of an initial run whose muxer wrote a wrapped tfdt.
 	NormalizeNegativeDTS bool
+	TextSubtitlePaths    map[int]string
 	SoftSubtitlePath     string
 	SoftSubtitleIndex    int
 	LoopInput            bool
@@ -226,6 +227,11 @@ func buildArgs(s runSpec) []string {
 }
 
 func appendSoftSubtitleOutput(args []string, s runSpec) []string {
+	for _, track := range s.Info.Streams {
+		if path := s.TextSubtitlePaths[track.Index]; path != "" {
+			args = append(args, "-map", fmt.Sprintf("0:%d", track.Index), "-c:s", "ass", "-f", "ass", "-ignore_readorder", "1", "-flush_packets", "1", path)
+		}
+	}
 	if s.SoftSubtitlePath == "" {
 		return args
 	}

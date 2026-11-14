@@ -378,7 +378,7 @@ func (e *entry) observe(now time.Time, err error) *backoffEvent {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.stats.Requests++
-	if err == nil || errors.Is(err, core.ErrNotCached) || errors.Is(err, ErrGone) || errors.Is(err, core.ErrReleaseRejected) || errors.Is(err, core.ErrSourceUnavailable) {
+	if err == nil || errors.Is(err, core.ErrNotCached) || errors.Is(err, core.ErrWrongContent) || errors.Is(err, ErrGone) || errors.Is(err, core.ErrReleaseRejected) || errors.Is(err, core.ErrSourceUnavailable) {
 		// The provider answered; release-level outcomes and explicitly
 		// transient ones (a link still being generated, a torrent's
 		// server under maintenance) are not outages.
@@ -803,8 +803,8 @@ func (s *Service) Acquire(ctx context.Context, rel core.Release) ([]byte, error)
 			errs = append(errs, fmt.Errorf("%s: %w", displayName(e.cfg), err))
 		case errors.Is(err, core.ErrNotCached):
 			notCached++
-		case errors.Is(err, core.ErrReleaseRejected):
-			return nil, err // the torrent itself has no playable file
+		case errors.Is(err, core.ErrWrongContent), errors.Is(err, core.ErrReleaseRejected):
+			return nil, err // release-level outcome; another account cannot fix it
 		default:
 			errs = append(errs, fmt.Errorf("%s: %w", displayName(e.cfg), err))
 		}

@@ -117,9 +117,11 @@ func TestUnknownHEVCConditionTriesDeclaredH264Transcode(t *testing.T) {
 		t.Fatal("undeclared H.264 fallback was selected")
 	}
 	profiles.Transcoding[0].VideoCodecs = []string{"h264", "hevc"}
+	// A declared channel limit is negotiated into the fallback (downmix),
+	// never ignored.
 	profiles.Transcoding[0].MaxAudioChannels = "1"
-	if _, err = b.decideProfile(&core.PlaySession{Info: info}, req); err == nil {
-		t.Fatal("fallback ignored declared audio channel limit")
+	if d, err = b.decideProfile(&core.PlaySession{Info: info}, req); err == nil && (d.AudioCopy || d.AudioChannels == 0 || d.AudioChannels > 1) {
+		t.Fatalf("fallback ignored declared audio channel limit: %+v", d)
 	}
 }
 

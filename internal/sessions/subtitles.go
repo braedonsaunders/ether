@@ -45,10 +45,14 @@ func (b *Broker) SubtitleURL(ctx context.Context, a frontend.SessionAccess, id s
 	if st.External && (!strings.HasPrefix(st.ExternalURL, "ether-subtitle:") || b.deps.OpenSubtitle == nil) {
 		return "", core.ErrNotAvailable
 	}
-	if !st.External && b.deps.ExtractSubtitle == nil {
+	if !st.External && b.deps.ExtractSubtitle == nil && !b.progressiveSubtitle(s, ps.Info, st) {
 		return "", core.ErrNotAvailable
 	}
-	return fmt.Sprintf("/sessions/media/%s/%s/subtitles/%d.%s", s.public.ID, s.grant, index, format), nil
+	url := fmt.Sprintf("/sessions/media/%s/%s/subtitles/%d.%s", s.public.ID, s.grant, index, format)
+	if b.progressiveSubtitle(s, ps.Info, st) {
+		url += "?ether_stream=1"
+	}
+	return url, nil
 }
 
 // subtitleFormat includes Jellyfin web's JSON renderer and ASS renderer.
@@ -95,6 +99,10 @@ func (b *Broker) serveSubtitle(w http.ResponseWriter, r *http.Request, s *broker
 	stream, ok := subtitleStream(ps.Info, index)
 	if !ok || transcode.IsImageSubtitle(stream.Codec) {
 		http.NotFound(w, r)
+		return
+	}
+	if r.URL.Query().Get("ether_stream") == "1" && (format == "js" || format == "vtt") && b.progressiveSubtitle(s, ps.Info, stream) {
+		b.serveProgressiveSubtitle(w, r, s, stream)
 		return
 	}
 	// Authored ASS must retain its styles and positioning, using the same

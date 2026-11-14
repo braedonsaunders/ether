@@ -119,8 +119,9 @@ func (b *addonBackend) Search(ctx context.Context, req core.SearchRequest, reser
 	}
 	b.s.mu.RLock()
 	anime := b.s.anime
+	specials := b.s.specials
 	b.s.mu.RUnlock()
-	look, ok := stremio.LookupStreams(ctx, streamManifest(rec.Manifest), req, anime)
+	look, ok := stremio.LookupStreams(ctx, streamManifest(rec.Manifest), req, anime, specials)
 	if !ok {
 		return nil, nil
 	}
@@ -221,6 +222,7 @@ func (b *addonBackend) convert(ctx context.Context, rec plugins.Record, req core
 			rel.Info.Languages = mergeLanguages(rel.Info.Languages, ex.langs)
 		}
 		rel.TitleIDs = req.IDs
+		rel.TitleIDsEchoed = true
 		byStream[ordinaryAt[src]] = rel
 	}
 	for i, rel := range direct {
@@ -305,7 +307,7 @@ func searchHints(req core.SearchRequest) map[string]string {
 	if req.Year > 0 {
 		q["year"] = strconv.Itoa(req.Year)
 	}
-	if req.Season > 0 {
+	if req.Season > 0 || (req.Type == core.TypeEpisode && req.Episode > 0) {
 		q["season"] = strconv.Itoa(req.Season)
 	}
 	if req.Episode > 0 {
@@ -344,7 +346,7 @@ func (s *StreamSources) directRelease(ctx context.Context, rec plugins.Record, r
 	if req.Type != core.TypeMovie {
 		cat = 5000
 	}
-	rel := core.Release{Name: name, Size: eb.Size, Category: cat, Info: releaseparse.Parse(name), TitleIDs: req.IDs, Protocol: "direct"}
+	rel := core.Release{Name: name, Size: eb.Size, Category: cat, Info: releaseparse.Parse(name), TitleIDs: req.IDs, TitleIDsEchoed: true, Protocol: "direct"}
 	if len(eb.Languages) > 0 {
 		rel.Info.Languages = mergeLanguages(rel.Info.Languages, eb.Languages)
 	}

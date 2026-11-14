@@ -17,6 +17,9 @@ var (
 // Title.mkv", "205 - Title.avi", or a miniseries "Part 2 - Title.mkv". A
 // season folder in the path must be the wanted season.
 func ClassicPackEpisodeMatches(filePath string, wantSeason, wantEp int) bool {
+	if wantSeason == 0 {
+		return false
+	}
 	normPath := strings.ReplaceAll(filePath, "\\", "/")
 	dirInfo := Parse(strings.ReplaceAll(path.Dir(normPath), "/", " "))
 	if len(dirInfo.Seasons) > 0 {

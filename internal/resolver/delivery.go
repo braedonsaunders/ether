@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/releasepolicy"
 )
 
 type deliverySample struct {
@@ -86,4 +87,38 @@ func (s *Service) deliveryFit(r core.Release, caps core.ClientCaps, title *core.
 		return fit
 	}
 	return 1
+}
+
+// ChannelSourceAllowed applies the hard channel source envelope first.
+// Measurements may reject a slow encode, never admit a heavier source.
+func (s *Service) ChannelSourceAllowed(r core.Release, caps core.ClientCaps, title *core.Title) bool {
+	if caps.BroadcastBitrateKbps <= 0 {
+		return true
+	}
+	if title == nil || title.Runtime <= 0 || !releasepolicy.ChannelSourceAllowed(r, title.Runtime, caps.BroadcastBitrateKbps) {
+		return false
+	}
+	// Pack and direct-link listings may not have an individual file size.
+	// Playback rechecks this gate with the selected file before admission.
+	if r.Size <= 0 {
+		return true
+	}
+	required := float64(r.Size) / title.Runtime.Seconds()
+	rate := float64(0)
+	if source, ok := s.indexer.(interface{ RecentSourceThroughput(core.Release) float64 }); ok {
+		rate = source.RecentSourceThroughput(r)
+	}
+	s.delivery.mu.Lock()
+	e := s.delivery.samples[deliveryKey(r)]
+	s.delivery.mu.Unlock()
+	if e.count >= 3 && s.now().Sub(e.at) <= 2*time.Minute {
+		if rate <= 0 || e.rate < rate {
+			rate = e.rate
+		}
+	}
+	// Known slow delivery rejects even a small encode.
+	if rate > 0 {
+		return required <= rate*.75
+	}
+	return true
 }

@@ -209,6 +209,12 @@ type User struct {
 // ClientCaps is what a Plex client can play, derived from X-Plex-* headers,
 // the client profile and its declared limits.
 type ClientCaps struct {
+	// Broadcast inputs are selected for the channel rendition, independently
+	// of viewer quality preferences. Exclusions last only for this airing.
+	BroadcastBitrateKbps  int      `json:"-"`
+	BroadcastExclude      []string `json:"-"`
+	BroadcastReadyRelease string   `json:"-"`
+
 	// Playback telemetry is supplied by the adapter.
 	InferBuffering      bool `json:"inferBuffering,omitempty"`
 	NoPlaybackTelemetry bool `json:"noPlaybackTelemetry,omitempty"`

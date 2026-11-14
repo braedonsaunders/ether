@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { Badge, Button, Input, cn } from "@braedonsaunders/appkit-ui";
 import {
   AlertTriangle,
@@ -14,7 +15,7 @@ import {
 } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useState, type ReactNode } from "react";
 import { t } from "../../i18n";
-import { Drawer } from "../../components/Drawer";
+
 import { apiFetch, errorMessage } from "../../lib/api";
 import type { StudioProject } from "./studio-types";
 import { PaneResizer, useStudioPanes } from "./code/panes";
@@ -570,153 +571,17 @@ function Activity({ project, epoch }: { project: StudioProject; epoch: number })
   );
 }
 
-const ROUTES: Record<string, [string, string][]> = {
-  list: [
-    [
-      "GET /catalog/{type}/{catalogId}.json",
-      "{ metas: [{ id, type, name, poster?, year? }] }; catalogId matches manifest catalogs and contributes.listSources.catalog",
-    ],
-    ["GET /ether/view/{page}", "{ title, spec, data }; route matches contributes.pages.route"],
-    ["POST /ether/action/{action}", "{ toast?, refresh? }; action matches the ViewSpec action"],
-    [
-      "POST /ether/configure",
-      "Request body: settings object. Response body: { errors: { field: message } }",
-    ],
-  ],
-  channels: [
-    [
-      "GET /ether/channels.json",
-      "{ channels: [{ id, name, number, group, logo, guideId, programmes? }] }",
-    ],
-    ["GET /ether/guide/{id}.json?from&to", "{ programmes: [{ title, start, stop, description }] }"],
-    ["GET /stream/tv/{id}.json", "{ streams: [{ name, url }] } with a playable HLS url"],
-    ["POST /ether/test", "{ ok, message } for the owner's connection test"],
-  ],
-  addon: [
-    [
-      "GET /catalog/{type}/{id}.json",
-      "{ metas: [{ id, type, name, poster, year }] }, filtered by editCatalog",
-    ],
-    [
-      "GET /meta/{type}/{id}.json",
-      "{ meta: { id, name, description, videos? } }, changed by editMeta",
-    ],
-    [
-      "GET /stream/{type}/{id}.json",
-      "{ streams: [{ name, title, url | infoHash }] }, changed by editStreams",
-    ],
-    [
-      "GET /subtitles/{type}/{id}.json",
-      "{ subtitles: [{ id, lang, url }] }, changed by editSubtitles",
-    ],
-    ["POST /ether/test", "{ ok, message }: checks the plugin still answers"],
-  ],
-  video_source: [
-    [
-      "GET /stream/movie/{imdbId}.json?title&year",
-      "{ streams: [{ name, title, url | ether: { id, lazy, releaseName } }] }",
-    ],
-    ["GET /ether/open/{id}", "{ url } when a lazy source is played"],
-    ["POST /ether/test", "{ ok, message } for the owner's connection test"],
-  ],
-};
-
-export function ReferenceButton({ template }: { template: string }) {
-  const [open, setOpen] = useState(false);
+export function ReferenceButton({ template: _template }: { template: string }) {
   return (
-    <>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-8"
-        aria-label={t("Reference")}
-        title={t("Reference")}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => setOpen(true)}
-      >
-        <BookOpen size={17} aria-hidden />
-      </Button>
-      <Drawer open={open} onClose={() => setOpen(false)} title={t("Reference")} size="lg">
-        <Reference template={template} />
-      </Drawer>
-    </>
+    <Link
+      to="/plugins/reference/getting-started"
+      className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm"
+    >
+      <BookOpen size={17} aria-hidden />
+      {t("Reference")}
+    </Link>
   );
 }
-
-export function Reference({ template }: { template: string }) {
-  return (
-    <div className="space-y-5 text-xs">
-      {ROUTES[template] ? (
-        <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-fg">{t("Routes Ether calls")}</h3>
-          <ul className="space-y-2">
-            {ROUTES[template].map(([route, shape]) => (
-              <li key={route} className="rounded-lg border border-border p-2.5">
-                <p className="font-mono text-fg">{route}</p>
-                <p className="mt-1 font-mono text-fg-muted">{shape}</p>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-      <section className="space-y-2">
-        <h3 className="text-sm font-semibold text-fg">{t("What the plugin can use")}</h3>
-        <ul className="space-y-1.5 font-mono text-fg-muted">
-          <li>
-            ether.http.fetch({"{ url, method?, headers?, body? }"}) → {"{ status, headers, body }"}
-          </li>
-          <li>
-            ether.catalog.search(query) →{" "}
-            {"{ titles: [{ id, title, type, year, tmdbId, imdbId }] }"}
-          </li>
-          <li>ether.catalog.get(id)</li>
-          <li>
-            ether.addon.get(route) → {"{ status, body }"}{" "}
-            <span className="font-sans">
-              {t("(plugin drafts: asks the plugin it was made from, with its link kept sealed)")}
-            </span>
-          </li>
-          <li>ether.settings.get() → Record&lt;string, unknown&gt;</li>
-          <li>ether.kv.get(key: string) → string | null</li>
-          <li>ether.kv.put(key: string, value: string) → void</li>
-          <li>ether.kv.delete(key: string) → void</li>
-          <li>ether.kv.list(prefix?: string) → string[]</li>
-          <li>ether.secret.get(name)</li>
-          <li>ether.log(...)</li>
-        </ul>
-        <p className="text-fg-muted">
-          {t(
-            "Network calls reach only the hosts listed in manifest.json permissions. Calls are synchronous; waiting on a host does not count against the plugin's budget.",
-          )}
-        </p>
-      </section>
-      <section className="space-y-2">
-        <h3 className="text-sm font-semibold text-fg">{t("Settings")}</h3>
-        <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg border border-border p-2.5 font-mono text-fg-muted">{`// manifest.json → ether.settings
-{ "$ref": "settings.schema.json" }
-// settings.schema.json
-{ "fields": [{ "key": "maxItems", "kind": "number", "label": "$t:max_items" }] }
-// handle(req): read saved non-secret values, with a default
-const maxItems = Number(ether.settings.get().maxItems ?? 12);
-// POST /ether/configure: req.body contains proposed settings
-// Return { status: 200, body: { errors: {} } } or field errors.
-// State: ether.kv.put("counter", String(next));
-// Read: Number(ether.kv.get("counter") ?? "0");`}</pre>
-        <p className="text-fg-muted">
-          {t(
-            "Settings need a referenced schema and code that reads them. Secrets use ether.secret.get(name); never copy them into ordinary settings or logs.",
-          )}
-        </p>
-      </section>
-      <section className="space-y-2">
-        <h3 className="text-sm font-semibold text-fg">{t("Text the owner sees")}</h3>
-        <p className="text-fg-muted">
-          {t(
-            'Page and setting labels use "$t:key" with the text in i18n/en.json, so they can be translated. Values in view data are shown as you send them.',
-          )}
-        </p>
-      </section>
-    </div>
-  );
+export function Reference({ template: _template }: { template: string }) {
+  return <ReferenceButton template={_template} />;
 }

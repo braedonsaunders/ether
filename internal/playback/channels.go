@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/releasepolicy"
 )
 
 // PrepareChannel is an internal playout operation. One viewing session may
@@ -221,4 +222,67 @@ func (m *Manager) EndChannel(group string) {
 	delete(m.externalGroups, group)
 	m.mu.Unlock()
 	m.reg.poke()
+}
+
+func (m *Manager) channelSourceAllowed(s *session, r core.Release) bool {
+	if s.caps.BroadcastBitrateKbps <= 0 {
+		return true
+	}
+	if r.Info.FullSeason {
+		r.Size = 0
+	}
+	if s.title == nil || !releasepolicy.ChannelSourceAllowed(r, s.title.Runtime, s.caps.BroadcastBitrateKbps) {
+		return false
+	}
+	if policy, ok := m.deps.Resolver.(interface {
+		ChannelSourceAllowed(core.Release, core.ClientCaps, *core.Title) bool
+	}); ok {
+		return policy.ChannelSourceAllowed(r, s.caps, s.title)
+	}
+	return true
+}
+
+// ChannelReadyRelease is a bounded, local evidence lookup for substitute races.
+func (m *Manager) ChannelReadyRelease(ctx context.Context, u *core.User, key core.RatingKey, caps core.ClientCaps) (string, bool) {
+	ready, ok := m.deps.Resolver.(interface {
+		ReadyChannelRelease(context.Context, core.ResolveRequest) (core.Release, bool)
+	})
+	if !ok {
+		return "", false
+	}
+	stored, ok := m.deps.Catalog.(core.StoredTitleLookup)
+	if !ok {
+		return "", false
+	}
+	title, err := stored.StoredTitle(ctx, key)
+	if err != nil || title == nil {
+		return "", false
+	}
+	req := core.ResolveRequest{Title: title, Client: caps, User: u, Exclude: caps.BroadcastExclude}
+	r, ok := ready.ReadyChannelRelease(ctx, req)
+	if ok {
+		return r.ID, true
+	}
+	// A recent successful play survives a restart, but is eligible only if
+	// the resolver still has fresh verification and the current budget fits.
+	if m.resume == nil || u == nil {
+		return "", false
+	}
+	rec, err := m.resume.get(ctx, u.ID, key)
+	if err != nil || rec == nil || rec.size <= 0 || rec.duration <= 0 || m.now().Before(rec.updatedAt) || m.now().Sub(rec.updatedAt) > 5*time.Minute || !sourceFitsBitrate(rec.size, rec.duration, 0, caps.BroadcastBitrateKbps) {
+		return "", false
+	}
+	remembered, ok := m.deps.Resolver.(interface {
+		ReadyRememberedChannelRelease(context.Context, core.ResolveRequest, core.Release) (core.Release, bool)
+	})
+	if !ok {
+		return "", false
+	}
+	file := rec.release
+	file.Size, file.Info.FullSeason = rec.size, false
+	copyTitle := *title
+	copyTitle.Runtime = rec.duration
+	req.Title = &copyTitle
+	r, ok = remembered.ReadyRememberedChannelRelease(ctx, req, file)
+	return r.ID, ok
 }

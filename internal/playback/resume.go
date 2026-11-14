@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/releasepolicy"
 	"github.com/braedonsaunders/ether/internal/reqmemo"
 	"github.com/braedonsaunders/ether/internal/store"
 )
@@ -553,7 +554,22 @@ func (s *resumeStore) rememberedResolution(userID int64, key core.RatingKey, pro
 	if !ok || got.res == nil || got.profile != profileKey || got.releaseID == "" {
 		return nil
 	}
-	if !rememberedOriginalAudioCurrent(profile, got.originalLanguage, original, got.res.Release) || !rememberedCodecCurrent(got.res.Release, caps) || !sourceFitsBitrate(got.size, got.duration, 0, caps.MaxBitrateKbps) {
+	if caps.BroadcastBitrateKbps > 0 && (got.size <= 0 || got.duration <= 0) {
+		return nil
+	}
+	if caps.BroadcastBitrateKbps > 0 {
+		file := got.res.Release
+		file.Size = got.size
+		if got.probe != nil {
+			if video := got.probe.info.Video(); video != nil && video.Height > file.Info.Height {
+				file.Info.Height = video.Height
+			}
+		}
+		if !releasepolicy.ChannelSourceAllowed(file, got.duration, caps.BroadcastBitrateKbps) {
+			return nil
+		}
+	}
+	if !rememberedOriginalAudioCurrent(profile, got.originalLanguage, original, got.res.Release) || !rememberedCodecCurrent(got.res.Release, caps) || !sourceFitsBitrate(got.size, got.duration, 0, caps.MaxBitrateKbps) || !sourceFitsBitrate(got.size, got.duration, 0, caps.BroadcastBitrateKbps) {
 		return nil
 	}
 	if got.probe != nil && !rememberedInfoCodecCurrent(got.probe.info, caps) {

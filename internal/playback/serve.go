@@ -630,6 +630,12 @@ func (m *Manager) serveLoopback(w http.ResponseWriter, r *http.Request) {
 // backgroundFailover fails a session over outside any request, for errors
 // seen by ffmpeg on the loopback server.
 func (m *Manager) backgroundFailover(s *session, g *generation, at time.Duration) {
+	// A channel clock owns decoder recovery and its programme offset. ffmpeg
+	// also reads the file tail for metadata: mapping that byte to time seeks
+	// to EOF, not to the airing position. It has no HLS session to swap here.
+	if s.caps.BroadcastBitrateKbps > 0 {
+		return
+	}
 	if s.isClosed() || !g.backgroundFailover.CompareAndSwap(false, true) {
 		return
 	}

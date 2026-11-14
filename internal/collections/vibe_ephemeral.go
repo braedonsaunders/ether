@@ -203,6 +203,11 @@ func (s *Service) VibeCollection(ctx context.Context, user *core.User, query str
 		s.log.Debug("collections: vibe unresolved", "query", query, "err", err)
 		return nil, nil, false, nil
 	}
+	// Rating-based discovery needs a meaningful sample. Keep this floor even
+	// when a sparse row relaxes its rating threshold.
+	if (v.Filter.MinRating > 0 || v.Sort == core.SortRating) && v.Filter.MinVotes < 20 {
+		v.Filter.MinVotes = 20
+	}
 	if core.LocalResponse(ctx) {
 		// Immediate search needs members only. Do not register a browseable
 		// collection or save a bounded prefix as its exact membership count.
@@ -233,6 +238,22 @@ func (s *Service) VibeCollection(ctx context.Context, user *core.User, query str
 	page, err := s.ephemeralPage(ctx, user, e, 0, vibeTopItems)
 	if err != nil {
 		return nil, nil, false, err
+	}
+	// One bounded retry broadens only the rating threshold: language, genre,
+	// votes, runtime, identity and viewer restrictions stay in force. Similar
+	// seeds have their own bounded candidate set and are left alone.
+	if page.Total < 20 && e.vibe.SimilarKey == 0 && e.vibe.Filter.MinRating > 6.5 {
+		original := e.vibe.Filter.MinRating
+		e.vibe.Filter.MinRating = max(6.5, original-1)
+		broader, browseErr := s.ephemeralPage(ctx, user, e, 0, vibeTopItems)
+		if browseErr != nil {
+			return nil, nil, false, browseErr
+		}
+		if broader.Total > page.Total {
+			page = broader
+		} else {
+			e.vibe.Filter.MinRating = original
+		}
 	}
 	if page.Total == 0 {
 		return nil, nil, false, nil
@@ -417,7 +438,8 @@ func (s *Service) ephemeralPage(ctx context.Context, user *core.User, e *ephemer
 }
 
 // vibeTitleMatches applies a vibe filter to one title in memory (the
-// Similar path). Unknown fields on the title never exclude it.
+// Similar path). Rating constraints require a known rating and vote count;
+// other unknown fields on the title do not exclude it.
 func vibeTitleMatches(t core.Title, f core.Filter) bool {
 	if t.Adult {
 		return false
@@ -434,7 +456,10 @@ func vibeTitleMatches(t core.Title, f core.Filter) bool {
 	if f.YearTo > 0 && t.Year > 0 && t.Year > f.YearTo {
 		return false
 	}
-	if f.MinRating > 0 && t.Rating > 0 && t.Rating < f.MinRating {
+	if f.MinVotes > 0 && t.VoteCount < f.MinVotes {
+		return false
+	}
+	if f.MinRating > 0 && t.Rating < f.MinRating {
 		return false
 	}
 	if f.MaxRuntime > 0 && t.Runtime > 0 && t.Runtime > f.MaxRuntime {

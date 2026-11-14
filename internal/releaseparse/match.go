@@ -413,7 +413,7 @@ func EpisodeMatches(parsed core.ReleaseInfo, season, episode int) bool {
 	if parsed.FullSeason || len(parsed.Episodes) == 0 {
 		return false
 	}
-	seasonOK := len(parsed.Seasons) == 0
+	seasonOK := len(parsed.Seasons) == 0 && season != 0
 	for _, s := range parsed.Seasons {
 		if s == season {
 			seasonOK = true
@@ -471,13 +471,38 @@ func HasUsableInfo(info core.ReleaseInfo) bool {
 
 // EpisodeMatchesAbsolute reports whether parsed info is the episode whose
 // number counted from the series start is absolute: an anime release
-// numbered that way ("Show - 1071") and naming no season.
+// numbered that way ("Show - 1071" or "Show S10E01 (0337)").
 func EpisodeMatchesAbsolute(parsed core.ReleaseInfo, absolute int) bool {
-	if absolute <= 0 || parsed.FullSeason || len(parsed.Seasons) > 0 {
+	if absolute <= 0 || parsed.FullSeason {
 		return false
 	}
 	for _, e := range parsed.AbsoluteEpisodes {
 		if e == absolute {
+			return true
+		}
+	}
+	return false
+}
+
+// EpisodeMatchesNumbering accepts canonical season numbering or verified
+// absolute numbering. Some anime releases put the absolute number in Eyyyy;
+// allow that only in season 1 or at 100+, never for specials or cour resets.
+func EpisodeMatchesNumbering(parsed core.ReleaseInfo, season, episode, absolute int) bool {
+	if EpisodeMatches(parsed, season, episode) {
+		return true
+	}
+	if season <= 0 || absolute <= 0 || parsed.FullSeason || parsed.Cour > 0 ||
+		(len(parsed.Seasons) == 1 && parsed.Seasons[0] == 0) {
+		return false
+	}
+	if len(parsed.AbsoluteEpisodes) > 0 {
+		return EpisodeMatchesAbsolute(parsed, absolute)
+	}
+	if len(parsed.Seasons) != 1 || parsed.Seasons[0] <= 0 {
+		return false
+	}
+	for _, n := range parsed.Episodes {
+		if n == absolute && (parsed.Seasons[0] == 1 || n >= 100) {
 			return true
 		}
 	}

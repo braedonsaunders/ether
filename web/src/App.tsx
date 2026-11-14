@@ -114,6 +114,7 @@ const Sources = lazy(() => import("./pages/sources/Sources"));
 const Quality = lazy(() => import("./pages/releases/Releases"));
 const Cache = lazy(() => import("./pages/cache/Cache"));
 const Playback = lazy(() => import("./pages/playback/Playback"));
+const DeveloperReference = lazy(() => import("./pages/plugins/DeveloperReference"));
 const Plugins = lazy(() => import("./pages/plugins/Plugins"));
 const Studio = lazy(() => import("./pages/plugins/Studio"));
 const PluginPage = lazy(() => import("./viewspec/PluginPage"));
@@ -554,6 +555,7 @@ function Shell() {
             <Routes>
               <Route path="/setup" element={<Setup />} />
               <Route path="/mcp/authorize" element={<McpAuthorize />} />
+              <Route path="/plugins/reference/:topic?" element={<DeveloperReference />} />
               <Route path="/plugins/studio" element={<Studio />} />
               <Route path="/plugins/:tab?/*" element={<Plugins />} />
               <Route path="/p/:plugin/:page/*" element={<PluginPage />} />

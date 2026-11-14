@@ -454,6 +454,11 @@ func (s *Service) warmProgrammes() {
 		ps := Schedule(s.graphicsChannel(c), now, now.Add(defaultProgrammeWarmLead+time.Minute))
 		targets, breakReturn := selectChannelWarmTargets(ps, now, defaultProgrammeWarmLead)
 		for idx, p := range targets {
+			// Continuous outputs already acquire their on-air decoder alongside
+			// the title. A second detail warm competes for the same cold bytes.
+			if !p.Start.After(now) && s.hasBroadcastOutput(c.ID) {
+				continue
+			}
 			offset := p.Offset(maxTime(now, p.Start))
 			wk := warmTarget{channelID: c.ID, key: p.Item.Key, offsetSec: int64(offset / time.Second)}
 			s.warmMu.Lock()
@@ -2543,4 +2548,15 @@ func (s *Service) newTicker(d time.Duration) *time.Ticker {
 		return s.o.NewTicker(d)
 	}
 	return time.NewTicker(d)
+}
+
+func (s *Service) hasBroadcastOutput(channel string) bool {
+	s.broadcasts.mu.Lock()
+	defer s.broadcasts.mu.Unlock()
+	for key := range s.broadcasts.outputs {
+		if key.channelID == channel {
+			return true
+		}
+	}
+	return false
 }

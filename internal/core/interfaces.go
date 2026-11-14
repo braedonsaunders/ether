@@ -542,7 +542,8 @@ type SearchRequest struct {
 	Year          int
 	Season        int
 	Episode       int
-	EpisodeTitle  string // optional title used to distinguish same-numbered episodes
+	EpisodeTitle  string   // optional title used to distinguish same-numbered episodes
+	SpecialTitles []string `json:"SpecialTitles,omitempty"` // locally stored sibling special titles
 	// AbsoluteEpisode is the episode's number counted from the series
 	// start (0 = unknown), and Anime marks a series whose releases are
 	// commonly numbered that way (additive).

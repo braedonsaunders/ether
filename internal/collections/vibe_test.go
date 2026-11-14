@@ -125,13 +125,13 @@ func vibeSetup(t *testing.T, now *atomic.Int64, opts ...collections.Option) *col
 	seed := []core.Title{
 		{Key: core.MovieKey(1), Type: core.TypeMovie, IDs: core.IDs{TMDB: 1}, Title: "Alien Invasion",
 			Genres: []string{"Science Fiction"}, Year: 1985, Released: time.Date(1985, 6, 1, 0, 0, 0, 0, time.UTC),
-			Runtime: 100 * time.Minute, Rating: 8.5, Popularity: 50, ContentRating: "PG-13", PosterPath: "/a.jpg"},
+			Runtime: 100 * time.Minute, Rating: 8.5, VoteCount: 100, Popularity: 50, ContentRating: "PG-13", PosterPath: "/a.jpg"},
 		{Key: core.MovieKey(2), Type: core.TypeMovie, IDs: core.IDs{TMDB: 2}, Title: "Saga Returns",
 			Genres: []string{"Science Fiction"}, Year: 1987, Released: time.Date(1987, 6, 1, 0, 0, 0, 0, time.UTC),
-			Runtime: 110 * time.Minute, Rating: 8.1, Popularity: 40, ContentRating: "R"},
+			Runtime: 110 * time.Minute, Rating: 8.1, VoteCount: 100, Popularity: 40, ContentRating: "R"},
 		{Key: core.MovieKey(3), Type: core.TypeMovie, IDs: core.IDs{TMDB: 3}, Title: "Modern Drama",
 			Genres: []string{"Drama"}, Year: 2020, Released: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
-			Runtime: 95 * time.Minute, Rating: 9.0, Popularity: 60, ContentRating: "PG"},
+			Runtime: 95 * time.Minute, Rating: 9.0, VoteCount: 100, Popularity: 60, ContentRating: "PG"},
 	}
 	for _, title := range seed {
 		if err := cat.UpsertTitle(ctx, title, true); err != nil {

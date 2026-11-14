@@ -20,7 +20,7 @@ func ValidRecoveryStartShape(r core.HLSRequest) bool {
 		return true
 	}
 	if r.StartOffset != 0 || x.TitlePosition < 0 || x.FirstSequence < 0 || x.FirstSequence > 10000000 || x.SeekEpoch < 0 || x.OutputTimestamp < 0 ||
-		(r.Protocol != "" && r.Protocol != core.ProtocolHLS) || r.LiveInput || r.CopyTimestamps || len(r.SlateText) > 0 || r.SoftSubtitleStream != nil ||
+		(r.Protocol != "" && r.Protocol != core.ProtocolHLS) || r.LiveInput || r.CopyTimestamps || len(r.SlateText) > 0 || r.SoftSubtitleStream != nil || len(r.TextSubtitleStreams) > 0 ||
 		r.SegmentDuration != 1920*time.Millisecond || r.Info.Estimated || r.Info.Duration <= x.TitlePosition || x.Audio == nil {
 		return false
 	}

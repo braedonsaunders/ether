@@ -72,6 +72,8 @@ func (s *Session) IndependentSegments() bool { return s.segmentsIndependent }
 // sessionInput owns one aspect of the session. Fields are guarded by Session.mu.
 type sessionInput struct {
 	silenceAudio           bool // one replacement run only; later live reconnects retry source audio
+	textSubtitleStreams    []int
+	textSubtitleSource     string
 	softSubtitleStream     *int
 	softSubtitleInputIndex int
 	rtxConfig              config.RTXVideo
@@ -206,6 +208,8 @@ type mkvDelivery struct {
 
 // run is one ffmpeg process producing segments from startSeg on.
 type run struct {
+	textSubtitles map[int]*textSubtitleRead
+
 	rtx          bool
 	rtxConfirmed atomic.Bool
 

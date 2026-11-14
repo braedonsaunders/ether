@@ -66,9 +66,10 @@ var _ newznab.Backend = (*Backend)(nil)
 // Service builds and keeps one Backend per configured addon, so a
 // backend's manifest survives between searches.
 type Service struct {
-	client *http.Client
-	nzb    *http.Client
-	anime  AnimeIDs
+	client   *http.Client
+	nzb      *http.Client
+	anime    AnimeIDs
+	specials SpecialEpisodes
 
 	animeOnce sync.Once
 	mu        sync.Mutex
@@ -93,6 +94,8 @@ type Options struct {
 	// Anime maps TMDB ids to anime database ids; nil loads the community
 	// mapping lazily, the first time an addon needs it.
 	Anime AnimeIDs
+	// Specials maps catalogue season zero to IMDb numbering; nil skips IMDb specials.
+	Specials SpecialEpisodes
 }
 
 // NewService returns a Service. client nil uses a default client with a
@@ -109,7 +112,7 @@ func NewServiceWithOptions(o Options) *Service {
 	if o.NZBClient == nil {
 		o.NZBClient = (&safefetch.Guard{}).Client(egress.Client(egress.CapStremio, nzbTimeout))
 	}
-	return &Service{client: o.Client, nzb: o.NZBClient, anime: o.Anime, backends: map[string]*Backend{}}
+	return &Service{client: o.Client, nzb: o.NZBClient, anime: o.Anime, specials: o.Specials, backends: map[string]*Backend{}}
 }
 
 // animeIDs returns the anime id map, creating the default one on first use.
@@ -154,7 +157,7 @@ func (b *Backend) Search(ctx context.Context, req core.SearchRequest, reserve fu
 	switch req.Type {
 	case core.TypeMovie:
 	case core.TypeEpisode, core.TypeSeason:
-		if req.Season <= 0 {
+		if req.Season < 0 || (req.Season == 0 && (req.Type != core.TypeEpisode || req.Episode <= 0)) {
 			return nil, nil
 		}
 	default:
@@ -179,7 +182,7 @@ func (b *Backend) Search(ctx context.Context, req core.SearchRequest, reserve fu
 		return nil, err
 	}
 	rels, skippedNoHash, skippedAmbiguous := convertWith(answer.Streams, req, packs, convertOptions{
-		origin: b.origin(), instance: b.instance, entryEpisode: look.entryEpisode,
+		origin: b.origin(), instance: b.instance, entryEpisode: look.entryEpisode, specialEpisode: look.specialEpisode,
 	})
 	b.logSkipped(skippedNoHash, skippedAmbiguous)
 	return rels, nil
@@ -288,7 +291,8 @@ type convertOptions struct {
 	instance string
 	// entryEpisode is the episode number inside the anime database entry
 	// the addon was asked for (0 for IMDb and TMDB lookups).
-	entryEpisode int
+	entryEpisode   int
+	specialEpisode int
 	// sources, when set, receives the index of the stream each release
 	// came from.
 	sources *[]int
@@ -378,6 +382,7 @@ func convertWith(streams []stream, req core.SearchRequest, packs bool, opts conv
 		}
 		rel := core.Release{
 			Name:     name,
+			FileName: file,
 			Size:     size,
 			Seeders:  parseSeeders(text),
 			Info:     describe(name, file, torrent),
@@ -385,6 +390,13 @@ func convertWith(streams []stream, req core.SearchRequest, packs bool, opts conv
 		}
 		if req.Type != core.TypeMovie {
 			rel.Category = tvCategory
+		}
+		if req.Type == core.TypeEpisode && req.Season == 0 {
+			var keep bool
+			rel, keep = specialRelease(rel, req, file, torrent, opts.specialEpisode)
+			if !keep {
+				continue
+			}
 		}
 		rel.Info.Languages = streamLanguages(rel.Info.Languages, s.Name+"\n"+s.Title+"\n"+s.Description)
 		rel.Info = entryEpisodeIdentity(rel.Info, req, opts.entryEpisode)

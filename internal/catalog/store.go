@@ -1531,10 +1531,10 @@ func (c *Catalog) queryTitlesRows(ctx context.Context, sqlGated, rowsOnly bool, 
 		if err != nil {
 			return nil, err
 		}
-		// Let hydration establish an undated Specials container's premiere
-		// from its aired children; all other unknown dates remain excluded.
-		undatedSpecials := st.t.Type == core.TypeSeason && st.t.Key.Season() == 0 && st.t.Released.IsZero()
-		if sqlGated || (!st.t.Adult && (st.t.IsReleased(c.now()) || c.upcomingMovie(&st.t) || undatedSpecials)) {
+		// Let hydration establish an undated season premiere from aired
+		// children; the final release gate still excludes unknown dates.
+		undatedSeason := st.t.Type == core.TypeSeason && st.t.Released.IsZero()
+		if sqlGated || (!st.t.Adult && (st.t.IsReleased(c.now()) || c.upcomingMovie(&st.t) || undatedSeason)) {
 			out = append(out, st.t)
 		}
 	}

@@ -138,9 +138,9 @@ func applyAiredCounts(ctx context.Context, db *sql.DB, now time.Time, items []*c
 				}
 				if s != nil && total > 0 {
 					s.mirrored, s.airedCount = true, aired
-					// Specials often have no season premiere. A dated aired child is
+					// Seasons can lack a premiere. A dated aired child is
 					// sufficient to open this container, but never overrides a future date.
-					if season == 0 && s.date == 0 && earliest != 0 {
+					if s.date == 0 && earliest != 0 {
 						s.date, s.released = earliest, true
 					}
 				}
@@ -181,7 +181,7 @@ func applyAiredCounts(ctx context.Context, db *sql.DB, now time.Time, items []*c
 		case core.TypeSeason:
 			if s := seasons[seasonID{core.ShowKey(t.Key.TMDB()), t.Key.Season()}]; s != nil {
 				t.ChildCount = s.count()
-				if t.Released.IsZero() && t.Key.Season() == 0 && s.date != 0 {
+				if t.Released.IsZero() && s.date != 0 {
 					t.Released = time.Unix(s.date, 0).UTC()
 				}
 			}

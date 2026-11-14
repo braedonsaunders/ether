@@ -51,18 +51,18 @@ func TestColdTuneInHoldsIdentLookUntilFirstProgramme(t *testing.T) {
 		pod := broadcastPlan{id: "pod", element: "ident", interstitial: true, start: origin, end: origin.Add(4 * time.Second), open: func(context.Context) (transcode.Decoder, func(), error) {
 			return &delayedMomentDecoder{broadcastFakeDecoder: &broadcastFakeDecoder{format: f, closed: make(chan struct{}), value: 200}, ready: origin.Add(30 * time.Second)}, nil, nil
 		}}
-		programme := broadcastPlan{id: "programme", element: "programme", programme: true, start: pod.end, end: origin.Add(10 * time.Minute), open: coldHoldOpen(f, 90, 90*time.Second)}
+		programme := broadcastPlan{id: "programme", element: "programme", programme: true, start: pod.end, end: origin.Add(10 * time.Minute), open: coldHoldOpen(f, 90, 8*time.Second)}
 		planner := coldHoldPlanner{
 			elementBroadcastPlanner: elementBroadcastPlanner{pod, programme},
 			screenPlan:              broadcastPlan{id: "screen", open: coldHoldOpen(f, 10, 0)},
 			card:                    broadcastPlan{id: "moment-card", element: "card", open: coldHoldOpen(f, 30, 0)},
 		}
 		b, runner := newColdHoldBroadcast(t, planner, f)
-		time.Sleep(100 * time.Second)
+		time.Sleep(20 * time.Second)
 		synctest.Wait()
 		b.close()
 		frames := runner.encoders[0].snapshot()
-		if len(frames) < 2900 {
+		if len(frames) < 590 {
 			t.Fatalf("output stopped: %d frames", len(frames))
 		}
 		programmeAt := -1

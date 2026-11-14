@@ -137,19 +137,27 @@ export default function Plugins() {
       tabs={tabs}
       active={active}
       actions={
-        <AddPluginMenu
-          onBrowse={() => setBrowsing(true)}
-          onLink={() => {
-            setInstallMode("link");
-            setInstallUrl("");
-          }}
-          onUpload={() => {
-            setInstallMode("file");
-            setInstallUrl("");
-          }}
-          onCode={() => navigate("/plugins/studio?view=code")}
-          onAI={() => navigate("/plugins/studio")}
-        />
+        <>
+          <Link
+            to="/plugins/reference/getting-started"
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            {t("Reference")}
+          </Link>
+          <AddPluginMenu
+            onBrowse={() => setBrowsing(true)}
+            onLink={() => {
+              setInstallMode("link");
+              setInstallUrl("");
+            }}
+            onUpload={() => {
+              setInstallMode("file");
+              setInstallUrl("");
+            }}
+            onCode={() => navigate("/plugins/studio?view=code")}
+            onAI={() => navigate("/plugins/studio")}
+          />
+        </>
       }
     >
       {active === "installed" ? (

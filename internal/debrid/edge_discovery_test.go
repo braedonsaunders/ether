@@ -391,8 +391,21 @@ func TestDiscoveryWavesArePaced(t *testing.T) {
 		}
 		time.Sleep(150 * time.Millisecond)
 	}
-	if got := later.requests.Load(); got != 1 {
-		t.Fatalf("late candidate probed %d times, want exactly 1", got)
+	// Promotion may race the next read, which legitimately fetches media
+	// from the new edge. Count discovery ranges, not all HTTP requests.
+	later.mu.Lock()
+	probes := 0
+	for _, r := range later.ranges {
+		if r == probeRangeAt(0) {
+			probes++
+		}
+	}
+	later.mu.Unlock()
+	if probes != 1 {
+		t.Fatalf("late candidate probed %d times, want exactly 1", probes)
+	}
+	if got := urlHost(mustPayloadURL(f)); got != edgeHost(t, later) {
+		t.Fatalf("hunt left the file on %s, want promotion to %s", got, edgeHost(t, later))
 	}
 	if gap := probedAt.Sub(wave1); gap < 4*time.Second {
 		t.Fatalf("wave 2 probed %v after wave 1, want at least the %v spacing: block completions must not drumbeat the hunt", gap, rerouteSpacing)

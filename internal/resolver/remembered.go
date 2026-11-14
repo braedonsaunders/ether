@@ -37,11 +37,15 @@ func (s *Service) RememberedReleaseAllowed(ctx context.Context, t *core.Title, r
 	if rel.Info.Title == "" {
 		rel.Info = releaseparse.Parse(rel.Name)
 	}
+	identity := s.localEpisodeIdentity(ctx, t, req, []core.Release{rel})
+	if identity.reject(rel, t, req) != "" {
+		return false
+	}
 	s.prepareSeriesYears(ctx, t, req, []core.Release{rel})
 	if rejectIdentityYears(rel, t, req, s.catalogLanguage(), func(y int) bool { return s.seriesYearAccepted(t.ShowKey, y) }) != "" {
 		return false
 	}
-	if req.Type == core.TypeEpisode && s.hasSeriesNamesake(ctx, t, req) {
+	if req.Type == core.TypeEpisode && (identity.shared(req) || s.hasSeriesNamesake(ctx, t, req)) {
 		// Old indexer IDs may have been copied from the query. Contradictory
 		// regional evidence needs a year or episode subtitle before reuse.
 		if episodeNamesakeConflict(rel, t, req) {

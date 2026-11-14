@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/admin"
 	"github.com/braedonsaunders/ether/internal/cardigann"
@@ -59,7 +60,8 @@ func (a *App) buildSources(ctx context.Context, cfg config.Config) error {
 		siteOpts.LoginLock = a.clusterLoginLock // one login per site across nodes
 	}
 	a.sites = cardigann.New(siteOpts)
-	a.addons = stremio.NewService(nil)
+	specials := stremio.NewSpecialMapper(egress.Client(egress.CapStremio, 3*time.Second), "https://v3-cinemeta.strem.io")
+	a.addons = stremio.NewServiceWithOptions(stremio.Options{Specials: specials})
 	a.indexers = newznab.NewManager(a.db, a.addonIndexers(context.Background(), cfg.Indexers), newznab.Options{
 		Logger:         log.With("component", "newznab"),
 		SearchCacheTTL: cfg.Resolver.SearchCacheTTL.D(),
@@ -93,6 +95,7 @@ func (a *App) buildSources(ctx context.Context, cfg config.Config) error {
 	}, DB: a.db, Logger: log.With("component", "debrid"), OnChange: a.publishDashboard})
 	ss := a.initStreamSources(a.indexers)
 	ss.SetAnimeIDs(a.addons.AnimeIDs())
+	ss.SetSpecialEpisodes(specials)
 	usenetReady := func() bool {
 		if a.fetcher != nil {
 			return a.fetcher.HasUsableProvider()
@@ -120,7 +123,7 @@ func (a *App) buildSources(ctx context.Context, cfg config.Config) error {
 		indexer, health = a.opts.FixtureMedia, a.opts.FixtureMedia
 		animeCour = nil
 	}
-	a.resolver = resolver.New(indexer, health, a.db, cfg, resolver.Options{Now: parityClock(), SearchObserved: a.observeSearch, Discovered: a.discoveredReleases, Observed: a.observeRelease, Invalidated: a.invalidateRelease, SeriesYearConflict: a.seriesYearConflict, SeriesNamesake: a.seriesNamesake, AnimeCour: animeCour, LibraryProfiles: newLibraryProfiles(a), Logger: log.With("component", "resolver")})
+	a.resolver = resolver.New(indexer, health, a.db, cfg, resolver.Options{EpisodeIdentity: a.catalog.EpisodeIdentity, SpecialTitles: a.cachedSpecialTitles, Now: parityClock(), SearchObserved: a.observeSearch, Discovered: a.discoveredReleases, Observed: a.observeRelease, Invalidated: a.invalidateRelease, SeriesYearConflict: a.seriesYearConflict, SeriesNamesake: a.seriesNamesake, AnimeCour: animeCour, LibraryProfiles: newLibraryProfiles(a), Logger: log.With("component", "resolver")})
 	a.resolver.SetSourceSignals(a.debrid)
 	a.closers = append(a.closers, func() { a.resolver.Close() })
 

@@ -46,10 +46,9 @@ func gcSummary() string {
 // Startup waits on the screen; the 1.5 s deadline applies after input is flowing.
 const broadcastStartup = 45 * time.Second
 
-// A cold tune-in's first programme may take minutes to open (a Usenet or
-// debrid resolve plus probe). Until it produces a picture the opening look
-// holds instead of the screen, bounded by broadcastColdProgrammeWait.
-const broadcastColdProgrammeWait = 3 * time.Minute
+// A cold programme gets a bounded source-and-picture admission window.
+// Its title holds while alternate releases and substitutes are prepared.
+const broadcastColdProgrammeWait = 20 * time.Second
 const broadcastIdle = 60 * time.Second
 const broadcastDVR = 30 * time.Minute
 
@@ -765,8 +764,11 @@ func (b *broadcast) step(now time.Time) bool {
 	previousPCM := b.lastFrame.PCM
 	current, next := b.planner.plans(now)
 	if b.plannedID != current.id {
-		if current.programme && !b.airedProgramme {
+		if current.programme {
 			b.coldHoldUntil = now.Add(broadcastColdProgrammeWait)
+			if b.airedProgramme {
+				b.coldHoldFrame = nil
+			}
 		}
 		if current.programme && b.lastPodPlan.id != "" && b.plannedID != "" {
 			b.closeInput(b.continuation)
@@ -1113,7 +1115,7 @@ func (b *broadcast) step(now time.Time) bool {
 			return false
 		}
 	}
-	if frame.Video == nil && !introActive && !b.freshAt.IsZero() && now.Sub(b.freshAt) < broadcastStall {
+	if frame.Video == nil && !introActive && !b.freshAt.IsZero() && (now.Sub(b.freshAt) < broadcastStall || current.programme && current.mediaKey != 0) {
 		frame = transcode.RawFrame{Video: b.lastFrame.Video, PolicyTags: b.lastFrame.PolicyTags}
 		mode = "hold"
 	}
@@ -1181,7 +1183,7 @@ func (b *broadcast) step(now time.Time) bool {
 	// programme airs or the cold bound expires. A scheduled off-air
 	// element is not a programme, so it still airs as itself. Providers
 	// without an opening title use their prewarmed signal screen instead.
-	if frame.Video == nil && !introActive && !b.airedProgramme && current.programme && (b.momentCardPlan.id != "" || b.coldHoldFrame != nil) && now.Before(b.coldHoldUntil) {
+	if frame.Video == nil && !introActive && current.programme && (b.momentCardPlan.id != "" || b.coldHoldFrame != nil) && now.Before(b.coldHoldUntil) {
 		if b.momentCard != nil {
 			boundary := (b.tick*int64(b.format.FPSDen)*int64(time.Second))%int64(b.segment*time.Duration(b.format.FPSNum)) == 0
 			if b.momentCardPending.Video != nil {

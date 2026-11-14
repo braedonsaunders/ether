@@ -30,6 +30,7 @@ func (s *Session) watch(r *run) {
 	playlist := filepath.Join(r.spec.Dir, r.spec.Playlist)
 	var watchdog runWatchdog
 	collect := func(exited bool) {
+		s.collectTextSubtitles(r)
 		switch {
 		case r.dash != nil:
 			s.collectDASH(r, exited)
@@ -47,6 +48,11 @@ func (s *Session) watch(r *run) {
 			s.mu.Lock()
 			obsolete := s.cur != r
 			s.mu.Unlock()
+			if obsolete {
+				for _, path := range r.spec.TextSubtitlePaths {
+					s.removals.remove(path)
+				}
+			}
 			if obsolete && r.spec.SoftSubtitlePath != "" {
 				s.removals.remove(r.spec.SoftSubtitlePath)
 			}

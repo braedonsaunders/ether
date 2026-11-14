@@ -580,7 +580,7 @@ func (h *harness) checkStream(ctx context.Context, rec plugins.Record, addon str
 			continue
 		}
 		req := searchRequestFor(p.typ, p.id)
-		look, ok := stremio.LookupStreams(ctx, man, req, nil)
+		look, ok := stremio.LookupStreams(ctx, man, req, nil, nil)
 		if !ok {
 			look = stremio.Lookup{Type: p.typ, ID: p.id}
 		}

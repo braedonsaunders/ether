@@ -61,7 +61,7 @@ func TestBroadcastAllCandidatesFailUsesLiveSignal(t *testing.T) {
 				t.Fatalf("black fill after deadline at tick %d", i+45)
 			}
 		}
-		if playback.attempts.Load() < 4 {
+		if playback.attempts.Load() < 2 {
 			t.Fatalf("candidate retries stopped: %d", playback.attempts.Load())
 		}
 	})

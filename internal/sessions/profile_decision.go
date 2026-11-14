@@ -853,6 +853,24 @@ func (b *Broker) h264EncoderVerified() bool {
 }
 
 func (b *Broker) decideProfile(ps *core.PlaySession, req frontend.PlanRequest) (core.Decision, error) {
+	// The progressive client renders text outside the video. Keep the user's
+	// selection in the plan, but never ask the video decision to burn it in.
+	if ps != nil {
+		tracks := progressiveTextTracks(string(req.Protocol), req.Caps, ps.Info)
+		if len(tracks) > 0 {
+			// Progressive cues need the playback demuxer. Negotiate its
+			// real output now, including the streaming audio constraints.
+			req.Intent.Options.DirectPlay = false
+		}
+		for _, index := range tracks {
+			if req.Intent.Options.SubtitleStream == index {
+				req.Intent.Options.SubtitleStream = -1
+				req.Intent.Options.BurnSubtitles = false
+				break
+			}
+		}
+	}
+
 	req.Caps = applyProfileRangeCaps(req.Caps)
 	r := DecisionRequest{Session: ps, Caps: req.Caps, Options: req.Intent.Options, PreferRemux: req.Intent.PreferRemux, PreserveSourceOnFailure: true}
 	d, err := Decide(b.deps.Playback, b.deps.Transcoder, r)
@@ -892,6 +910,16 @@ func (b *Broker) decideProfile(ps *core.PlaySession, req frontend.PlanRequest) (
 			caps.VideoCodecs = videoCodecs
 			caps.AudioCodecs = candidate.AudioCodecs
 			caps.HLSContainers = candidate.Containers
+			// MaxAudioChannels constrains this delivery, not direct-file
+			// decoding. Feed it into the audio planner so supported surround
+			// codecs are downmixed instead of repeatedly proposing copy.
+			if candidate.MaxAudioChannels != "" {
+				limit, err := strconv.Atoi(candidate.MaxAudioChannels)
+				if err != nil || limit <= 0 {
+					return core.Decision{}, false
+				}
+				caps.AudioLimits = append(slices.Clone(caps.AudioLimits), core.AudioLimit{Codec: "*", Name: "audio.channels", Type: "upperBound", Value: limit})
+			}
 			opts := req.Intent.Options
 			opts.DirectPlay = false
 			// Retry only bounded output heights; never raise a client or request

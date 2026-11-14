@@ -366,6 +366,16 @@ func (m *Manager) prewarm(_ context.Context, user *core.User, key core.RatingKey
 			return
 		}
 		defer m.dropGeneration(generation)
+		if caps.BroadcastBitrateKbps > 0 {
+			file := res.Release
+			file.Size, file.Info.FullSeason = src.Size(), false
+			if video := generation.infoSnapshot().Video(); video != nil && video.Height > file.Info.Height {
+				file.Info.Height = video.Height
+			}
+			if !m.channelSourceAllowed(session, file) {
+				return
+			}
+		}
 		facts := &probeCache{releaseID: res.Release.ID, info: generation.infoSnapshot(), points: generation.timeMapSnapshot().Points}
 		if facts.info.Estimated {
 			facts = nil

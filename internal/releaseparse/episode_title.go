@@ -78,6 +78,9 @@ func episodeTitleMatches(name, want string, requireEvidence bool) bool {
 			return !requireEvidence
 		}
 	}
+	if absolute, start, end := seasonAbsoluteAnnotation(name); absolute > 0 {
+		name = name[:start] + " " + name[end:]
+	}
 	spaced := spacify(normalizeSpanishCapRange(name))
 	usedMiniseriesPart := false
 	loc := reSE.FindStringIndex(spaced)

@@ -13,6 +13,7 @@ import (
 )
 
 type candidate struct {
+	identityWeak     bool // shared title without evidence identifying this show
 	fallback         bool
 	pluginKeys       map[string]int64
 	policy           releasepolicy.Result

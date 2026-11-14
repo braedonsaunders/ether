@@ -19,7 +19,7 @@ func ValidCopyTimeline(q core.HLSRequest) bool {
 	if p == nil || p.Version != 1 || p.Origin < 0 || p.Origin > 90000*3600 || p.Step != 172800 || p.End <= p.Step || p.End > 90000*120 || p.End%p.Step != 0 || p.VideoAUs != p.End/3600 || p.AudioAUs != p.End/1920 || p.PacketSHA256 == ([32]byte{}) {
 		return false
 	}
-	if q.Info.Container != "mpegts" || q.Info.Estimated || q.Info.Duration != time.Duration(p.End)*time.Second/90000 || q.SegmentDuration != 1920*time.Millisecond || q.Ramp.Segments != 0 || q.StartOffset != 0 || q.LiveInput || q.CopyTimestamps || q.RecoveryStart != nil || q.SoftSubtitleStream != nil || len(q.SlateText) != 0 || (q.Protocol != "" && q.Protocol != core.ProtocolHLS) {
+	if q.Info.Container != "mpegts" || q.Info.Estimated || q.Info.Duration != time.Duration(p.End)*time.Second/90000 || q.SegmentDuration != 1920*time.Millisecond || q.Ramp.Segments != 0 || q.StartOffset != 0 || q.LiveInput || q.CopyTimestamps || q.RecoveryStart != nil || q.SoftSubtitleStream != nil || len(q.TextSubtitleStreams) > 0 || len(q.SlateText) != 0 || (q.Protocol != "" && q.Protocol != core.ProtocolHLS) {
 		return false
 	}
 	if d.Kind != core.DecisionRemux || !d.VideoCopy || !d.AudioCopy || d.Container != ContainerMPEGTS || d.VideoCodec != "h264" || d.AudioCodec != "aac" || d.AudioStream != p.AudioStream || d.BurnSubtitles || d.SubtitleStream >= 0 || d.ToneMap || d.StripDolbyVision || enhancementSelected(d) || len(d.AudioFilters) != 0 {

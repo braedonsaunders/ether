@@ -1,0 +1,52 @@
+.dev-reference p,
+.dev-reference ul,
+.dev-reference ol {
+  margin: 0.9rem 0;
+  line-height: 1.7;
+}
+.dev-reference ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+.dev-reference h2 {
+  margin-top: 1.8rem;
+  margin-bottom: 0.8rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+.dev-reference h3 {
+  margin-top: 1.5rem;
+  font-weight: 600;
+}
+.dev-reference a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.dev-reference pre {
+  max-width: 100%;
+  overflow: auto;
+  padding: 1rem;
+  border-radius: 0.6rem;
+  background: var(--color-surface);
+  font-size: 0.75rem;
+  line-height: 1.7;
+}
+.dev-reference table {
+  display: block;
+  overflow: auto;
+  max-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+.dev-reference th,
+.dev-reference td {
+  text-align: left;
+  vertical-align: top;
+  border: 1px solid var(--color-border);
+  padding: 0.65rem;
+  min-width: 6rem;
+}
+.dev-reference td:last-child {
+  min-width: 16rem;
+}

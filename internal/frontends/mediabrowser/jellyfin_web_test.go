@@ -64,7 +64,7 @@ func minimalDeb(t *testing.T, files map[string]string) []byte {
 func installedWebClient(t *testing.T) *webclient.Installer {
 	t.Helper()
 	deb := minimalDeb(t, map[string]string{
-		"index.html":     "<html>jellyfin-web</html>",
+		"index.html":     `<html>jellyfin-web<script src="main.jellyfin.bundle.js?build"></script><script src="runtime.bundle.js?build"></script></html>`,
 		"main.abc123.js": "console.log('x')",
 		"config.json":    "{}",
 	})

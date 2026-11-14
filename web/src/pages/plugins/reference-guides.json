@@ -1,0 +1,258 @@
+[
+  {
+    "id": "getting-started",
+    "title": "Getting started",
+    "group": "Start here",
+    "body": "Build the smallest plugin that answers one useful question. Start with Plugins \u2192 Add plugin \u2192 Code, select a Studio template, and run its preview before installing. A plugin adds a source, integration, notification channel, live TV source, extension, or whole content library.\n\n## Choose a runtime\nHosted TypeScript runs inside QuickJS on wazero. There is no Node filesystem, process, environment, or direct networking. Use the permission-checked host services. Export `handle(request)` and return `{status, headers?, body}`. Calls on the hosted `ether` global are synchronous. SDK clients may be asynchronous in a sidecar; use `await` in portable SDK code.\n\nRemote plugins run in your own process and serve HTTP or dial an outbound authenticated WebSocket tunnel. Their OS permissions are your responsibility. A remote plugin cannot use hosted folder grants or SecretGet; configuration is delivered through the remote configuration flow.\n\n## First hosted handler\n```ts\nexport function handle(req) {\n  if (req.path === '/ether/health')\n    return { status: 200, body: { status: 'ok' } };\n  if (req.path === '/ether/test')\n    return { status: 200, body: { ok: true, message: 'Ready' } };\n  return { status: 404, body: { error: 'Unknown route' } };\n}\n```\n\nUse [Manifest](/plugins/reference/manifest) to declare identity and runtime, [Capabilities](/plugins/reference/capabilities) to declare behavior, then [Testing](/plugins/reference/testing) before distributing a package. Expand the generated declarations on each page for exact signatures, limits, and validation errors. The Go validator is authoritative where optional wire fields have conditional requirements.",
+    "patterns": ["sdk/examples/hello/"]
+  },
+  {
+    "id": "manifest",
+    "title": "Manifest",
+    "group": "Start here",
+    "body": "Every package has `manifest.json`. `id`, `version`, and `name` are required. The native `ether` block requires protocol, kind, and runtime. A manifest without that block is a plain Stremio add-on. Keep reverse-DNS identity stable and increase SemVer for updates.\n\n```json\n{\"id\":\"org.example.hello\",\"name\":\"Hello\",\"version\":\"0.1.0\",\"ether\":{\"protocol\":1,\"kind\":\"extension\",\"runtime\":{\"kind\":\"hosted\",\"entry\":\"plugin.js\"}}}\n```\n\n## Reading the generated fields\nThe schema table lists required fields **within their parent object**, constraints, enum values, and explicitly declared defaults. An optional parent need not be present. Absence of a schema default does not imply zero is the runtime default: consult the Go type comments and validator below. Go field tables describe serialization, not validation requiredness. `omitempty` never proves that a field is optional for your chosen capability.\n\nNetwork permissions, contribution metadata, settings references, schedules, and runtime entry points are validated together. Errors identify the field to fix. See [Capabilities](/plugins/reference/capabilities), [Settings](/plugins/reference/settings), and [Publishing](/plugins/reference/publishing).",
+    "patterns": ["schemas/", "internal/plugins/manifest", "internal/plugins/contract.go#"]
+  },
+  {
+    "id": "capabilities",
+    "title": "Capabilities & contribution routes",
+    "group": "Start here",
+    "body": "Capabilities describe what a plugin does; permissions describe which host data it can use. Declare only the capabilities you implement. Required contribution metadata depends on the capability and plugin kind; the generated validator below enumerates all combinations and errors.\n\n| Capability | Entry point or contribution |\n|---|---|\n| stream_source | Stremio `/stream/{type}/{id}.json`; lazy streams open through `/ether/open/{id}` |\n| debrid_provider | `/ether/debrid/check`, `find`, `acquire`, `link`, `remove`, `account` |\n| list_source | `contributes.listSources`; matching Stremio catalogue |\n| metadata | Stremio `/meta/{type}/{id}.json` |\n| plugin_directory | Plugin directory declarations and discovery routes |\n| livetv_channels | `/ether/channels.json`, `/ether/guide/{id}.json`, stream routes |\n| subtitles | Stremio subtitles resource; declared languages and formats |\n| markers | Declared intro, credits, recap or preview marker kinds |\n| notify | Notification metadata; send and send-test handlers |\n| events | Explicit event subscriptions and `/ether/events` |\n| ranking_step | Deterministic `rank_key(candidate, config)` |\n| rule_condition | Deterministic `cond_match(candidate, operator, value)` |\n| tools | Declared tool input schema and tool handlers |\n| ui | Pages, slots, commands, ViewSpec views and actions |\n| onair_content / livetv_pack | Declared On Air segments or TV pack contributions |\n| catalog_provider / kind_resolver / matcher | Content kind browse, resolve, match routes |\n| frontend_adapter | Authenticated protocol adapter routes |\n\nReserved capability names cannot be claimed in EPP/1. Ranking and condition hot paths have only log and abort: no I/O, wall clock, or arbitrary host calls. Return a neutral result when there is no useful adjustment. Consult the generated templates and route checks for each response shape rather than inventing one.",
+    "patterns": [
+      "internal/plugins/descriptors.go",
+      "internal/plugins/studio/templates.go",
+      "internal/plugins/studio/mcp_tools.go",
+      "internal/plugins/kit/",
+      "internal/plugins/contract.go#Cap"
+    ]
+  },
+  {
+    "id": "kinds",
+    "title": "Content kinds & libraries",
+    "group": "Build features",
+    "body": "See the complete content-kind guide below. Start with a bounded browse page, stable external IDs, and a playable leaf. Use [Resolvers](/plugins/reference/resolvers) for bytes and [Folders](/plugins/reference/host-folders) for local files.",
+    "patterns": [
+      "docs/plugin-kinds.md",
+      "internal/core/kinditem.go",
+      "internal/plugins/manifest_kinds.go",
+      "internal/plugins/host_kinds.go",
+      "sdk/examples/kind-library/"
+    ]
+  },
+  {
+    "id": "catalogues",
+    "title": "Catalogue sources",
+    "group": "Build features",
+    "body": "A Stremio catalogue returns `{metas:[...]}` for `/catalog/{type}/{id}.json`. The catalogue ID must match `manifest.catalogs` and `ether.contributes.listSources[].catalog`. A list source can appear in collections and home rows; it is different from the signed **plugin marketplace catalogue** described in [Publishing](/plugins/reference/publishing).\n\n```json\n{\"key\":\"weekly\",\"label\":\"This week\",\"catalog\":\"weekly\",\"maxItems\":50,\"refresh\":\"1h\"}\n```\n\nKeep pages bounded, handle search and pagination extras consistently, and use stable metadata IDs. Read parameters from the request; do not return an entire remote library to answer one query. For arbitrary media hierarchies use [Content kinds](/plugins/reference/kinds), whose provider sync persists items in Ether's store.",
+    "patterns": ["sdk/examples/tvmaze/", "internal/plugins/list_params.go", "sdk/examples/hello/"]
+  },
+  {
+    "id": "resolvers",
+    "title": "Resolvers & playback",
+    "group": "Build features",
+    "body": "Resolve only when a viewer requests playback. Browse and metadata must stay cheap. A content-kind resolver returns ordered `sources`; an empty array means temporarily unavailable. File, range, download, direct, container, and release patterns have different ownership of fetching and caching; read the generated PlayableSource types and content-kind guide.\n\n```json\n{\"sources\":[{\"id\":\"primary\",\"pattern\":\"range\",\"url\":\"https://media.example.org/track.mp3\",\"mime\":\"audio/mpeg\"}]}\n```\n\nUse `{secret:name}` header placeholders instead of returning raw credentials. URLs support only the documented integer placeholders. Return `unavailable` on kind items when an owner needs to see why verified bytes do not exist. Use Ether stream tickets for frontend adapters so media bypasses the plugin process. See [Kinds](/plugins/reference/kinds), [Source discovery](/plugins/reference/host-sources), and the native debrid route/error table below.",
+    "patterns": ["docs/plugin-debrid.md", "internal/core/kinditem.go", "sdk/examples/easydebrid/"]
+  },
+  {
+    "id": "notifications",
+    "title": "Notification channels",
+    "group": "Build features",
+    "body": "`kind: \"notification_channel\"` with capability `notify` registers a delivery channel. This differs from `ether.notify.owner`, which posts a console notice. Declare `contributes.notification` with `sendTest: true`, supported formats, optional fields, and maximum length. Owners configure channel instances through Notifications.\n\n```json\n{\"kind\":\"notification_channel\",\"capabilities\":[\"notify\"],\"contributes\":{\"notification\":{\"sendTest\":true,\"formats\":[\"text\"],\"maxLength\":1000}}}\n```\n\nImplement `POST /ether/notify` (the SDK notify handler). It receives the delivery request, including its test flag for a test send; return the documented NotifyResponse. See the generated router and conformance checks below. Validate channel fields and authenticate external delivery through declared network hosts and secrets. A successful connection test must mean the service accepted the request; do not report success after an upstream error. Never log tokens or signed delivery URLs. The Home Assistant example shows remote notification delivery.",
+    "patterns": [
+      "sdk/examples/home-assistant/",
+      "internal/plugins/contract.go#Notification",
+      "internal/plugins/kit/"
+    ]
+  },
+  {
+    "id": "settings",
+    "title": "Settings & setup steps",
+    "group": "Build features",
+    "body": "Declare `ether.settings` inline or as `{\"$ref\":\"settings.schema.json\"}`. Referenced files must be in the package. Public values come from `ether.settings.get()` per request; pooled hosted instances restart, so instance memory is not persistent configuration. Read secrets through SecretGet only in hosted code.\n\n```json\n{\"fields\":[{\"key\":\"maxItems\",\"kind\":\"number\",\"label\":\"Maximum items\"}]}\n```\n\n```ts\nconst maxItems = Number(ether.settings.get().maxItems ?? 12);\n// POST /ether/configure validates proposed req.body:\nreturn { status: 200, body: { errors: {} } };\n```\n\nUse `$t:key` labels with `ether.strings` and English fallback strings. Dynamic option fields should answer the SDK's options route. `contributes.setup.steps` groups settings fields and optional test routes. `/ether/v1/setup/{step}/test` receives `{step, fields}` and returns `{ok, detail, fields?}`; secrets stay out of that body. Required steps gate content-library sync and visibility until passed or owner-skipped. See the generated SetupStep and settings accessors for exact shapes.",
+    "patterns": [
+      "internal/plugins/settings_public.go",
+      "internal/plugins/setup.go",
+      "internal/plugins/contract.go#Setup",
+      "sdk/examples/local-folders/"
+    ]
+  },
+  {
+    "id": "events",
+    "title": "Events",
+    "group": "Build features",
+    "body": "Subscribe explicitly with capability `events` and `contributes.events.subscribe`. Handle deliveries at `/ether/events`. The generated event constants below are the supported names; unknown names are rejected, not wildcard subscriptions.\n\n```json\n{\"capabilities\":[\"events\"],\"contributes\":{\"events\":{\"subscribe\":[\"playback.started\"]}}}\n```\n\nKeep handlers bounded and idempotent using the event ID. A delivery contains the event name, timestamp, optional viewer identity, and payload. Viewer identity is removed unless the live grants allow it. Enabled subscriptions are indexed; nobody subscribing means no plugin event-log work. Avoid polling playback or scanning the library in response to progress events. Use the generated queue and dispatch code to inspect retry behavior and exact envelopes.",
+    "patterns": [
+      "internal/plugins/events.go",
+      "internal/plugins/contract.go#Event",
+      "internal/plugins/contract.go#KnownEvents",
+      "sdk/examples/movie-night/",
+      "sdk/examples/ether-wrapped/"
+    ]
+  },
+  {
+    "id": "testing",
+    "title": "Testing & conformance",
+    "group": "Ship a plugin",
+    "body": "Use Studio's run and preview tools while editing. Before distributing, run the offline conformance command on an unpacked package:\n\n```sh\nether plugin check ./my-plugin\n```\n\nThe kit validates manifest fields, package references, owner-facing copy, declared routes, capability response shapes, and hot-path determinism/budgets. Content-kind checks cover pagination termination, page limits, detail round trips, declared live search, and resolver patterns. Shared kind fixtures live in `sdk/conformance/kinds`.\n\nMock external HTTP, store, viewer, and playback dependencies in SDK tests. Check missing grants, revoked grants, empty results, rate limits, invalid settings, and upstream failures. Offline conformance cannot prove a paid account works: after installation, run the owner's connection test with real credentials. Inspect Studio's calls and logs without exposing secrets. Package only after these checks; see [Publishing](/plugins/reference/publishing).",
+    "patterns": ["internal/plugins/kit/", "sdk/go/mock.go", "sdk/typescript/src/mock.ts"]
+  },
+  {
+    "id": "publishing",
+    "title": "Packaging & publishing",
+    "group": "Ship a plugin",
+    "body": "Bundle hosted SDK imports into the entry artifact. Bare package imports cannot resolve in the hosted virtual filesystem. Put the manifest, referenced settings/strings, and compiled entry into the package; do not include credentials or development caches.\n\n```sh\nether plugin check ./my-plugin\nether plugin pack ./my-plugin\n```\n\nKeep identity stable and increment version. New permissions require owner review; removing or retyping kind declarations can require explicit replacement approval. Test upgrades and the owner's rollback flow before release.\n\nA marketplace catalogue distributes packages with pinned SHA-256 digests and an Ed25519-signed index. Review every version's permissions, retain revocation reasons, and publish the index and signature together. The catalogue-template guide below describes repository variables, secret key handling, and artifact checks.",
+    "patterns": ["sdk/catalogue-template/"]
+  },
+  {
+    "id": "sdk-go",
+    "title": "Go SDK",
+    "group": "SDKs & examples",
+    "body": "Use the Go SDK for typed request/response contracts, routing, host services, mocks, and sidecar transport. The README and every shipped declaration below come from the current SDK source. Follow the runtime instructions for your target; hosted and remote services differ. See [Getting started](/plugins/reference/getting-started), [Host services](/plugins/reference/host-http), and [Packaging](/plugins/reference/publishing).",
+    "patterns": ["sdk/go/"]
+  },
+  {
+    "id": "sdk-python",
+    "title": "Python SDK",
+    "group": "SDKs & examples",
+    "body": "Use the Python SDK for typed request/response contracts, routing, host services, mocks, and sidecar transport. The README and every shipped declaration below come from the current SDK source. Follow the runtime instructions for your target; hosted and remote services differ. See [Getting started](/plugins/reference/getting-started), [Host services](/plugins/reference/host-http), and [Packaging](/plugins/reference/publishing).",
+    "patterns": ["sdk/python/"]
+  },
+  {
+    "id": "sdk-typescript",
+    "title": "TypeScript SDK",
+    "group": "SDKs & examples",
+    "body": "Use the TypeScript SDK for typed request/response contracts, routing, host services, mocks, and sidecar transport. The README and every shipped declaration below come from the current SDK source. Follow the runtime instructions for your target; hosted and remote services differ. See [Getting started](/plugins/reference/getting-started), [Host services](/plugins/reference/host-http), and [Packaging](/plugins/reference/publishing).",
+    "patterns": ["sdk/typescript/"]
+  },
+  {
+    "id": "examples",
+    "title": "Examples & Studio templates",
+    "group": "SDKs & examples",
+    "body": "Copy a complete example matching your capability, then change the manifest ID before installing. Examples include hello in three languages, local folders, kind libraries, debrid, subtitles, live TV, notifications, and event-driven integrations. Generated Studio templates show raw hosted handlers; SDK examples show bundled or remote programs. All examples below are copyable and searchable.",
+    "patterns": ["sdk/examples/", "internal/plugins/studio/templates.go"]
+  },
+  {
+    "id": "troubleshooting",
+    "title": "Troubleshooting & errors",
+    "group": "Ship a plugin",
+    "body": "| Symptom | Check |\n|---|---|\n| Manifest rejected | Field path and validator message; capability-specific metadata; unsupported names; referenced files |\n| Permission denied | Manifest declaration plus current owner grant; a grant may have been revoked since startup |\n| Disabled or unavailable | Plugin enabled state, required setup, injected backend availability, saved secrets |\n| Network failure | Host allowlist, guarded redirects, private-address protection, body cap, upstream status |\n| Folder inaccessible | Hosted runtime, owner-picked root, relative path, symlink containment, revoked grant |\n| Hash too large | Use hashStart above 256 MiB; poll until terminal; retry a busy worker later |\n| SDK import unresolved | Bundle imports into the hosted entry; do not expect Node resolution in QuickJS |\n| Empty library | Setup completion, sync mode, page cursors, declared levels/field types, stable IDs |\n| Playback unavailable | Resolver pattern, source URL, secret placeholders, item unavailable reason, viewer access |\n| Remote 401 | Plugin credential or tunnel pairing; never substitute a viewer token |\n| Rate limited | Honor backoff and bounded work; owner notices allow five per hour |\n\nGenerated validators, transport error mapping, and runtime fault definitions below give the exact error messages. Search a message or field name to find its source and relevant type. Keep secrets out of diagnostic output.",
+    "patterns": [
+      "internal/plugins/wasm/wasm.go",
+      "internal/plugins/hosted.go",
+      "internal/plugins/manifest.go",
+      "internal/plugins/remote/host.go"
+    ]
+  },
+  {
+    "id": "host-kv",
+    "title": "Key/value storage",
+    "group": "Host services",
+    "body": "Plugin-scoped string values survive instance restarts. Missing get returns null in JS; Go also returns a found flag. Use prefixes for list. Remote values are capped at 5 MiB, with the per-plugin quota also enforced. Never store secrets here.\n\n```ts\nether.kv.put(\"counter\", \"1\");\nconst value = ether.kv.get(\"counter\");\n```\n\nThe declarations and implementations below specify arguments, return types, defaults, permission checks, limits, and errors. SDK adapters translate raw hosted calls to portable clients. See [SDKs](/plugins/reference/sdk-typescript) and [Errors](/plugins/reference/troubleshooting).",
+    "patterns": ["@host:KV"]
+  },
+  {
+    "id": "host-settings",
+    "title": "Public settings",
+    "group": "Host services",
+    "body": "Read current non-secret configuration for each request. No permission declaration is needed for your own public settings. Missing optional settings need a caller-selected default.\n\n```ts\nconst count = Number(ether.settings.get().maxItems ?? 12);\n```\n\nThe declarations and implementations below specify arguments, return types, defaults, permission checks, limits, and errors. SDK adapters translate raw hosted calls to portable clients. See [SDKs](/plugins/reference/sdk-typescript) and [Errors](/plugins/reference/troubleshooting).",
+    "patterns": ["@host:Settings"]
+  },
+  {
+    "id": "host-secret",
+    "title": "Sealed secrets",
+    "group": "Host services",
+    "body": "Hosted only. Requires the exact name in permissions.secrets and a saved secret. Missing secrets produce unavailable; undeclared or revoked grants produce permission denied. Remote plugins receive configuration instead.\n\n```ts\nconst token = ether.secret.get(\"apiKey\");\n```\n\nThe declarations and implementations below specify arguments, return types, defaults, permission checks, limits, and errors. SDK adapters translate raw hosted calls to portable clients. See [SDKs](/plugins/reference/sdk-typescript) and [Errors](/plugins/reference/troubleshooting).",
+    "patterns": ["@host:Secret"]
+  },
+  {
+    "id": "host-http",
+    "title": "HTTP requests",
+    "group": "Host services",
+    "body": "Hosted fetch requires the destination in permissions.network. Redirect destinations are checked too. Read the generated MaxFetchBytes and transport limits; private or blocked destinations fail even if a hostname is declared. Handle upstream non-2xx status explicitly.\n\n```ts\nconst r = ether.http.fetch({url: \"https://api.example.org/status\", method: \"GET\"});\nif (r.status !== 200) throw new Error(\"Service unavailable\");\n```\n\nThe declarations and implementations below specify arguments, return types, defaults, permission checks, limits, and errors. SDK adapters translate raw hosted calls to portable clients. See [SDKs](/plugins/reference/sdk-typescript) and [Errors](/plugins/reference/troubleshooting).",
+    "patterns": ["@host:HTTP"]
+  },
+  {
+    "id": "host-catalog",
+    "title": "Catalogue lookup",
+    "group": "Host services",
+    "body": "Requires catalog: read. Hosted search clamps invalid limits to 100; get accepts one title ID. SDK and raw global argument shapes differ: use the exact declarations below. Do not scan all titles to answer a single request.\n\n```ts\nconst titles = ether.catalog.search(\"Arrival\");\n```\n\nThe declarations and implementations below specify arguments, return types, defaults, permission checks, limits, and errors. SDK adapters translate raw hosted calls to portable clients. See [SDKs](/plugins/reference/sdk-typescript) and [Errors](/plugins/reference/troubleshooting).",
+    "patterns": ["@host:Catalog"]
+  },
+  {
+    "id": "host-addon",
+    "title": "Original add-on relay",
+    "group": "Host services",
+    "body": "Hosted drafts imported from a Stremio add-on can ask the original provider while its address stays sealed. It is available only with the draft relay context; ordinary plugins cannot choose arbitrary provider URLs through this service.\n\n```ts\nconst response = ether.addon.get(\"/catalog/movie/top.json\");\n```\n\nThe declarations and implementations below specify arguments, return types, defaults, permission checks, limits, and errors. SDK adapters translate raw hosted calls to portable clients. See [SDKs](/plugins/reference/sdk-typescript) and [Errors](/plugins/reference/troubleshooting).",
+    "patterns": ["@host:Addon"]
+  },
+  {
+    "id": "host-viewers",
+    "title": "Viewers & watch state",
+    "group": "Host services",
+    "body": "Live viewer grants determine identity, history, and write access. Use granted() before selecting a viewer. History is bounded (host maximum 200). Watch-state writes are journalled and forbidden in read-only tool calls. Never infer authorization from a cached viewer ID.\n\n```ts\nconst viewers = ether.viewers.granted();\n```\n\nThe declarations and implementations below specify arguments, return types, defaults, permission checks, limits, and errors. SDK adapters translate raw hosted calls to portable clients. See [SDKs](/plugins/reference/sdk-typescript) and [Errors](/plugins/reference/troubleshooting).",
+    "patterns": ["@host:Viewer|WatchState"]
+  },
+  {
+    "id": "host-collections",
+    "title": "Collections",
+    "group": "Host services",
+    "body": "Requires collections: write. Writes are journalled and permission-checked on every call. Remote request bodies are capped at 2 MiB. Use stable collection identity for updates. Read-only tool calls cannot mutate state.\n\n```ts\nether.collections.upsert({id: \"weekly\", name: \"Weekly picks\", ids: []});\n```\n\nThe declarations and implementations below specify arguments, return types, defaults, permission checks, limits, and errors. SDK adapters translate raw hosted calls to portable clients. See [SDKs](/plugins/reference/sdk-typescript) and [Errors](/plugins/reference/troubleshooting).",
+    "patterns": ["@host:Collections"]
+  },
+  {
+    "id": "host-kinds",
+    "title": "Kind item storage",
+    "group": "Host services",
+    "body": "Requires catalog_provider and your own declared kind. upsert/delete only work for push-mode kinds; pull sync owns its writes. items is cursor-paged. Items are validated against declared levels and fields. Unknown custom fields are dropped; invalid types reject the item.\n\n```ts\nconst page = ether.kinds.items(\"recordings\", \"\", 50);\n```\n\nThe declarations and implementations below specify arguments, return types, defaults, permission checks, limits, and errors. SDK adapters translate raw hosted calls to portable clients. See [SDKs](/plugins/reference/sdk-typescript) and [Errors](/plugins/reference/troubleshooting).",
+    "patterns": ["@host:Kind"]
+  },
+  {
+    "id": "host-sources",
+    "title": "Source discovery",
+    "group": "Host services",
+    "body": "Requires kind_resolver and sources: search or acquire. Search permits indexer discovery and debrid checks; acquire permits opening content. Return a release source after choosing a candidate instead of downloading in the request handler.\n\n```ts\nconst candidates = ether.sources.resolve({kind: \"indexer_search\", query: \"Example\"});\n```\n\nThe declarations and implementations below specify arguments, return types, defaults, permission checks, limits, and errors. SDK adapters translate raw hosted calls to portable clients. See [SDKs](/plugins/reference/sdk-typescript) and [Errors](/plugins/reference/troubleshooting).",
+    "patterns": ["@host:ResolveSources"]
+  },
+  {
+    "id": "host-cache",
+    "title": "Library blob cache",
+    "group": "Host services",
+    "body": "Cache refs are content addressed blob:<sha256>, never filesystem paths. A library defaults to 2 GiB under a shared min(10 GiB, 5% of cache disk) cap; manifest and owner settings can override it. Remote blob uploads cap at 256 MiB. Use kinds for metadata and cache for bytes.\n\n```ts\nconst ref = ether.cache.put(\"library-key\", \"cover.txt\", \"hello\");\nconst data = ether.cache.open(ref);\n```\n\nThe declarations and implementations below specify arguments, return types, defaults, permission checks, limits, and errors. SDK adapters translate raw hosted calls to portable clients. See [SDKs](/plugins/reference/sdk-typescript) and [Errors](/plugins/reference/troubleshooting).",
+    "patterns": ["@host:Cache"]
+  },
+  {
+    "id": "host-frontend",
+    "title": "Frontend stream tickets",
+    "group": "Host services",
+    "body": "Mint a scoped, short-lived URL for one of your own kind items. The authenticated viewer must see its library. Embed this URL in the protocol response; Ether serves the bytes without proxying through your plugin. Raw hosted spelling is streamURL; the TypeScript SDK uses streamUrl.\n\n```ts\nconst url = ether.frontend.streamURL(\"item-ref\");\n```\n\nThe declarations and implementations below specify arguments, return types, defaults, permission checks, limits, and errors. SDK adapters translate raw hosted calls to portable clients. See [SDKs](/plugins/reference/sdk-typescript) and [Errors](/plugins/reference/troubleshooting).",
+    "patterns": ["@host:StreamURL"]
+  },
+  {
+    "id": "host-folders",
+    "title": "Storage & folders",
+    "group": "Host services",
+    "body": "Hosted only. Requires folders: read and a live owner-picked root. Paths are relative to the root. Traversal, symlink escapes and revoked grants fail. list/stat return metadata, never contents. hash returns size, Unix modTime, crc32, md5, sha1. Above 256 MiB use hashStart/hashPoll/hashCancel. Only requested files are hashed; unchanged files reuse the guarded digest cache. One active job per plugin, two process-wide; jobs yield while reading and abort if the file changes. See the full kinds guide for job lifecycle and revocation.\n\n```ts\nconst job = ether.folders.hashStart(\"picked-root\", \"album.flac\");\nconst status = ether.folders.hashPoll(job.id);\n// Poll later until done, canceled, or error; never busy-loop.\n// ether.folders.hashCancel(job.id);\n```\n\nThe declarations and implementations below specify arguments, return types, defaults, permission checks, limits, and errors. SDK adapters translate raw hosted calls to portable clients. See [SDKs](/plugins/reference/sdk-typescript) and [Errors](/plugins/reference/troubleshooting).",
+    "patterns": ["@host:Folders|FolderHash", "internal/plugins/hash_jobs.go"]
+  },
+  {
+    "id": "host-notify",
+    "title": "Owner notices",
+    "group": "Host services",
+    "body": "Posts a console notice, limited to five per hour. It does not send through a notification-channel plugin. Read errors and avoid repeated notices on a playback or progress path.\n\n```ts\nether.notify.owner(\"New recordings are ready\");\n```\n\nThe declarations and implementations below specify arguments, return types, defaults, permission checks, limits, and errors. SDK adapters translate raw hosted calls to portable clients. See [SDKs](/plugins/reference/sdk-typescript) and [Errors](/plugins/reference/troubleshooting).",
+    "patterns": ["@host:Notify"]
+  },
+  {
+    "id": "host-log",
+    "title": "Logs & abort",
+    "group": "Host services",
+    "body": "Use structured SDK logs or hosted ether.log for bounded diagnostics. Host logs are redacted and rate limited, but do not send secrets in the first place. abort throws a classified aborted fault. Hot-path code has only log and abort.\n\n```ts\nether.log(\"Refreshing one page\");\n// ether.abort(\"Missing required metadata\");\n```\n\nThe declarations and implementations below specify arguments, return types, defaults, permission checks, limits, and errors. SDK adapters translate raw hosted calls to portable clients. See [SDKs](/plugins/reference/sdk-typescript) and [Errors](/plugins/reference/troubleshooting).",
+    "patterns": ["@host:Log"]
+  },
+  {
+    "id": "all-contract",
+    "title": "All generated declarations",
+    "group": "SDKs & examples",
+    "body": "This index includes every generated declaration, schema field table, runtime binding, SDK source, guide and example. Use search to jump to a specific identifier. For a guided path, start with [Getting started](/plugins/reference/getting-started).",
+    "patterns": [""]
+  }
+]

@@ -681,6 +681,14 @@ func isExtra(p string) bool {
 // ChooseFile picks the main video file of a torrent: for a target episode
 // the largest file whose name matches it, else the largest video.
 func ChooseFile(files []File, target *core.ReleaseTarget) (File, error) {
+	if target != nil && target.Season == 0 && target.AddonSpecialEpisode > 0 {
+		copy := *target
+		copy.Episode = target.AddonSpecialEpisode
+		target = &copy
+	}
+	if f, ok := sourceNamedFile(files, target); ok {
+		return f, nil
+	}
 	var videos []File
 	identityMismatch := false
 	for _, f := range files {
@@ -696,13 +704,24 @@ func ChooseFile(files []File, target *core.ReleaseTarget) (File, error) {
 		if identityMismatch {
 			// The torrent may be correct for a different series. A mismatch
 			// must never permanently blacklist it for that title as well.
-			return File{}, fmt.Errorf("debrid: different series or episode title: %w", core.ErrNotAvailable)
+			return File{}, fmt.Errorf("debrid: different series or episode title: %w", core.ErrWrongContent)
 		}
-		return File{}, errNoVideo
+		return File{}, fmt.Errorf("%w (%s)", errNoVideo, torrentFileSummary(files))
 	}
 	sort.SliceStable(videos, func(i, j int) bool { return videos[i].Size > videos[j].Size })
 	if target == nil || target.Episode <= 0 {
 		return videos[0], nil
+	}
+	if target.Season == 0 {
+		for _, f := range videos {
+			base := path.Base(strings.ReplaceAll(f.Path, "\\", "/"))
+			info := releaseparse.Parse(base)
+			if releaseparse.EpisodeMatches(info, 0, target.Episode) ||
+				(len(info.Seasons) == 0 && len(info.Episodes) == 0 && len(info.AbsoluteEpisodes) == 0 && releaseparse.SpecialTitleEvidence(base, target.EpisodeTitle, target.ShowTitles...)) {
+				return f, nil
+			}
+		}
+		return File{}, fmt.Errorf("debrid: no verified special S00E%02d: %w", target.Episode, core.ErrWrongContent)
 	}
 	// Pass 1: explicit season + episode match on base name, or on full path
 	// when the base name carries no episode number of its own.
@@ -769,7 +788,65 @@ func ChooseFile(files []File, target *core.ReleaseTarget) (File, error) {
 			return videos[0], nil
 		}
 	}
-	return File{}, fmt.Errorf("debrid: no file for S%02dE%02d in torrent: %w", target.Season, target.Episode, errNoVideo)
+	return File{}, fmt.Errorf("debrid: no file for S%02dE%02d in torrent (%s): %w", target.Season, target.Episode, torrentFileSummary(files), core.ErrWrongContent)
+}
+
+// sourceNamedFile accepts a unique basename hint only after the normal identity
+// checks. Numbered files still go through the regular selector so the hint
+// cannot override episode, absolute, season, or cour numbering.
+func sourceNamedFile(files []File, target *core.ReleaseTarget) (File, bool) {
+	if target == nil || target.Episode <= 0 || target.FileName == "" {
+		return File{}, false
+	}
+	basename := func(p string) string {
+		p = path.Base(strings.ReplaceAll(p, "\\", "/"))
+		if isVideo(p) {
+			p = strings.TrimSuffix(p, path.Ext(p))
+		}
+		return p
+	}
+	var match File
+	count := 0
+	for _, f := range files {
+		if isVideo(f.Path) && !isExtra(f.Path) && f.Size > 0 && strings.EqualFold(basename(f.Path), basename(target.FileName)) {
+			match = f
+			count++
+		}
+	}
+	if count != 1 || !fileCourMatchesTarget(match.Path, target) || !fileIdentityMatches(match, target) {
+		return File{}, false
+	}
+	info := releaseparse.Parse(path.Base(strings.ReplaceAll(match.Path, "\\", "/")))
+	if len(info.Seasons) > 0 && !slices.Contains(info.Seasons, target.Season) {
+		return File{}, false
+	}
+	if len(info.Episodes) > 0 || len(info.AbsoluteEpisodes) > 0 || len(info.Seasons) > 0 || namesOtherClassicEpisode(match.Path, target.Season, target.Episode) {
+		copyTarget := *target
+		copyTarget.FileName = "" // avoid applying the hint again
+		_, err := ChooseFile([]File{match}, &copyTarget)
+		return match, err == nil
+	}
+	// Even a title-only file must not contradict an explicitly named season
+	// folder. A collection folder with several seasons supplies no such proof.
+	full := releaseparse.Parse(strings.NewReplacer("/", " ", "\\", " ").Replace(match.Path))
+	if len(full.Seasons) == 1 && full.Seasons[0] != target.Season {
+		return File{}, false
+	}
+	return match, true
+}
+
+// torrentFileSummary bounds diagnostics regardless of the torrent's size.
+func torrentFileSummary(files []File) string {
+	names := make([]string, 0, min(5, len(files)))
+	for _, f := range files[:min(5, len(files))] {
+		name := path.Base(strings.ReplaceAll(f.Path, "\\", "/"))
+		runes := []rune(name)
+		if len(runes) > 160 {
+			name = string(runes[:160]) + "…"
+		}
+		names = append(names, fmt.Sprintf("%q", name))
+	}
+	return fmt.Sprintf("%d files: %s", len(files), strings.Join(names, ", "))
 }
 
 // fileCourMatchesTarget applies to every selection path, including classic
@@ -802,7 +879,7 @@ func chosenFileMatchesTarget(filePath string, target *core.ReleaseTarget) bool {
 	if target == nil || target.Episode <= 0 || filePath == "" {
 		return true
 	}
-	if classicPackEpisodeMatches(filePath, target.Season, target.Episode) {
+	if target.Season != 0 && classicPackEpisodeMatches(filePath, target.Season, target.Episode) {
 		return true
 	}
 	_, err := ChooseFile([]File{{Path: filePath, Size: 1}}, target)
@@ -860,8 +937,13 @@ func fileIdentityMatches(f File, target *core.ReleaseTarget) bool {
 	if idConflict {
 		return false
 	}
+	if target.Season == 0 && target.Episode > 0 {
+		if !releaseparse.SpecialMatches(f.Path, target.EpisodeTitle, target.SpecialTitles, target.ShowTitles) {
+			return false
+		}
+	}
 	full := strings.NewReplacer("/", " ", "\\", " ").Replace(f.Path)
 	info := releaseparse.Parse(full)
 	year := releaseparse.EpisodeSeriesYear(full, info.Year)
-	return releaseparse.SeriesYearMatches(year, target.ShowYear) && (year != 0 || idMatch || releaseparse.EpisodeTitleMatches(path.Base(strings.ReplaceAll(f.Path, "\\", "/")), target.EpisodeTitle))
+	return releaseparse.SeriesYearMatches(year, target.ShowYear) && (target.Season == 0 || year != 0 || idMatch || releaseparse.EpisodeTitleMatches(path.Base(strings.ReplaceAll(f.Path, "\\", "/")), target.EpisodeTitle))
 }

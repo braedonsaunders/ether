@@ -966,7 +966,7 @@ func (m *Manager) prepareOwnedWithin(ctx context.Context, wait time.Duration, us
 	}
 	if f == nil {
 		parent := context.WithoutCancel(ctx)
-		if core.IsBackgroundAnalysis(ctx) {
+		if core.IsBackgroundAnalysis(ctx) || caps.BroadcastBitrateKbps > 0 {
 			parent = ctx
 		}
 		wctx, cancel := context.WithTimeout(parent, m.opts.PrepareTimeout)
@@ -1002,7 +1002,11 @@ func (m *Manager) prepareOwnedWithin(ctx context.Context, wait time.Duration, us
 	case <-ctx.Done():
 		m.mu.Lock()
 		if f.waiters--; f.waiters == 0 && !f.detached {
-			m.abandonFlightLocked(fk, f)
+			if caps.BroadcastBitrateKbps > 0 {
+				m.cancelFlightLocked(fk, f)
+			} else {
+				m.abandonFlightLocked(fk, f)
+			}
 		}
 		m.mu.Unlock()
 		return nil, f.sources, ctx.Err()
