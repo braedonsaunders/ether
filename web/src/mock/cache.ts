@@ -2,7 +2,10 @@ import type { CacheSnapshot } from "../pages/cache/Cache";
 import type { EtherConfig } from "../lib/types";
 
 /** Offline-only fixtures used by the preview and UI tests. */
-export function createCacheMock(restartRequired = false) {
+export function createCacheMock(
+  restartRequired = false,
+  titleName?: (key: number) => string | undefined,
+) {
   const GiB = 1024 ** 3;
   const releases: CacheSnapshot["releases"] = [
     {
@@ -207,6 +210,29 @@ export function createCacheMock(restartRequired = false) {
           },
         } satisfies CacheSnapshot,
       };
+    if (seg[1] === "warming") {
+      if (method === "GET")
+        return {
+          status: 200,
+          body: {
+            titles: (cfg.cache.keepWarmTitles ?? []).map((key) => ({
+              key,
+              title: titleName?.(key) ?? "Arrival",
+            })),
+            speculative: cfg.cache.speculativeWarming !== "off",
+          },
+        };
+      if (method === "POST") {
+        const b = body as { key?: number; pinned?: boolean; speculative?: boolean };
+        if (b.key && b.pinned !== undefined)
+          cfg.cache.keepWarmTitles = b.pinned
+            ? [...new Set([...(cfg.cache.keepWarmTitles ?? []), b.key])]
+            : (cfg.cache.keepWarmTitles ?? []).filter((k) => k !== b.key);
+        if (b.speculative !== undefined)
+          cfg.cache.speculativeWarming = b.speculative ? "on" : "off";
+        return { status: 204, body: null };
+      }
+    }
     if (method === "POST" && seg[1] === "pin") {
       const b = body as { releaseId: string; pinned: boolean };
       const r = releases.find((r) => r.ReleaseID === b.releaseId);

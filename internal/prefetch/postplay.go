@@ -17,8 +17,8 @@ import (
 // resolving and pulling the opening bytes like next-episode prefetch —
 // so the 10-second post-play countdown launches instantly. Ordinary
 // episodes keep the existing next-episode path (Up Next), and the two
-// never warm the same ending twice: nextEpisode skips season finales
-// while this is enabled.
+// can warm different titles at a season boundary; continuation retains its
+// own preparation budget so a recommendation cannot suppress the next episode.
 //
 // The trigger point is the earlier of duration−3m and the credits marker
 // start (the first non-final credits marker when stingers split the

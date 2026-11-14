@@ -323,8 +323,11 @@ type Cache struct {
 	RetentionDays      int    `json:"retentionDays,omitempty"`
 	ReplayBoostHours   int    `json:"replayBoostHours,omitempty"`
 	DisableSpeculation bool   `json:"disableSpeculation,omitempty"`
-	DetailWarmup       string `json:"detailWarmup,omitempty"` // empty/on or off
-	DetailBytes        int64  `json:"detailBytes,omitempty"`  // zero warms 40s of source media, capped at 256 MiB
+	// SpeculativeWarming off limits automatic warming to recent viewing, watchlist events and owner pins.
+	SpeculativeWarming string           `json:"speculativeWarming,omitempty"`
+	KeepWarmTitles     []core.RatingKey `json:"keepWarmTitles,omitempty"`
+	DetailWarmup       string           `json:"detailWarmup,omitempty"` // empty/on or off
+	DetailBytes        int64            `json:"detailBytes,omitempty"`  // zero warms 40s of source media, capped at 256 MiB
 	// PlaybackReadAheadMinutes is how many minutes of the title being played
 	// Usenet streaming keeps downloaded to the cache ahead of the viewer:
 	// 0 is off, nil is DefaultPlaybackReadAheadMinutes.

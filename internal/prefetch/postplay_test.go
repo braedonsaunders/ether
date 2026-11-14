@@ -188,7 +188,7 @@ func TestCreditsTriggerSelection(t *testing.T) {
 }
 
 // Episodes: a mid-season episode leaves warming to next-episode prefetch;
-// a season finale uses the hook queue and next-episode prefetch stands down.
+// a season finale keeps the next season opener alongside the hook queue.
 func TestPostPlayEpisodeVsFinale(t *testing.T) {
 	f := newPPFixture(t, true, nil, nil)
 	dur := 50 * time.Minute
@@ -204,19 +204,13 @@ func TestPostPlayEpisodeVsFinale(t *testing.T) {
 	f.wait(t)
 	f.p.OnTimeline(user, epFinale, dur-2*time.Minute, dur, "playing")
 	f.wait(t)
-	if calls := f.warmer.got(); len(calls) != 2 || calls[1].key != pickKey {
-		t.Fatalf("finale prewarm = %+v, want the hook pick after the next episode", calls)
+	calls := f.warmer.got()
+	got := map[core.RatingKey]bool{}
+	for _, call := range calls {
+		got[call.key] = true
 	}
-	// Next-episode prefetch prepared ep2 for ep1, but must not resolve
-	// the season opener for the finale (no double prefetch).
-	resolved := map[core.RatingKey]bool{}
-	f.resolver.mu.Lock()
-	for _, c := range f.resolver.calls {
-		resolved[c.Title.Key] = true
-	}
-	f.resolver.mu.Unlock()
-	if resolved[epNextSzn] {
-		t.Error("next-episode prefetch warmed the season opener alongside the hook queue")
+	if len(calls) != 3 || !got[ep2] || !got[epNextSzn] || !got[pickKey] {
+		t.Fatalf("finale must keep the next season opener: %+v", calls)
 	}
 }
 

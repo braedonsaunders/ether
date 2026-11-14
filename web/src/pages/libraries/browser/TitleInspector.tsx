@@ -1,3 +1,4 @@
+import { WarmingControls } from "../../cache/WarmingControls";
 import { PanelSlots, PluginActionMenu } from "../../../viewspec/slots/Slots";
 import { Badge, Button, Spinner, SubtabNav } from "@braedonsaunders/appkit-ui";
 import { useState, type ReactNode } from "react";
@@ -115,6 +116,11 @@ export function TitleInspector({
         ) : undefined
       }
     >
+      {title && (isShow || isMovie) ? (
+        <div className="px-5 pt-4">
+          <WarmingControls titleKey={title.key} />
+        </div>
+      ) : null}
       {watchlistAction ? <div className="px-5 pt-4">{watchlistAction}</div> : null}
       {state.error ? (
         <ErrorPanel className="m-5" error={state.error} onRetry={() => void state.reload()} />

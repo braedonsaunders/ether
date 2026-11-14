@@ -175,7 +175,7 @@ func (s *Service) newEpisodeForSet(ctx context.Context, cfg Settings, userID int
 			return err
 		}
 	}
-	if cfg.Prewarm && s.o.Engine != nil {
+	if !s.o.ManagedWarming && cfg.Prewarm && s.o.Engine != nil {
 		if e := s.prewarm(ctx, res); e != nil {
 			s.o.Logger.Debug("watchlist: prewarm new episode", "episode", episode.Key, "err", e)
 		}

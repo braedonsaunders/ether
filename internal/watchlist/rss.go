@@ -757,6 +757,9 @@ func (s *Service) replaceHouseholdFeedSnapshotWithAuthors(ctx context.Context, s
 		if err != nil {
 			return 0, err
 		}
+		if err := queueWarmAdd(ctx, tx, householdUserID, t.Key, added); err != nil {
+			return 0, err
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO watchlist_items(user_id,item_key,source,title,added) VALUES(?,?,?,?,?) ON CONFLICT(user_id,item_key,source) DO UPDATE SET title=excluded.title`, householdUserID, t.Key, source, string(raw), added); err != nil {
 			return 0, err
 		}
@@ -871,6 +874,9 @@ func (s *Service) replaceOwnerFeedSnapshot(ctx context.Context, source string, o
 			}
 			raw, err := json.Marshal(t)
 			if err != nil {
+				return 0, err
+			}
+			if err := queueWarmAdd(ctx, tx, owner.ID, t.Key, added); err != nil {
 				return 0, err
 			}
 			if _, err := tx.ExecContext(ctx, `INSERT INTO watchlist_items(user_id,item_key,source,title,added) VALUES(?,?,?,?,?) ON CONFLICT(user_id,item_key,source) DO UPDATE SET title=excluded.title`, owner.ID, t.Key, source, string(raw), added); err != nil {
