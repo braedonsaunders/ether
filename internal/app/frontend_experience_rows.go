@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -263,5 +264,74 @@ func (a *App) experienceHomeFallback(ctx context.Context, req frontend.RowReques
 	for _, entry := range excluded {
 		keys = append(keys, entry.Key)
 	}
+	if req.HomeFallbackOnly {
+		return a.experienceHeroFallback(ctx, req, libraries, keys)
+	}
 	return experience.ColdHomeRows(ctx, req.Viewer, libraries, visibility, req.Limit, keys, a.catalog.Browse)
+}
+
+// experienceHeroFallback reads only the remaining slots, with art and policy
+// selected before LIMIT. The row service applies owner layout and receipts.
+func (a *App) experienceHeroFallback(ctx context.Context, req frontend.RowRequest, libraries []experience.Library, excluded []core.RatingKey) ([]frontend.Row, error) {
+	ctx = core.WithCatalogViewer(ctx, req.Viewer)
+	excluded = append(append([]core.RatingKey(nil), excluded...), req.ExcludeItems...)
+	remaining := min(max(req.Limit, 1), 6)
+	var rows []frontend.Row
+	type source struct {
+		library  experience.Library
+		trending bool
+	}
+	sources := map[string]source{}
+	candidates := []core.NeutralHomeRow{}
+	for _, trending := range []bool{true, false} {
+		for _, library := range libraries {
+			if !experience.SectionAllowed(req.Viewer, library.ID) {
+				continue
+			}
+			kind, purpose := "trending", frontend.RowRecommendation
+			if !trending {
+				kind, purpose = "recently-added", frontend.RowRecentlyAdded
+			}
+			id := "vela.hero." + kind + "." + strconv.Itoa(library.ID)
+			sources[id] = source{library: library, trending: trending}
+			candidates = append(candidates, core.NeutralHomeRow{ID: id, Kind: kind, Purpose: purpose, Type: library.Type, ItemCount: remaining})
+		}
+	}
+	// Apply owner source controls before spending slots or querying a hidden
+	// source, so a disabled trending row can still fill from recent releases.
+	situation, _ := ctx.Value(experienceSituationKey{}).(core.HomeSituation)
+	if situation.Now.IsZero() {
+		situation = situationFor(req)
+	}
+	allowed, err := a.personalize.FinalizeNeutralHomeFill(ctx, req.Viewer, situation, "home", candidates)
+	if err != nil {
+		return nil, err
+	}
+	for _, candidate := range allowed {
+		if remaining == 0 {
+			break
+		}
+		source := sources[candidate.ID]
+		filter := core.Filter{Type: source.library.Type, KnownAddedDate: true, MaxContentRating: req.Viewer.MaxContentRating, ExcludeKeys: excluded}
+		if a.availability != nil {
+			filter, err = a.availability.PagingFilter(ctx, filter)
+			if err != nil {
+				return nil, err
+			}
+		}
+		items, err := a.catalog.HeroCandidates(ctx, filter, remaining, source.trending)
+		if err != nil {
+			return nil, err
+		}
+		row := frontend.Row{ID: candidate.ID, Kind: candidate.Kind, Purpose: candidate.Purpose, Title: candidate.Kind}
+		for n := range items {
+			row.Entries = append(row.Entries, frontend.RowEntry{Kind: frontend.RowEntryTitle, Title: &items[n]})
+			excluded = append(excluded, items[n].Key)
+		}
+		remaining -= len(items)
+		if len(items) > 0 {
+			rows = append(rows, row)
+		}
+	}
+	return rows, nil
 }

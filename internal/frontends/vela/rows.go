@@ -60,7 +60,7 @@ func (i *instance) readRowToken(r *http.Request, v *frontend.Viewer, token strin
 		return c, frontend.ErrRowViewStale
 	}
 	b, e = i.seal.Open(nil, b[:i.seal.NonceSize()], b[i.seal.NonceSize():], []byte("vela-row"))
-	if e != nil || json.Unmarshal(b, &c) != nil || c.Expires < time.Now().Unix() || c.Scope != i.cursorScope(r, v) || c.Offset < 0 || c.Offset > 10000 || len(c.Exclude) > 5 {
+	if e != nil || json.Unmarshal(b, &c) != nil || c.Expires < time.Now().Unix() || c.Scope != i.cursorScope(r, v) || c.Offset < 0 || c.Offset > 10000 || len(c.Exclude) > 6 {
 		return c, frontend.ErrRowViewStale
 	}
 	for _, id := range c.Exclude {

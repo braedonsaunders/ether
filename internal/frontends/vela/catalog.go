@@ -102,17 +102,17 @@ func (i *instance) titles(r *http.Request, v *frontend.Viewer, token string, ts 
 	}
 	return out, nil
 }
-func (i *instance) home(r *http.Request, v *frontend.Viewer, token string) ([]object, bool, error) {
-	rows, more, err := i.homeVisit(r, v, token, false)
+func (i *instance) home(r *http.Request, v *frontend.Viewer, token string, sources ...map[string]heroSource) ([]object, bool, error) {
+	rows, more, err := i.homeVisit(r, v, token, false, sources...)
 	if errors.Is(err, frontend.ErrRowViewStale) && r.PathValue("id") == "" && r.URL.Query().Get("cursor") == "" {
 		// A first page starts a visit; stale cached manifests are a server
 		// assembly concern. Refresh once, retaining strict old-cursor rejection.
-		return i.homeVisit(r, v, token, true)
+		return i.homeVisit(r, v, token, true, sources...)
 	}
 	return rows, more, err
 }
 
-func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, refresh bool) ([]object, bool, error) {
+func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, refresh bool, sources ...map[string]heroSource) ([]object, bool, error) {
 	placement := frontend.Placement(r.URL.Query().Get("placement"))
 	if placement == "" {
 		placement = frontend.PlacementHome
@@ -154,6 +154,8 @@ func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, 
 		}
 		row.Title = meta.Title
 		row.Purpose = meta.Purpose
+		row.Kind = meta.Kind
+		row.Layout = meta.Layout
 		row.Style = meta.Layout.Style
 		row.PreviewOnFocus = meta.Layout.PreviewOnFocus
 		rows = append(rows, row)
@@ -177,6 +179,8 @@ func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, 
 			}
 			row.Title = view.Title
 			row.Purpose = view.Purpose
+			row.Kind = view.Kind
+			row.Layout = view.Layout
 			row.Style = view.Layout.Style
 			row.PreviewOnFocus = view.Layout.PreviewOnFocus
 			rows = append(rows, row)
@@ -194,6 +198,9 @@ func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, 
 	}
 	out := []object{}
 	for _, row := range rows {
+		if len(sources) > 0 {
+			sources[0][row.ID] = heroSource{kind: row.Kind, pinned: row.Layout.Always}
+		}
 		ts := []frontend.Title{}
 		for _, e := range row.Entries {
 			if e.Kind == frontend.RowEntryTitle && e.Title != nil {
@@ -244,7 +251,7 @@ func (i *instance) homeVisit(r *http.Request, v *frontend.Viewer, token string, 
 			for _, entry := range entries {
 				if entry["kind"] == "title" {
 					if title, ok := entry["title"].(object); ok {
-						if id, _ := title["id"].(string); omitted[id] {
+						if omitted[heroFamily(title)] {
 							continue
 						}
 					}
@@ -280,17 +287,28 @@ func (i *instance) bootstrap(w http.ResponseWriter, r *http.Request) {
 		fail(w, e)
 		return
 	}
-	rows, _, e := i.home(r, v, t)
+	sources := map[string]heroSource{}
+	rows, _, e := i.home(r, v, t, sources)
 	if e != nil {
 		fail(w, e)
 		return
 	}
-	heroes, shelves := heroesFromRows(rows)
+	heroes, shelves := heroesFromRows(rows, sources)
+	if len(heroes) < 6 {
+		fill, err := i.heroFallback(r, v, t, heroes, sources)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		if len(fill) > 0 {
+			heroes, shelves = heroesFromRows(append(rows, fill...), sources)
+		}
+	}
 	out := object{"viewer": viewerWire(v), "capabilities": i.capabilities(), "defaultSkinId": "default", "rows": shelves}
 	if len(heroes) > 0 {
 		ids := make([]string, 0, len(heroes))
 		for _, hero := range heroes {
-			ids = append(ids, hero["title"].(object)["id"].(string))
+			ids = append(ids, heroFamily(hero["title"].(object)))
 		}
 		for _, shelf := range shelves {
 			if token, ok := shelf["nextCursor"].(string); ok && token != "" {

@@ -144,12 +144,16 @@ type Row struct {
 	Collection core.RatingKey
 }
 type RowRequest struct {
-	Viewer    *core.Viewer
-	Device    core.Device
-	Placement Placement
-	ViewID    string
-	Item      core.RatingKey
-	Limit     int
+	// HomeFallbackOnly requests a bounded, indexed hero fill through the normal
+	// policy, owner layout and receipt pipeline. It is internal to Home.
+	HomeFallbackOnly bool
+	ExcludeItems     []core.RatingKey
+	Viewer           *core.Viewer
+	Device           core.Device
+	Placement        Placement
+	ViewID           string
+	Item             core.RatingKey
+	Limit            int
 	// Purpose asks for one row. The zero value still returns the whole placement.
 	Purpose RowPurpose
 }

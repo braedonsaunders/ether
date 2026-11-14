@@ -61,6 +61,9 @@ func (s *RowsService) rows(ctx context.Context, req frontend.RowRequest, protoco
 	if req.Viewer == nil || req.Device.ID == "" || protocol == "" || !s.d.Active(ctx, req.Viewer) {
 		return nil, errors.New("experience: invalid row viewer")
 	}
+	if req.HomeFallbackOnly && (protocol != "vela" || req.Placement != frontend.PlacementHome || req.Purpose != "" || req.ViewID != "" || req.Item != 0 || req.Limit < 1 || req.Limit > 6 || len(req.ExcludeItems) > 6) {
+		return nil, core.ErrNotFound
+	}
 	limit := req.Limit
 	if limit <= 0 {
 		limit = 50
@@ -71,7 +74,11 @@ func (s *RowsService) rows(ctx context.Context, req frontend.RowRequest, protoco
 	for {
 		sourceReq := req
 		sourceReq.Limit = fetch
-		candidates, e := s.d.Source.Rows(ctx, sourceReq)
+		var candidates []frontend.Row
+		var e error
+		if !req.HomeFallbackOnly {
+			candidates, e = s.d.Source.Rows(ctx, sourceReq)
+		}
 		if e != nil {
 			return nil, e
 		}
@@ -238,7 +245,7 @@ func (s *RowsService) appendHomeFallback(ctx context.Context, req frontend.RowRe
 		return out, nil
 	}
 	for _, row := range out {
-		if row.Purpose != frontend.RowContinue && row.Purpose != frontend.RowNextUp {
+		if !req.HomeFallbackOnly && row.Purpose != frontend.RowContinue && row.Purpose != frontend.RowNextUp {
 			return out, nil
 		}
 	}

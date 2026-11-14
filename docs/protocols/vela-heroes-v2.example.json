@@ -1,0 +1,184 @@
+{
+  "heroes": [
+    {
+      "title": {
+        "id": "000000000000000100038d7ea4c68001",
+        "kind": "movie",
+        "name": "Example 1",
+        "summary": "",
+        "genres": [],
+        "artwork": [
+          {
+            "id": "example-backdrop-1",
+            "kind": "backdrop",
+            "tag": "example",
+            "sizes": [
+              {
+                "width": 0,
+                "height": 0,
+                "url": "/vela/v0/images/REPLACE_WITH_VIEWER_SCOPED_CAPABILITY_1?w=0"
+              }
+            ]
+          }
+        ]
+      },
+      "receiptToken": "REPLACE_WITH_REAL_ISSUED_RECEIPT_1",
+      "reason": "resume",
+      "action": {
+        "kind": "resume",
+        "titleId": "000000000000000100038d7ea4c68001",
+        "positionSeconds": 123.25
+      },
+      "previewOnFocus": true
+    },
+    {
+      "title": {
+        "id": "0000000000000001000e35faceb4f113",
+        "kind": "episode",
+        "name": "Example 2",
+        "summary": "",
+        "genres": [],
+        "artwork": [
+          {
+            "id": "example-backdrop-2",
+            "kind": "backdrop",
+            "tag": "example",
+            "sizes": [
+              {
+                "width": 0,
+                "height": 0,
+                "url": "/vela/v0/images/REPLACE_WITH_VIEWER_SCOPED_CAPABILITY_2?w=0"
+              }
+            ]
+          }
+        ],
+        "showId": "000000000000000100071afd498d0064",
+        "seasonNumber": 1,
+        "episodeNumber": 3
+      },
+      "receiptToken": "REPLACE_WITH_REAL_ISSUED_RECEIPT_2",
+      "reason": "nextEpisode",
+      "action": {
+        "kind": "play",
+        "titleId": "0000000000000001000e35faceb4f113"
+      }
+    },
+    {
+      "title": {
+        "id": "000000000000000100071afd498d00c8",
+        "kind": "show",
+        "name": "Example 3",
+        "summary": "",
+        "genres": [],
+        "artwork": [
+          {
+            "id": "example-backdrop-3",
+            "kind": "backdrop",
+            "tag": "example",
+            "sizes": [
+              {
+                "width": 0,
+                "height": 0,
+                "url": "/vela/v0/images/REPLACE_WITH_VIEWER_SCOPED_CAPABILITY_3?w=0"
+              }
+            ]
+          }
+        ]
+      },
+      "receiptToken": "REPLACE_WITH_REAL_ISSUED_RECEIPT_3",
+      "reason": "trending",
+      "action": {
+        "kind": "details",
+        "titleId": "000000000000000100071afd498d00c8"
+      }
+    },
+    {
+      "title": {
+        "id": "000000000000000100038d7ea4c68004",
+        "kind": "movie",
+        "name": "Example 4",
+        "summary": "",
+        "genres": [],
+        "artwork": [
+          {
+            "id": "example-backdrop-4",
+            "kind": "backdrop",
+            "tag": "example",
+            "sizes": [
+              {
+                "width": 0,
+                "height": 0,
+                "url": "/vela/v0/images/REPLACE_WITH_VIEWER_SCOPED_CAPABILITY_4?w=0"
+              }
+            ]
+          }
+        ]
+      },
+      "receiptToken": "REPLACE_WITH_REAL_ISSUED_RECEIPT_4",
+      "reason": "forYou",
+      "action": {
+        "kind": "play",
+        "titleId": "000000000000000100038d7ea4c68004"
+      }
+    },
+    {
+      "title": {
+        "id": "000000000000000100038d7ea4c68005",
+        "kind": "movie",
+        "name": "Example 5",
+        "summary": "",
+        "genres": [],
+        "artwork": [
+          {
+            "id": "example-backdrop-5",
+            "kind": "backdrop",
+            "tag": "example",
+            "sizes": [
+              {
+                "width": 0,
+                "height": 0,
+                "url": "/vela/v0/images/REPLACE_WITH_VIEWER_SCOPED_CAPABILITY_5?w=0"
+              }
+            ]
+          }
+        ]
+      },
+      "receiptToken": "REPLACE_WITH_REAL_ISSUED_RECEIPT_5",
+      "reason": "newRelease",
+      "action": {
+        "kind": "play",
+        "titleId": "000000000000000100038d7ea4c68005"
+      }
+    },
+    {
+      "title": {
+        "id": "000000000000000100038d7ea4c68006",
+        "kind": "movie",
+        "name": "Example 6",
+        "summary": "",
+        "genres": [],
+        "artwork": [
+          {
+            "id": "example-backdrop-6",
+            "kind": "backdrop",
+            "tag": "example",
+            "sizes": [
+              {
+                "width": 0,
+                "height": 0,
+                "url": "/vela/v0/images/REPLACE_WITH_VIEWER_SCOPED_CAPABILITY_6?w=0"
+              }
+            ]
+          }
+        ]
+      },
+      "receiptToken": "REPLACE_WITH_REAL_ISSUED_RECEIPT_6",
+      "reason": "trending",
+      "action": {
+        "kind": "play",
+        "titleId": "000000000000000100038d7ea4c68006"
+      }
+    }
+  ],
+  "rows": []
+}

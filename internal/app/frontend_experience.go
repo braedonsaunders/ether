@@ -210,7 +210,11 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 		if !ok {
 			return nil, errors.New("experience: missing situation")
 		}
-		return experience.LayoutRows(ctx, a.personalize, libs, req, sit, rows)
+		var layout core.NeutralHomeLayoutSource = a.personalize
+		if req.HomeFallbackOnly {
+			layout = neutralLayoutFunc(a.personalize.FinalizeNeutralHomeFill)
+		}
+		return experience.LayoutRows(ctx, layout, libs, req, sit, rows)
 	}, Situation: func(ctx context.Context, req frontend.RowRequest) (core.HomeSituation, error) {
 		v, ok := ctx.Value(experienceSituationKey{}).(core.HomeSituation)
 		if !ok {
@@ -1018,7 +1022,7 @@ func (s *surfaceExperience) cachedRows(ctx context.Context, req frontend.RowRequ
 	// Issued rows mint receipts. A cached success would skip that transaction,
 	// so a later bind failure could not roll back and the client would keep
 	// handles whose receipts were never written. Snapshots are safe to reuse.
-	if issue || (req.Placement != frontend.PlacementHome && req.Placement != frontend.PlacementLibrary) {
+	if issue || req.HomeFallbackOnly || (req.Placement != frontend.PlacementHome && req.Placement != frontend.PlacementLibrary) {
 		return s.loadRows(ctx, req, issue)
 	}
 	key, gen := s.rowCacheKey(req)
@@ -1231,4 +1235,10 @@ func (v stepAsideVibe) VibeCollection(ctx context.Context, user *core.User, quer
 		return c, items, ok, err
 	}
 	return c, v.stepAside.FilterAvailable(core.WithCatalogViewer(ctx, user), items), ok, nil
+}
+
+type neutralLayoutFunc func(context.Context, *core.User, core.HomeSituation, string, []core.NeutralHomeRow) ([]core.NeutralHomeRow, error)
+
+func (f neutralLayoutFunc) FinalizeNeutralHome(ctx context.Context, user *core.User, situation core.HomeSituation, section string, rows []core.NeutralHomeRow) ([]core.NeutralHomeRow, error) {
+	return f(ctx, user, situation, section, rows)
 }

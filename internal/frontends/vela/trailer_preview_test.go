@@ -35,7 +35,7 @@ func (f *previewBrokerFake) TrailerPreview(_ context.Context, req frontend.Trail
 // and can never enter feature-film admission or the watch observation path.
 func TestTrailerPreviewIsolation(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
-		heroes, _ := heroesFromRows([]object{{"style": "hero", "previewOnFocus": enabled, "continuation": "exhausted", "items": []object{{"kind": "title", "title": object{"id": "title"}, "receiptToken": "issued"}}}})
+		heroes, _ := heroesFromRows([]object{{"style": "hero", "purpose": frontend.RowRecentlyReleased, "previewOnFocus": enabled, "continuation": "exhausted", "items": []object{{"kind": "title", "title": object{"id": "title", "kind": "movie", "artwork": []object{{"kind": "backdrop", "sizes": []object{{"url": "/signed/title"}}}}}, "receiptToken": "issued"}}}})
 		flag, _ := heroes[0]["previewOnFocus"].(bool)
 		if flag != enabled {
 			t.Fatal("hero lost source row preview opt-in")

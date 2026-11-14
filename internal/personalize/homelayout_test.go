@@ -706,3 +706,20 @@ func TestPreviewLayoutExplainsAbsentAlwaysRows(t *testing.T) {
 		t.Fatalf("filtered_by_availability kind %s = %+v", KindTrending, r)
 	}
 }
+
+func TestNeutralHeroFillRespectsOwnerWithoutShelfMinimum(t *testing.T) {
+	h := newHarness(t, nil)
+	user := &core.User{ID: 1}
+	situation := core.HomeSituation{Now: testNow, Device: core.DeviceTV}
+	candidates := []core.NeutralHomeRow{{ID: "vela.hero.recently-added.1", Kind: KindRecentlyAdded, Items: []core.Title{{Key: core.MovieKey(11), Type: core.TypeMovie}}}}
+	got, err := h.e.FinalizeNeutralHomeFill(context.Background(), user, situation, "home", candidates)
+	if err != nil || len(got) != 1 || len(got[0].Items) != 1 {
+		t.Fatal("shelf minimum discarded open hero slot", got, err)
+	}
+	layout := core.HomeLayout{Global: []core.LayoutPage{{Section: "home", Rows: []core.RowPolicy{{Row: KindRecentlyAdded, Status: "off"}}}}}
+	ctx := context.WithValue(context.Background(), draftLayoutKey{}, layout)
+	got, err = h.e.FinalizeNeutralHomeFill(ctx, user, situation, "home", candidates)
+	if err != nil || len(got) != 0 {
+		t.Fatal("fill bypassed owner source policy", got, err)
+	}
+}

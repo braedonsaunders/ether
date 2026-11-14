@@ -128,6 +128,15 @@ func TestHomeFallbackRunsAfterPolicyAndPreservesPlayback(t *testing.T) {
 	if err != nil || len(rows) != 2 || rows[1].Purpose != frontend.RowRecommendation || calls != 1 {
 		t.Fatalf("plex discovery changed: %+v calls=%d err=%v", rows, calls, err)
 	}
+	req.HomeFallbackOnly = true
+	rows, err = s.Rows(ctx, req, "vela")
+	if err != nil || len(rows) != 1 || rows[0].ID != "added" || calls != 2 || rows[0].Entries[0].Handle == "" {
+		t.Fatal("fill must bypass discovery and issue real entry receipts", rows, calls, err)
+	}
+	req.Placement = frontend.PlacementDetail
+	if _, err := s.Rows(ctx, req, "vela"); err == nil {
+		t.Fatal("Home fill accepted outside Home")
+	}
 }
 
 func TestRankedRowSourceIsNotReassembled(t *testing.T) {

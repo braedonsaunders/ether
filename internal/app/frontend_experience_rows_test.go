@@ -46,8 +46,8 @@ func TestExperienceHomeFallbackUsesVisibleLibrariesAndReleaseOrder(t *testing.T)
 	newerReleased := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
 	olderReleased := time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC)
 	same := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-	newer := core.Title{Key: core.MovieKey(301), Type: core.TypeMovie, Title: "Newer", ContentRating: "G", Released: newerReleased}
-	older := core.Title{Key: core.MovieKey(304), Type: core.TypeMovie, Title: "Older", ContentRating: "G", Released: olderReleased}
+	newer := core.Title{Key: core.MovieKey(301), Type: core.TypeMovie, Title: "Newer", BackdropPath: "/newer.jpg", ContentRating: "G", Released: newerReleased}
+	older := core.Title{Key: core.MovieKey(304), Type: core.TypeMovie, Title: "Older", BackdropPath: "/older.jpg", ContentRating: "G", Released: olderReleased}
 	for _, title := range []core.Title{
 		newer,
 		{Key: core.MovieKey(302), Type: core.TypeMovie, Title: "Excluded", ContentRating: "G", Released: same},
@@ -81,6 +81,10 @@ func TestExperienceHomeFallbackUsesVisibleLibrariesAndReleaseOrder(t *testing.T)
 	}
 	if !rows[0].Entries[0].Title.AddedAt.Equal(newerReleased) || rows[0].Entries[0].Title.AddedAt.Equal(time.Unix(10, 0)) {
 		t.Fatalf("added time = %v, want release %v", rows[0].Entries[0].Title.AddedAt, newerReleased)
+	}
+	rows, err = a.experienceHomeFallback(ctx, frontend.RowRequest{Viewer: viewer, Placement: frontend.PlacementHome, HomeFallbackOnly: true, ExcludeItems: []core.RatingKey{newer.Key}, Limit: 1}, libs, vis)
+	if err != nil || len(rows) != 1 || len(rows[0].Entries) != 1 || rows[0].Entries[0].Title.Key != older.Key {
+		t.Fatal("indexed hero fill lost policy/exclusions", rows, err)
 	}
 }
 
