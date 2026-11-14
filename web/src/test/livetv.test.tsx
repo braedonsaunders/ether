@@ -223,7 +223,7 @@ describe("Live TV studio", () => {
   });
 
   it("builds a virtual channel from a catalogue search and named viewer", async () => {
-    const calls = backend([], (url, init) =>
+    const calls = backend([iptv("seed")], (url, init) =>
       url.endsWith("/livetv/channels") && init?.method === "POST"
         ? { ...JSON.parse(String(init.body)), id: "v1" }
         : undefined,
@@ -252,7 +252,7 @@ describe("Live TV studio", () => {
     const created = body(sent(calls, "POST", /\/livetv\/channels$/)[0]);
     expect(created).toMatchObject({
       name: "Movie night",
-      number: "1",
+      number: "101",
       blocks: [
         {
           sources: [
@@ -347,7 +347,7 @@ describe("Live TV studio", () => {
   });
 
   it("programmes a named block from a collection chosen by name", async () => {
-    const calls = backend();
+    const calls = backend([iptv("seed")]);
     renderLiveTV();
     await waitFor(() => expect(calls.some((c) => c.url.endsWith("/collections"))).toBe(true));
     await newBlankChannel("Family TV");
@@ -369,7 +369,7 @@ describe("Live TV studio", () => {
   });
 
   it("restores the default Start season on blur when the field is cleared", async () => {
-    const calls = backend();
+    const calls = backend([iptv("seed")]);
     renderLiveTV();
     await newBlankChannel("Reruns");
     fireEvent.click(screen.getAllByRole("button", { name: "Add" }).at(-1)!);
@@ -610,7 +610,7 @@ describe("Live TV studio", () => {
   });
 
   it("imports a guide-only XMLTV source", async () => {
-    const calls = backend();
+    const calls = backend([iptv("seed")]);
     renderLiveTV();
     fireEvent.click(await screen.findByRole("button", { name: "Add" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /Guide source/ }));
@@ -711,7 +711,7 @@ describe("Live TV preview player", () => {
 
 describe("Live TV source sign-in", () => {
   it("imports an Xtream Codes source from a server and login", async () => {
-    const calls = backend();
+    const calls = backend([iptv("seed")]);
     renderLiveTV();
     fireEvent.click(await screen.findByRole("button", { name: "Add" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /IPTV source/ }));
@@ -995,7 +995,7 @@ describe("Live TV Stremio plugins", () => {
   it("adds a plugin through the shared drawer, then imports its channels", async () => {
     invalidateRegistry();
     let sources: unknown[] = [];
-    const calls = backend([], (url, init) => {
+    const calls = backend([iptv("seed")], (url, init) => {
       const method = init?.method ?? "GET";
       if (url.includes("/extend/registry")) return { version: 1, descriptors: [addonDescriptor] };
       if (url.endsWith("/plugins/addons/preview"))

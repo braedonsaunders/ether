@@ -258,7 +258,6 @@ func (s *Service) ReconcileEnabled() {
 		s.wg.Add(1)
 		go s.personalLoop()
 	}
-	s.virtualGuide.wake = make(chan struct{}, 1)
 	s.wg.Add(1)
 	go s.virtualGuideLoop()
 	// Channel readiness belongs to the Live TV lifetime: it stops when Live
