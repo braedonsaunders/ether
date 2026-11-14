@@ -80,7 +80,7 @@ func (b *Broker) StartAudioFallback(ctx context.Context, a frontend.SessionAcces
 	if err != nil {
 		return frontend.AudioFallbackResult{}, err
 	}
-	request := core.HLSRequest{SessionID: audioID, ReleaseID: source.SourceReleaseID(), InputURL: b.deps.Playback.InputURL(s.playID), InputLease: lease, Info: info, Decision: decision, StartOffset: position, Protocol: core.ProtocolHLS}
+	request := core.HLSRequest{SessionID: audioID, ReleaseID: source.SourceReleaseID(), InputURL: b.deps.Playback.InputURL(s.playID), InputLease: lease, Info: info, Decision: decision, StartOffset: position, SegmentDuration: transcode.AudioFallbackSegmentDuration, Protocol: core.ProtocolHLS}
 	hs, err := b.deps.Transcoder.StartHLS(context.WithoutCancel(ctx), request)
 	if err != nil || hs == nil {
 		if lease != nil {

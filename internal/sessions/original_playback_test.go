@@ -11,6 +11,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
 type originalAudioTranscoder struct {
@@ -101,7 +102,7 @@ func TestOriginalPlaybackNegotiationAndGeneration(t *testing.T) {
 		t.Fatalf("audio %+v %v", audio, err)
 	}
 	req := tc.requests[0]
-	if len(req.Info.Streams) != 1 || req.Info.Streams[0].Type != "audio" || req.Decision.AudioStream != 4 || !req.Decision.VideoCopy || req.Decision.AudioCopy || req.StartOffset != 33*time.Second {
+	if len(req.Info.Streams) != 1 || req.Info.Streams[0].Type != "audio" || req.Decision.AudioStream != 4 || !req.Decision.VideoCopy || req.Decision.AudioCopy || req.StartOffset != 33*time.Second || req.SegmentDuration != transcode.AudioFallbackSegmentDuration {
 		t.Fatalf("audio crossed video/track boundary: %+v", req)
 	}
 	currentPath, err := broker.StartStream(ctx, access, session.ID, frontend.StreamRequest{Format: frontend.StreamDirect})
