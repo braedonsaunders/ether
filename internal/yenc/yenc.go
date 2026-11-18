@@ -134,6 +134,10 @@ func fieldCRC(f map[string]string, k string) (uint32, bool, error) {
 	return uint32(n), true, nil
 }
 
+// maxPlausibleFile bounds a =ypart extent that contradicts =ybegin size, so
+// an obfuscated (or hostile) header cannot announce an absurd file length.
+const maxPlausibleFile = 1 << 40
+
 // ParseBegin parses a "=ybegin ..." line.
 func ParseBegin(line []byte) (Header, error) {
 	var h Header
@@ -190,7 +194,14 @@ func ParsePart(line []byte, h *Header) error {
 		return fmt.Errorf("%w: =ypart begin=%d end=%d", ErrMalformed, begin, end)
 	}
 	if h.Size > 0 && end > h.Size {
-		return fmt.Errorf("%w: =ypart end %d beyond size %d", ErrMalformed, end, h.Size)
+		// Some obfuscating uploaders randomise =ybegin size, name and total on
+		// every article of a post while keeping =ypart begin/end truthful.
+		// The extents are what place bytes, so prefer them and drop the
+		// contradictory metadata instead of rejecting a good article.
+		if end > maxPlausibleFile {
+			return fmt.Errorf("%w: =ypart end %d beyond size %d", ErrMalformed, end, h.Size)
+		}
+		h.Size, h.Total, h.Name = 0, 0, ""
 	}
 	h.Begin, h.End, h.Multipart = begin, end, true
 	return nil

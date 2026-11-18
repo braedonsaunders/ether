@@ -404,3 +404,52 @@ func TestDecodeLineInPlace(t *testing.T) {
 		}
 	}
 }
+
+// Some uploaders randomise =ybegin size, name and total on every article of
+// a post while =ypart begin/end stay truthful. When those extents run past the
+// announced size the size is demonstrably the wrong field, so the extents must
+// win instead of the article being rejected as malformed. (A size that is
+// merely too small to be believable is caught later, against the article's
+// decoded length, where that length is known.)
+func TestParsePartKeepsExtentsWhenSizeContradicts(t *testing.T) {
+	h, err := ParseBegin([]byte("=ybegin part=1 total=829 size=10888513 line=128 name=Q0bFusc4ted"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ParsePart([]byte("=ypart begin=1 end=200000000"), &h); err != nil {
+		t.Fatalf("contradicting size rejected a good article: %v", err)
+	}
+	if !h.Multipart || h.Begin != 1 || h.End != 200000000 {
+		t.Fatalf("extents not preserved: %+v", h)
+	}
+	if h.PartSize() != 200000000 {
+		t.Fatalf("part size %d, want 200000000", h.PartSize())
+	}
+	if h.Size != 0 || h.Total != 0 || h.Name != "" {
+		t.Fatalf("contradicting metadata survived: %+v", h)
+	}
+
+	// An extent beyond any plausible file is still refused, so a hostile
+	// header cannot announce an absurd length.
+	big, err := ParseBegin([]byte("=ybegin size=1000 name=x"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ParsePart([]byte("=ypart begin=1 end=1099511627777"), &big); !errors.Is(err, ErrMalformed) {
+		t.Fatalf("absurd extent accepted: %v", err)
+	}
+}
+
+// A consistent multipart header keeps the metadata the extents agree with.
+func TestParsePartKeepsConsistentMetadata(t *testing.T) {
+	h, err := ParseBegin([]byte("=ybegin part=1 total=4 size=3000000 line=128 name=real.mkv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ParsePart([]byte("=ypart begin=1 end=768000"), &h); err != nil {
+		t.Fatal(err)
+	}
+	if h.Size != 3000000 || h.Total != 4 || h.Name != "real.mkv" {
+		t.Fatalf("consistent metadata dropped: %+v", h)
+	}
+}

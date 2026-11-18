@@ -432,6 +432,14 @@ func (e *Engine) normalize(pf *postedFile, i int, data []byte, part core.Article
 	// offset 0 nor poisons pf.Size() with one segment's byte count.
 	perSegSingle := pf.numSlots() > 1 && part.Part == 1 && part.Total == 1 && part.Begin == 1 && part.End == int64(len(data)) && part.FileSize <= part.End
 	seg := &segData{fileSize: part.FileSize, total: part.Total, name: part.Name}
+	if !perSegSingle && part.FileSize > 0 && part.Total > 0 && len(data) > 0 &&
+		part.FileSize < int64(len(data))*int64(part.Total)/2 {
+		// =ybegin size and total contradict the bytes this article actually
+		// carries: obfuscating uploaders randomise size, name and total on
+		// every article while =ypart begin/end stay truthful. The extents
+		// place the bytes, so drop the contradictory metadata.
+		seg.fileSize, seg.total, seg.name = 0, 0, ""
+	}
 	if !perSegSingle && part.Begin >= 1 && part.End >= part.Begin {
 		seg.begin = part.Begin - 1
 		want := part.End - part.Begin + 1
