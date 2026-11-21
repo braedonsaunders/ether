@@ -674,8 +674,8 @@ func interactiveDetailWaitClient(pr *Request) bool {
 	}
 	switch strings.ToLower(strings.TrimSpace(pr.Product)) {
 	case "plex web", "plex for xbox", "plex", "plex htpc",
-		"plex for windows", "plex for mac", "plex for linux",
-		"plezy", "infuse":
+		"plex htpc for windows", "plex htpc for mac", "plex htpc for linux",
+		"plex for windows", "plex for mac", "plex for linux":
 		return true
 	}
 	return strings.EqualFold(pr.Platform, "Xbox")
@@ -760,9 +760,11 @@ func (s *Server) warmDetail(ctx context.Context, pr *Request, t *frontend.Title)
 	}
 	if waiter, ok := s.playback().(frontend.WarmProbeWaiter); ok {
 		budget := detailWarmWaitBudget
-		if !pr.detailWaitUntil.IsZero() {
-			budget = min(budget, time.Until(pr.detailWaitUntil)-detailVariantReserve)
+		remaining := time.Until(pr.detailWaitUntil)
+		if interactiveDetailWaitClient(pr) {
+			remaining -= detailVariantReserve
 		}
+		budget = min(budget, remaining)
 		if budget > 0 {
 			waiter.WaitWarmProbe(ctx, pr.User, caps, t.Key, budget)
 		}
@@ -1667,7 +1669,7 @@ func (s *Server) scheduleDetailWarm(ctx context.Context, pr *Request, t *fronten
 	if _, _, ok := s.resumedTracks(ctx, pr, t); ok {
 		return
 	}
-	if plexMobileOrTVBedrockClient(pr) {
+	if plexMobileOrTVBedrockClient(pr) || (interactiveDetailWaitClient(pr) && !s.detailBurst(pr, t.Key)) {
 		// These Plex clients build their subtitle picker from the first
 		// response. The playback manager permits this wait only for an
 		// already resolved/cached source, never a fresh search.
