@@ -949,17 +949,17 @@ func TestViewersPlexImportAllResolvesPlexUsersAndBatchesSync(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("expected 2 items, got %+v", items)
 	}
-	if items[0]["id"].(float64) != 501 || items[0]["inviteUrl"] != nil {
+	if items[0]["id"].(float64) != 501 || items[0]["inviteUrl"] != nil || items[0]["sharedPlex"] != true {
 		t.Fatalf("expected Sakib Talukder imported as viewer 501 without inviteUrl, got %+v", items[0])
 	}
-	if items[1]["inviteUrl"] == nil || items[1]["inviteUrl"] == "" {
-		t.Fatalf("expected Kids Room to fall back to invite viewer, got %+v", items[1])
+	if items[1]["status"] != "skipped" || items[1]["reason"] != "ineligible_plex_account" || items[1]["inviteUrl"] != nil {
+		t.Fatalf("expected Kids Room skipped as ineligible_plex_account without inviteUrl, got %+v", items[1])
 	}
 	if legacyShares != 0 {
 		t.Fatalf("expected SharePlexViewer not called during bulk import when SharePlexViewerNoSync is set, got %d", legacyShares)
 	}
-	if len(batchShares) != 2 || batchShares[0].userID != 703916194 || batchShares[0].target != "sakib@example.com" {
-		t.Fatalf("expected first batch share with PlexID 703916194 and email, got %+v", batchShares)
+	if len(batchShares) != 1 || batchShares[0].userID != 703916194 || batchShares[0].target != "sakib@example.com" {
+		t.Fatalf("expected 1 batch share with PlexID 703916194 and email, got %+v", batchShares)
 	}
 	if len(ensured) != 1 || ensured[0].PlexID != 703916194 || ensured[0].Email != "sakib@example.com" {
 		t.Fatalf("expected EnsurePlexFriend called for Sakib, got %+v", ensured)
@@ -1270,6 +1270,7 @@ func TestViewersPlexCandidatesClassifiesPlexRelations(t *testing.T) {
 				{ID: 1002, Name: "Alice Shared", Owner: false, UserID: 0},
 				{ID: 1003, Name: "dsabelag", Owner: false, UserID: 0},
 				{ID: 1004, Name: "Community Pal", Owner: false, UserID: 0},
+				{ID: 1005, Name: "NoEmailActive", Owner: false, UserID: 0},
 				{ID: 143639010, Name: "Patricson Poliard", Owner: false, UserID: 0},
 			},
 		},
@@ -1293,6 +1294,7 @@ func TestViewersPlexCandidatesClassifiesPlexRelations(t *testing.T) {
 					PlexID:        1002,
 					Username:      "alice99",
 					Title:         "Alice Shared",
+					Email:         "alice@example.com",
 					AcceptedShare: true,
 					Friend:        true,
 					Servers:       []string{"ether-mid", "pms-mid"},
@@ -1301,6 +1303,7 @@ func TestViewersPlexCandidatesClassifiesPlexRelations(t *testing.T) {
 					PlexID:         1003,
 					Username:       "dsabelag",
 					Title:          "dsabelag",
+					Email:          "dsabelag@example.com",
 					PendingShare:   true,
 					PendingServers: []string{"ether-mid"},
 				},
@@ -1308,8 +1311,17 @@ func TestViewersPlexCandidatesClassifiesPlexRelations(t *testing.T) {
 					PlexID:          1004,
 					Username:        "compal",
 					FriendlyName:    "Community Pal",
+					Email:           "compal@example.com",
 					Friend:          true,
 					CommunityFriend: true,
+				},
+				{
+					PlexID:        1005,
+					Username:      "noemail",
+					Title:         "NoEmailActive",
+					Email:         "",
+					AcceptedShare: true,
+					Servers:       []string{"ether-mid"},
 				},
 			}, nil
 		},
@@ -1330,8 +1342,8 @@ func TestViewersPlexCandidatesClassifiesPlexRelations(t *testing.T) {
 	if err := json.Unmarshal(res.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if len(out) != 1 || out[0].PlexDirectoryTotal != 4 || len(out[0].Accounts) != 6 {
-		t.Fatalf("unexpected server candidate payload: %+v", out)
+	if len(out) != 1 || out[0].PlexDirectoryTotal != 5 || out[0].FilteredOutCount != 5 || len(out[0].Accounts) != 2 {
+		t.Fatalf("expected only Owner + Alice Shared with FilteredOutCount=5, got %+v", out)
 	}
 
 	byID := make(map[int64]admin.PlexCandidateAccount, len(out[0].Accounts))
@@ -1342,22 +1354,9 @@ func TestViewersPlexCandidatesClassifiesPlexRelations(t *testing.T) {
 	if got := byID[1]; got.PlexRelation != "owner" || !slices.Equal(got.PlexSources, []string{"owner"}) {
 		t.Fatalf("unexpected owner classification: %+v", got)
 	}
-	if got := byID[1001]; got.PlexRelation != "home" || got.PlexUsername != "kidshome" || !slices.Contains(got.PlexSources, "home") {
-		t.Fatalf("unexpected home classification: %+v", got)
-	}
 	if got := byID[1002]; got.PlexRelation != "shared" || got.PlexUsername != "alice99" ||
 		!slices.Contains(got.PlexSources, "ether_share") || !slices.Contains(got.PlexSources, "pms_share") || !slices.Contains(got.PlexSources, "friend") {
 		t.Fatalf("unexpected shared classification: %+v", got)
-	}
-	if got := byID[1003]; got.PlexRelation != "pending" || !slices.Contains(got.PlexSources, "pending_invite") {
-		t.Fatalf("unexpected pending classification: %+v", got)
-	}
-	if got := byID[1004]; got.PlexRelation != "friend" || got.PlexUsername != "compal" ||
-		!slices.Contains(got.PlexSources, "community_friend") || !slices.Contains(got.PlexSources, "friend") {
-		t.Fatalf("unexpected friend classification: %+v", got)
-	}
-	if got := byID[143639010]; got.PlexRelation != "historical" || !slices.Equal(got.PlexSources, []string{"pms_history"}) || got.PlexUsername != "" {
-		t.Fatalf("unexpected historical classification: %+v", got)
 	}
 }
 
@@ -1377,6 +1376,7 @@ func TestViewersPlexImportBlocksCrossIDMismatchAndBatchesEnrichment(t *testing.T
 		accounts: map[int64][]plexwatch.PMSAccount{
 			10: {
 				{ID: 691541141, Name: "Marc", Owner: false, UserID: 0},
+				{ID: 1005, Name: "NoEmailUser", Owner: false, UserID: 0},
 				{ID: 143639010, Name: "Patricson Poliard", Owner: false, UserID: 0},
 			},
 		},
@@ -1388,7 +1388,6 @@ func TestViewersPlexImportBlocksCrossIDMismatchAndBatchesEnrichment(t *testing.T
 	}
 	var (
 		listCalls        int
-		sharedPatricson  bool
 		shares           []shareCall
 		ensured          []plextv.SharedUser
 		nextViewerID     int64 = 900
@@ -1402,18 +1401,18 @@ func TestViewersPlexImportBlocksCrossIDMismatchAndBatchesEnrichment(t *testing.T
 		Invites:      invites,
 		ListPlexUsers: func(ctx context.Context) ([]plextv.SharedUser, error) {
 			listCalls++
-			users := []plextv.SharedUser{
-				{PlexID: 8242, Username: "marc", Title: "marc", Friend: true},
-			}
-			if sharedPatricson {
-				users = append(users, plextv.SharedUser{
-					PlexID:   143639010,
-					Username: "patricsonpoliard",
-					Title:    "Patricson Poliard",
-					Email:    "pat@example.com",
-				})
-			}
-			return users, nil
+			return []plextv.SharedUser{
+				{PlexID: 8242, Username: "marc", Title: "marc", Email: "stranger@example.com", AcceptedShare: true, Friend: true},
+				{PlexID: 1005, Username: "noemailuser", Title: "NoEmailUser", Email: "", AcceptedShare: true},
+				{
+					PlexID:        143639010,
+					Username:      "patricsonpoliard",
+					Title:         "Patricson Poliard",
+					Email:         "pat@example.com",
+					AcceptedShare: true,
+					Servers:       []string{"ether-mid"},
+				},
+			}, nil
 		},
 		EnsurePlexFriend: func(ctx context.Context, u plextv.SharedUser) (int64, error) {
 			ensured = append(ensured, u)
@@ -1426,16 +1425,13 @@ func TestViewersPlexImportBlocksCrossIDMismatchAndBatchesEnrichment(t *testing.T
 		},
 		SharePlexViewerNoSync: func(ctx context.Context, usernameOrEmail string, userID int64) error {
 			shares = append(shares, shareCall{target: usernameOrEmail, userID: userID})
-			if userID == 143639010 {
-				sharedPatricson = true
-			}
 			return nil
 		},
 		RefreshViewers: func(ctx context.Context) error { return nil },
 	}
 	h := admin.NewHandler(deps)
 
-	// 1. Candidates endpoint must NOT match Marc (691541141) to unrelated Plex user marc (8242).
+	// 1. Candidates endpoint returns ONLY ActiveEmailUser (143639010); filters Marc (cross-ID mismatch) & NoEmailUser.
 	rc := req(http.MethodGet, "/ether/api/viewers/plex-candidates", "")
 	rc.Header.Set("X-Plex-Token", ownerToken)
 	resc := serve(h, rc)
@@ -1446,8 +1442,8 @@ func TestViewersPlexImportBlocksCrossIDMismatchAndBatchesEnrichment(t *testing.T
 	if err := json.Unmarshal(resc.Body.Bytes(), &cands); err != nil {
 		t.Fatal(err)
 	}
-	if got := cands[0].Accounts[0]; got.PlexRelation != "historical" || got.PlexUsername != "" {
-		t.Fatalf("expected Marc (691541141) to remain historical rather than matching marc (8242), got %+v", got)
+	if len(cands) != 1 || cands[0].FilteredOutCount != 2 || len(cands[0].Accounts) != 1 || cands[0].Accounts[0].AccountID != 143639010 {
+		t.Fatalf("expected only ActiveEmailUser 143639010 with FilteredOutCount=2, got %+v", cands)
 	}
 
 	// Reset call counter before testing bulk import.
@@ -1459,22 +1455,21 @@ func TestViewersPlexImportBlocksCrossIDMismatchAndBatchesEnrichment(t *testing.T
 		t.Fatalf("expected 200 OK, got %d: %s", res.Code, res.Body)
 	}
 
-	if listCalls != 2 {
-		t.Fatalf("expected ListPlexUsers called exactly twice (initial + post-loop enrichment), got %d", listCalls)
+	var bulk []map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &bulk); err != nil {
+		t.Fatal(err)
 	}
-	if len(shares) != 2 || shares[0].userID != 691541141 || shares[1].userID != 143639010 {
-		t.Fatalf("unexpected SharePlexViewerNoSync calls: %+v", shares)
+	if len(bulk) != 3 || bulk[0]["reason"] != "ineligible_plex_account" || bulk[1]["reason"] != "ineligible_plex_account" || bulk[2]["status"] != "imported" {
+		t.Fatalf("unexpected bulk import results: %+v", bulk)
 	}
-	var backfilledPatricson bool
-	for _, u := range ensured {
-		if u.PlexID == 8242 {
-			t.Fatalf("must never ensure wrong PlexID 8242: %+v", ensured)
-		}
-		if u.PlexID == 143639010 && u.Username == "patricsonpoliard" && u.Email == "pat@example.com" {
-			backfilledPatricson = true
-		}
+
+	if listCalls != 1 {
+		t.Fatalf("expected ListPlexUsers called once for initial resolution, got %d", listCalls)
 	}
-	if !backfilledPatricson {
-		t.Fatalf("expected post-loop enrichment to backfill patricsonpoliard via EnsurePlexFriend, got %+v", ensured)
+	if len(shares) != 1 || shares[0].userID != 143639010 || shares[0].target != "pat@example.com" {
+		t.Fatalf("expected only active email user 143639010 shared, got %+v", shares)
+	}
+	if len(ensured) != 1 || ensured[0].PlexID != 143639010 || ensured[0].Email != "pat@example.com" {
+		t.Fatalf("expected only 143639010 ensured, got %+v", ensured)
 	}
 }

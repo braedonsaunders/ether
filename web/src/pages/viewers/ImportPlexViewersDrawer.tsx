@@ -46,6 +46,7 @@ export interface PlexCandidateServer {
   serverId: number;
   serverName: string;
   plexDirectoryTotal?: number;
+  filteredOutCount?: number;
   accounts: PlexCandidateAccount[];
 }
 
@@ -298,6 +299,7 @@ export function ImportPlexViewersDrawer({
   };
 
   const hasPlexBreakdown = allAccounts.some((a) => Boolean(a.plexRelation));
+  const filteredOutTotal = servers.reduce((sum, s) => sum + (s.filteredOutCount ?? 0), 0);
   const directoryTotal = servers.reduce((max, s) => Math.max(max, s.plexDirectoryTotal ?? 0), 0);
   const plexMatchedCount = allAccounts.filter(
     (a) => a.plexRelation && a.plexRelation !== "historical",
@@ -596,6 +598,14 @@ export function ImportPlexViewersDrawer({
                     : t("Import all ({count})", { count: unmappedAccounts.length })}
                 </Button>
               </div>
+              {filteredOutTotal > 0 ? (
+                <p className="text-xs text-fg-muted">
+                  {t(
+                    "Showing active Plex accounts with an email ({count} inactive or without email hidden)",
+                    { count: filteredOutTotal },
+                  )}
+                </p>
+              ) : null}
               {hasPlexBreakdown ? (
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/60 pt-2.5 text-xs text-fg-muted">
                   <span>

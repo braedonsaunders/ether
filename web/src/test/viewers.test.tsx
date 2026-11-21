@@ -751,6 +751,7 @@ it("splits Plex import drawer by Plex.tv relationship and history", async () => 
       serverId: 1,
       serverName: "One.Plex",
       plexDirectoryTotal: 65,
+      filteredOutCount: 47,
       accounts: [
         {
           serverId: 1,
@@ -841,6 +842,11 @@ it("splits Plex import drawer by Plex.tv relationship and history", async () => 
 
   expect(
     await within(drawer).findByText("Plex.tv matched: 5 (65 in directory)", {}, WAIT),
+  ).toBeInTheDocument();
+  expect(
+    within(drawer).getByText(
+      "Showing active Plex accounts with an email (47 inactive or without email hidden)",
+    ),
   ).toBeInTheDocument();
   expect(within(drawer).getByText("PMS history only: 1")).toBeInTheDocument();
 
