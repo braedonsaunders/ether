@@ -674,13 +674,22 @@ const detailVariantReserve = 500 * time.Millisecond
 // Android and iOS Bedrock players populate their subtitle picker from the
 // pre-play detail/queue item and do not re-fetch metadata once playback starts.
 func startDetailPageWait(pr *Request) {
+	if pr == nil || libraryToolClient(pr) {
+		return
+	}
 	if plexMobileOrTVBedrockClient(pr) {
 		// Android builds its subtitle picker from this response; a cold
 		// probe needs the measured four-second allowance. Persisted probes
 		// return before any wait in warmDetail.
 		pr.detailWaitUntil = time.Now().Add(4 * time.Second)
-	} else if pr != nil && (strings.EqualFold(pr.Platform, "tvOS") || strings.EqualFold(pr.Product, "Plex for Apple TV")) {
+	} else if strings.EqualFold(pr.Platform, "tvOS") || strings.EqualFold(pr.Product, "Plex for Apple TV") {
 		pr.detailWaitUntil = time.Now().Add(250 * time.Millisecond)
+	} else if !strings.EqualFold(pr.Platform, "Tizen") && !strings.EqualFold(pr.Product, "Plex for Samsung") {
+		// Interactive clients (Plex Web, Plex for Xbox, Plex Desktop, etc.)
+		// get a bounded wait budget so warmDetail can wait for WaitWarmProbe
+		// and return real tracks on first detail open. Samsung refreshes
+		// detail repeatedly while browsing and is excluded.
+		pr.detailWaitUntil = time.Now().Add(detailWarmWaitBudget)
 	}
 }
 

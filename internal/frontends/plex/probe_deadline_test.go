@@ -77,3 +77,78 @@ func TestProbeDetailTracksKeepsVersionReserve(t *testing.T) {
 		}
 	})
 }
+
+type warmProbeWaitPlayback struct {
+	core.Playback
+	waitCalled bool
+	waitBudget time.Duration
+}
+
+func (p *warmProbeWaitPlayback) WaitWarmProbe(_ context.Context, _ *core.User, _ core.ClientCaps, _ core.RatingKey, budget time.Duration) (core.MediaInfo, bool) {
+	p.waitCalled = true
+	p.waitBudget = budget
+	return core.MediaInfo{}, false
+}
+
+func (p *warmProbeWaitPlayback) WarmProbeInfo(*core.User, core.ClientCaps, core.RatingKey) (core.MediaInfo, bool) {
+	return core.MediaInfo{}, false
+}
+
+func (p *warmProbeWaitPlayback) Estimate(context.Context, *core.Title, core.ClientCaps) core.MediaInfo {
+	return core.MediaInfo{Estimated: true}
+}
+
+func TestStartDetailPageWaitAndWarmDetail(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	user := ownerUser
+	title := &fightClub
+
+	for _, tc := range []struct {
+		name     string
+		pr       *Request
+		wantWait bool
+	}{
+		{
+			name:     "plex-web",
+			pr:       &Request{User: &user, ClientID: "web-1", Product: "Plex Web", Platform: "Chrome"},
+			wantWait: true,
+		},
+		{
+			name:     "plex-xbox",
+			pr:       &Request{User: &user, ClientID: "xbox-1", Product: "Plex for Xbox", Platform: "Xbox"},
+			wantWait: true,
+		},
+		{
+			name:     "plex-samsung-excluded",
+			pr:       &Request{User: &user, ClientID: "samsung-1", Product: "Plex for Samsung", Platform: "Tizen"},
+			wantWait: false,
+		},
+		{
+			name:     "library-tool-excluded",
+			pr:       &Request{User: &user, ClientID: "tautulli-1", Product: "Tautulli"},
+			wantWait: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pb := &warmProbeWaitPlayback{Playback: f.playback}
+			f.srv.setPlayback(pb)
+
+			startDetailPageWait(tc.pr)
+			if tc.wantWait && tc.pr.detailWaitUntil.IsZero() {
+				t.Fatalf("expected non-zero detailWaitUntil for %s", tc.name)
+			}
+			if !tc.wantWait && !tc.pr.detailWaitUntil.IsZero() {
+				t.Fatalf("expected zero detailWaitUntil for %s, got %s", tc.name, tc.pr.detailWaitUntil)
+			}
+
+			f.srv.warmDetail(context.Background(), tc.pr, title)
+			if pb.waitCalled != tc.wantWait {
+				t.Fatalf("WaitWarmProbe called=%v, want %v", pb.waitCalled, tc.wantWait)
+			}
+			if tc.wantWait && pb.waitBudget <= 0 {
+				t.Fatalf("WaitWarmProbe budget=%s, want > 0", pb.waitBudget)
+			}
+		})
+	}
+}
