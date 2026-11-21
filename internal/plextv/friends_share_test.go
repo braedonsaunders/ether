@@ -460,3 +460,113 @@ func TestShareServerV2ZeroLibrariesUpgradeToAll(t *testing.T) {
 		t.Fatal("expected POST /api/v2/shared_servers/44310104 to be called")
 	}
 }
+
+func TestShareServerV2InvitedIDFallbacks(t *testing.T) {
+	t.Run("retries skipFriendship=false on 422", func(t *testing.T) {
+		var payloads []map[string]any
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodPost && r.URL.Path == "/api/v2/shared_servers":
+				var payload map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Fatal(err)
+				}
+				payloads = append(payloads, payload)
+				if len(payloads) == 1 {
+					w.WriteHeader(http.StatusUnprocessableEntity)
+					_, _ = w.Write([]byte(`{"errors":[{"message":"friendship required"}]}`))
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte(`{"id":9001,"allLibraries":true}`))
+			case r.Method == http.MethodGet && r.URL.Path == "/api/v2/shared_servers/owned/accepted",
+				r.Method == http.MethodGet && r.URL.Path == "/api/v2/shared_servers/invites/owned/pending":
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`[]`))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer srv.Close()
+
+		c, err := New(Options{
+			BaseURL:      srv.URL,
+			Identity:     Identity{ClientIdentifier: "test-mid"},
+			RetryBackoff: time.Millisecond,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := c.ShareServer(context.Background(), "owner-token", "Patricson Poliard", 143639010, nil); err != nil {
+			t.Fatalf("ShareServer failed: %v", err)
+		}
+		if len(payloads) != 2 {
+			t.Fatalf("expected 2 v2 share POSTs, got %d (%+v)", len(payloads), payloads)
+		}
+		if payloads[0]["skipFriendship"] != true || payloads[0]["invitedId"] != float64(143639010) {
+			t.Fatalf("unexpected first payload: %+v", payloads[0])
+		}
+		if payloads[1]["skipFriendship"] != false || payloads[1]["invitedId"] != float64(143639010) {
+			t.Fatalf("unexpected second payload: %+v", payloads[1])
+		}
+		if _, hasEmail := payloads[1]["invitedEmail"]; hasEmail {
+			t.Fatalf("expected no invitedEmail on invitedId retry, got %+v", payloads[1])
+		}
+	})
+
+	t.Run("retries invitedEmail on 404 for non-spaced target", func(t *testing.T) {
+		var payloads []map[string]any
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodPost && r.URL.Path == "/api/v2/shared_servers":
+				var payload map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Fatal(err)
+				}
+				payloads = append(payloads, payload)
+				if len(payloads) == 1 {
+					w.WriteHeader(http.StatusNotFound)
+					_, _ = w.Write([]byte(`{"errors":[{"message":"not found"}]}`))
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte(`{"id":9002,"allLibraries":true}`))
+			case r.Method == http.MethodGet && r.URL.Path == "/api/v2/shared_servers/owned/accepted",
+				r.Method == http.MethodGet && r.URL.Path == "/api/v2/shared_servers/invites/owned/pending":
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`[]`))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer srv.Close()
+
+		c, err := New(Options{
+			BaseURL:      srv.URL,
+			Identity:     Identity{ClientIdentifier: "test-mid"},
+			RetryBackoff: time.Millisecond,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := c.ShareServer(context.Background(), "owner-token", "faysa12", 33483787, nil); err != nil {
+			t.Fatalf("ShareServer failed: %v", err)
+		}
+		if len(payloads) != 2 {
+			t.Fatalf("expected 2 v2 share POSTs, got %d (%+v)", len(payloads), payloads)
+		}
+		if payloads[0]["invitedId"] != float64(33483787) {
+			t.Fatalf("unexpected first payload: %+v", payloads[0])
+		}
+		if payloads[1]["invitedEmail"] != "faysa12" {
+			t.Fatalf("unexpected second payload: %+v", payloads[1])
+		}
+		if _, hasID := payloads[1]["invitedId"]; hasID {
+			t.Fatalf("expected no invitedId on invitedEmail retry, got %+v", payloads[1])
+		}
+	})
+}

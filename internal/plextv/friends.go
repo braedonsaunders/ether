@@ -667,6 +667,41 @@ func (c *Client) resolveFriendByName(ctx context.Context, ownerToken, name strin
 	return 0, ""
 }
 
+func (c *Client) postV2Share(ctx context.Context, ownerToken string, allLibraries bool, sectionIDs []int64, userID int64, usernameOrEmail string, skipFriendship bool) error {
+	payloadV2 := map[string]any{
+		"machineIdentifier": c.id.ClientIdentifier,
+		"allLibraries":      allLibraries,
+		"librarySectionIds": sectionIDs,
+		"skipFriendship":    skipFriendship,
+		"settings": map[string]any{
+			"allowSync":         true,
+			"allowCameraUpload": false,
+			"allowChannels":     false,
+			"filterMovies":      "",
+			"filterTelevision":  "",
+			"filterMusic":       "",
+		},
+	}
+	if userID > 0 {
+		payloadV2["invitedId"] = userID
+	} else {
+		payloadV2["invitedEmail"] = usernameOrEmail
+	}
+	bodyV2, err := json.Marshal(payloadV2)
+	if err != nil {
+		return fmt.Errorf("plextv: marshal share payload: %w", err)
+	}
+	_, err = c.do(ctx, request{
+		method:      http.MethodPost,
+		path:        "/api/v2/shared_servers",
+		token:       ownerToken,
+		body:        bodyV2,
+		contentType: "application/json",
+		accept:      "application/json",
+	})
+	return err
+}
+
 // ShareServer grants usernameOrEmail access to the server's libraries on plex.tv.
 // If sectionIDs is empty, it sets allLibraries: true so all libraries are checked.
 // If userID > 0, it passes invitedId to Plex's modern v2 sharing API with
@@ -706,39 +741,7 @@ func (c *Client) ShareServer(ctx context.Context, ownerToken, usernameOrEmail st
 	}
 
 	// 1. Try modern Plex v2 API
-	payloadV2 := map[string]any{
-		"machineIdentifier": c.id.ClientIdentifier,
-		"allLibraries":      allLibraries,
-		"librarySectionIds": sectionIDs,
-		"skipFriendship":    true,
-		"settings": map[string]any{
-			"allowSync":         true,
-			"allowCameraUpload": false,
-			"allowChannels":     false,
-			"filterMovies":      "",
-			"filterTelevision":  "",
-			"filterMusic":       "",
-		},
-	}
-	if userID > 0 {
-		payloadV2["invitedId"] = userID
-	} else {
-		payloadV2["invitedEmail"] = usernameOrEmail
-	}
-
-	bodyV2, err := json.Marshal(payloadV2)
-	if err != nil {
-		return fmt.Errorf("plextv: marshal share payload: %w", err)
-	}
-
-	_, postV2Err := c.do(ctx, request{
-		method:      http.MethodPost,
-		path:        "/api/v2/shared_servers",
-		token:       ownerToken,
-		body:        bodyV2,
-		contentType: "application/json",
-		accept:      "application/json",
-	})
+	postV2Err := c.postV2Share(ctx, ownerToken, allLibraries, sectionIDs, userID, usernameOrEmail, true)
 	if postV2Err == nil {
 		return nil
 	}
@@ -784,6 +787,20 @@ func (c *Client) ShareServer(ctx context.Context, ownerToken, usernameOrEmail st
 				accept:      "application/json",
 			})
 			if postUpdateErr == nil {
+				return nil
+			}
+		}
+	} else if userID > 0 {
+		var ae *APIError
+		isAPI := errors.As(postV2Err, &ae)
+		if isAPI && (ae.Status == http.StatusBadRequest || ae.Status == http.StatusUnprocessableEntity) {
+			if err := c.postV2Share(ctx, ownerToken, allLibraries, sectionIDs, userID, "", false); err == nil {
+				return nil
+			}
+		}
+		if usernameOrEmail != "" && !strings.Contains(usernameOrEmail, " ") && isAPI &&
+			(ae.Status == http.StatusBadRequest || ae.Status == http.StatusNotFound || ae.Status == http.StatusUnprocessableEntity) {
+			if err := c.postV2Share(ctx, ownerToken, allLibraries, sectionIDs, 0, usernameOrEmail, true); err == nil {
 				return nil
 			}
 		}

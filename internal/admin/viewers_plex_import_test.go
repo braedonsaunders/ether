@@ -1136,3 +1136,119 @@ func TestViewersPlexImportMatchesFriendlyNameAndPostSharePending(t *testing.T) {
 		t.Fatalf("unexpected EnsurePlexFriend calls: %+v", ensured)
 	}
 }
+
+func TestViewersPlexImportFallsBackToGlobalPMSAccountID(t *testing.T) {
+	db := store.OpenTest(t)
+	storeCfg := newStore(t, seededConfig)
+	invites, err := identity.NewInvite(db, time.Hour, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pms := &mockPlexServers{
+		servers: []plexwatch.PMSServer{{ID: 10, Name: "One.Plex"}},
+		accounts: map[int64][]plexwatch.PMSAccount{
+			10: {
+				{ID: 143639010, Name: "Patricson Poliard", Owner: false, UserID: 0},
+				{ID: 42, Name: "Local Kids", Owner: false, UserID: 0},
+			},
+		},
+	}
+
+	type shareCall struct {
+		target string
+		userID int64
+	}
+	var (
+		shares  []shareCall
+		ensured []plextv.SharedUser
+		nextID  int64 = 800
+	)
+	deps := admin.Deps{
+		Config:       storeCfg,
+		IsOwnerToken: storedOwner(storeCfg),
+		PlexServers:  pms,
+		Invites:      invites,
+		EnsurePlexFriend: func(ctx context.Context, u plextv.SharedUser) (int64, error) {
+			ensured = append(ensured, u)
+			nextID++
+			return nextID, nil
+		},
+		SharePlexViewer: func(ctx context.Context, usernameOrEmail string, userID int64) error {
+			shares = append(shares, shareCall{target: usernameOrEmail, userID: userID})
+			return nil
+		},
+		RefreshViewers: func(ctx context.Context) error { return nil },
+	}
+	h := admin.NewHandler(deps)
+
+	// 1. Single import of unresolved spaced account with global PMS ID -> passes userID 143639010 and links via EnsurePlexFriend.
+	r1 := req(http.MethodPost, "/ether/api/viewers/import-plex", `{"serverId":10,"accountId":143639010}`)
+	r1.Header.Set("X-Plex-Token", ownerToken)
+	res1 := serve(h, r1)
+	if res1.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d: %s", res1.Code, res1.Body)
+	}
+	var out1 map[string]any
+	if err := json.Unmarshal(res1.Body.Bytes(), &out1); err != nil {
+		t.Fatal(err)
+	}
+	if out1["id"].(float64) != 801 || out1["inviteUrl"] != "" {
+		t.Fatalf("expected viewer 801 without inviteUrl, got %+v", out1)
+	}
+
+	// 2. Single import of unresolved small-ID account -> passes userID 0 and falls back to local invite viewer.
+	r2 := req(http.MethodPost, "/ether/api/viewers/import-plex", `{"serverId":10,"accountId":42}`)
+	r2.Header.Set("X-Plex-Token", ownerToken)
+	res2 := serve(h, r2)
+	if res2.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d: %s", res2.Code, res2.Body)
+	}
+	var out2 map[string]any
+	if err := json.Unmarshal(res2.Body.Bytes(), &out2); err != nil {
+		t.Fatal(err)
+	}
+	if out2["inviteUrl"] == nil || out2["inviteUrl"] == "" {
+		t.Fatalf("expected local inviteUrl for small account ID 42, got %+v", out2)
+	}
+	if len(shares) != 2 || shares[0].userID != 143639010 || shares[1].userID != 0 {
+		t.Fatalf("unexpected SharePlexViewer calls: %+v", shares)
+	}
+	if len(ensured) != 1 || ensured[0].PlexID != 143639010 || ensured[0].Title != "Patricson Poliard" {
+		t.Fatalf("unexpected EnsurePlexFriend calls: %+v", ensured)
+	}
+
+	// 3. Reset mappings and verify the same fallback behavior via bulk import.
+	pms.mapped = map[int64]plexwatch.PMSMappingInput{}
+	for i := range pms.accounts[10] {
+		pms.accounts[10][i].UserID = 0
+	}
+	shares = nil
+	ensured = nil
+
+	r3 := req(http.MethodPost, "/ether/api/viewers/import-plex/all", "")
+	r3.Header.Set("X-Plex-Token", ownerToken)
+	res3 := serve(h, r3)
+	if res3.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", res3.Code, res3.Body)
+	}
+	var bulk []map[string]any
+	if err := json.Unmarshal(res3.Body.Bytes(), &bulk); err != nil {
+		t.Fatal(err)
+	}
+	if len(bulk) != 2 {
+		t.Fatalf("expected 2 bulk items, got %+v", bulk)
+	}
+	if bulk[0]["id"].(float64) != 802 || bulk[0]["inviteUrl"] != nil {
+		t.Fatalf("expected global ID item linked as 802 without inviteUrl, got %+v", bulk[0])
+	}
+	if bulk[1]["inviteUrl"] == nil || bulk[1]["inviteUrl"] == "" {
+		t.Fatalf("expected small ID item to get local inviteUrl, got %+v", bulk[1])
+	}
+	if len(shares) != 2 || shares[0].userID != 143639010 || shares[1].userID != 0 {
+		t.Fatalf("unexpected bulk SharePlexViewer calls: %+v", shares)
+	}
+	if len(ensured) != 1 || ensured[0].PlexID != 143639010 || ensured[0].Title != "Patricson Poliard" {
+		t.Fatalf("unexpected bulk EnsurePlexFriend calls: %+v", ensured)
+	}
+}
