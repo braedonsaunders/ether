@@ -1360,3 +1360,121 @@ func TestViewersPlexCandidatesClassifiesPlexRelations(t *testing.T) {
 		t.Fatalf("unexpected historical classification: %+v", got)
 	}
 }
+
+func TestViewersPlexImportBlocksCrossIDMismatchAndBatchesEnrichment(t *testing.T) {
+	db := store.OpenTest(t)
+	storeCfg := newStore(t, func(c *config.Config) {
+		seededConfig(c)
+		c.Server.MachineIdentifier = "ether-mid"
+	})
+	invites, err := identity.NewInvite(db, time.Hour, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pms := &mockPlexServers{
+		servers: []plexwatch.PMSServer{{ID: 10, Name: "One.Plex", MachineID: "pms-mid"}},
+		accounts: map[int64][]plexwatch.PMSAccount{
+			10: {
+				{ID: 691541141, Name: "Marc", Owner: false, UserID: 0},
+				{ID: 143639010, Name: "Patricson Poliard", Owner: false, UserID: 0},
+			},
+		},
+	}
+
+	type shareCall struct {
+		target string
+		userID int64
+	}
+	var (
+		listCalls        int
+		sharedPatricson  bool
+		shares           []shareCall
+		ensured          []plextv.SharedUser
+		nextViewerID     int64 = 900
+		viewerIDByPlexID       = map[int64]int64{}
+	)
+
+	deps := admin.Deps{
+		Config:       storeCfg,
+		IsOwnerToken: storedOwner(storeCfg),
+		PlexServers:  pms,
+		Invites:      invites,
+		ListPlexUsers: func(ctx context.Context) ([]plextv.SharedUser, error) {
+			listCalls++
+			users := []plextv.SharedUser{
+				{PlexID: 8242, Username: "marc", Title: "marc", Friend: true},
+			}
+			if sharedPatricson {
+				users = append(users, plextv.SharedUser{
+					PlexID:   143639010,
+					Username: "patricsonpoliard",
+					Title:    "Patricson Poliard",
+					Email:    "pat@example.com",
+				})
+			}
+			return users, nil
+		},
+		EnsurePlexFriend: func(ctx context.Context, u plextv.SharedUser) (int64, error) {
+			ensured = append(ensured, u)
+			if id, ok := viewerIDByPlexID[u.PlexID]; ok {
+				return id, nil
+			}
+			nextViewerID++
+			viewerIDByPlexID[u.PlexID] = nextViewerID
+			return nextViewerID, nil
+		},
+		SharePlexViewerNoSync: func(ctx context.Context, usernameOrEmail string, userID int64) error {
+			shares = append(shares, shareCall{target: usernameOrEmail, userID: userID})
+			if userID == 143639010 {
+				sharedPatricson = true
+			}
+			return nil
+		},
+		RefreshViewers: func(ctx context.Context) error { return nil },
+	}
+	h := admin.NewHandler(deps)
+
+	// 1. Candidates endpoint must NOT match Marc (691541141) to unrelated Plex user marc (8242).
+	rc := req(http.MethodGet, "/ether/api/viewers/plex-candidates", "")
+	rc.Header.Set("X-Plex-Token", ownerToken)
+	resc := serve(h, rc)
+	if resc.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", resc.Code, resc.Body)
+	}
+	var cands []admin.PlexCandidateServer
+	if err := json.Unmarshal(resc.Body.Bytes(), &cands); err != nil {
+		t.Fatal(err)
+	}
+	if got := cands[0].Accounts[0]; got.PlexRelation != "historical" || got.PlexUsername != "" {
+		t.Fatalf("expected Marc (691541141) to remain historical rather than matching marc (8242), got %+v", got)
+	}
+
+	// Reset call counter before testing bulk import.
+	listCalls = 0
+	r := req(http.MethodPost, "/ether/api/viewers/import-plex/all", "")
+	r.Header.Set("X-Plex-Token", ownerToken)
+	res := serve(h, r)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", res.Code, res.Body)
+	}
+
+	if listCalls != 2 {
+		t.Fatalf("expected ListPlexUsers called exactly twice (initial + post-loop enrichment), got %d", listCalls)
+	}
+	if len(shares) != 2 || shares[0].userID != 691541141 || shares[1].userID != 143639010 {
+		t.Fatalf("unexpected SharePlexViewerNoSync calls: %+v", shares)
+	}
+	var backfilledPatricson bool
+	for _, u := range ensured {
+		if u.PlexID == 8242 {
+			t.Fatalf("must never ensure wrong PlexID 8242: %+v", ensured)
+		}
+		if u.PlexID == 143639010 && u.Username == "patricsonpoliard" && u.Email == "pat@example.com" {
+			backfilledPatricson = true
+		}
+	}
+	if !backfilledPatricson {
+		t.Fatalf("expected post-loop enrichment to backfill patricsonpoliard via EnsurePlexFriend, got %+v", ensured)
+	}
+}

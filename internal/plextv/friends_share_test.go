@@ -3,6 +3,7 @@ package plextv
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -522,7 +523,59 @@ func TestShareServerV2InvitedIDFallbacks(t *testing.T) {
 		}
 	})
 
-	t.Run("retries invitedEmail on 404 for non-spaced target", func(t *testing.T) {
+	t.Run("does not fall back to non-email display name when invitedId fails", func(t *testing.T) {
+		var sawUsernameInvite bool
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodPost && r.URL.Path == "/api/v2/shared_servers":
+				var payload map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Fatal(err)
+				}
+				if _, hasEmail := payload["invitedEmail"]; hasEmail {
+					sawUsernameInvite = true
+				}
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"errors":[{"message":"not found"}]}`))
+			case r.Method == http.MethodPost && r.URL.Path == "/api/servers/test-mid/shared_servers":
+				var payload map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Fatal(err)
+				}
+				if ss, ok := payload["shared_server"].(map[string]any); ok {
+					if ss["invited_email"] == "Rose" {
+						sawUsernameInvite = true
+					}
+				}
+				w.WriteHeader(http.StatusNotFound)
+			case r.Method == http.MethodGet && r.URL.Path == "/api/v2/shared_servers/owned/accepted",
+				r.Method == http.MethodGet && r.URL.Path == "/api/v2/shared_servers/invites/owned/pending":
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`[]`))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer srv.Close()
+
+		c, err := New(Options{
+			BaseURL:      srv.URL,
+			Identity:     Identity{ClientIdentifier: "test-mid"},
+			RetryBackoff: time.Millisecond,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := c.ShareServer(context.Background(), "owner-token", "Rose", 568833244, nil); err == nil {
+			t.Fatal("expected error when invitedId 568833244 returns 404")
+		}
+		if sawUsernameInvite {
+			t.Fatal("must not fall back from numeric userID to non-email display name")
+		}
+	})
+
+	t.Run("retries invitedEmail on 404 when target is an email", func(t *testing.T) {
 		var payloads []map[string]any
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {
@@ -559,7 +612,7 @@ func TestShareServerV2InvitedIDFallbacks(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := c.ShareServer(context.Background(), "owner-token", "faysa12", 33483787, nil); err != nil {
+		if err := c.ShareServer(context.Background(), "owner-token", "faysa12@example.com", 33483787, nil); err != nil {
 			t.Fatalf("ShareServer failed: %v", err)
 		}
 		if len(payloads) != 2 {
@@ -568,11 +621,91 @@ func TestShareServerV2InvitedIDFallbacks(t *testing.T) {
 		if payloads[0]["invitedId"] != float64(33483787) {
 			t.Fatalf("unexpected first payload: %+v", payloads[0])
 		}
-		if payloads[1]["invitedEmail"] != "faysa12" {
+		if payloads[1]["invitedEmail"] != "faysa12@example.com" {
 			t.Fatalf("unexpected second payload: %+v", payloads[1])
 		}
 		if _, hasID := payloads[1]["invitedId"]; hasID {
 			t.Fatalf("expected no invitedId on invitedEmail retry, got %+v", payloads[1])
+		}
+	})
+
+	t.Run("retries 429 with Retry-After and recovers", func(t *testing.T) {
+		var attempts atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost && r.URL.Path == "/api/v2/shared_servers" {
+				if attempts.Add(1) == 1 {
+					w.Header().Set("Retry-After", "0")
+					w.WriteHeader(http.StatusTooManyRequests)
+					_, _ = w.Write([]byte(`{"errors":[{"code":1003,"message":"API rate limit exceeded"}]}`))
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte(`{"id":9003,"allLibraries":true}`))
+				return
+			}
+			http.NotFound(w, r)
+		}))
+		defer srv.Close()
+
+		c, err := New(Options{
+			BaseURL:      srv.URL,
+			Identity:     Identity{ClientIdentifier: "test-mid"},
+			RetryBackoff: time.Millisecond,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := c.ShareServer(context.Background(), "owner-token", "friend", 703916194, nil); err != nil {
+			t.Fatalf("ShareServer 429 retry failed: %v", err)
+		}
+		if attempts.Load() != 2 {
+			t.Fatalf("expected 2 POST attempts, got %d", attempts.Load())
+		}
+	})
+
+	t.Run("stops without findV2Share or v1 when 429 persists", func(t *testing.T) {
+		var postCalls atomic.Int32
+		var fallbackCalls atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/v2/shared_servers":
+				postCalls.Add(1)
+				w.Header().Set("Retry-After", "0")
+				w.WriteHeader(http.StatusTooManyRequests)
+				_, _ = w.Write([]byte(`{"errors":[{"code":1003,"message":"API rate limit exceeded"}]}`))
+			case "/api/v2/shared_servers/owned/accepted", "/api/v2/shared_servers/invites/owned/pending", "/api/servers/test-mid/shared_servers":
+				fallbackCalls.Add(1)
+				http.NotFound(w, r)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer srv.Close()
+
+		c, err := New(Options{
+			BaseURL:      srv.URL,
+			Identity:     Identity{ClientIdentifier: "test-mid"},
+			RetryBackoff: time.Millisecond,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		err = c.ShareServer(context.Background(), "owner-token", "friend", 703916194, nil)
+		if err == nil {
+			t.Fatal("expected 429 error")
+		}
+		var ae *APIError
+		if !errors.As(err, &ae) || ae.Status != http.StatusTooManyRequests {
+			t.Fatalf("expected APIError 429, got %v", err)
+		}
+		if postCalls.Load() != 4 {
+			t.Fatalf("expected 4 POST attempts (1 + 3 retries), got %d", postCalls.Load())
+		}
+		if fallbackCalls.Load() != 0 {
+			t.Fatalf("expected no findV2Share or v1 fallback calls after 429, got %d", fallbackCalls.Load())
 		}
 	})
 }

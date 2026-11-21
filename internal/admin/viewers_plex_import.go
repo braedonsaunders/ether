@@ -161,6 +161,9 @@ func resolvePlexUser(acct plexwatch.PMSAccount, plexUsers []plextv.SharedUser) *
 			}
 		}
 	}
+	if acct.ID >= minGlobalPlexAccountID {
+		return nil
+	}
 	target := strings.TrimSpace(acct.Name)
 	if target == "" {
 		return nil
@@ -787,6 +790,7 @@ func (h *Handler) handleImportAllPlexViewers(w http.ResponseWriter, r *http.Requ
 	viewers, _ := h.storedViewers(r.Context())
 	plexUsers := h.listPlexUsers(r.Context())
 	sharedAny := false
+	var needsEnrich []plexwatch.PMSAccount
 
 	for _, srv := range servers {
 		accounts, err := h.deps.PlexServers.Accounts(r.Context(), srv.ID)
@@ -859,7 +863,7 @@ func (h *Handler) handleImportAllPlexViewers(w http.ResponseWriter, r *http.Requ
 						}
 					}
 				}
-				if vID == 0 && resolved == nil && sharedPlex {
+				if vID == 0 && resolved == nil && sharedPlex && shareUserID == 0 {
 					plexUsers = h.listPlexUsers(r.Context())
 					resolved = resolvePlexUser(acct, plexUsers)
 				}
@@ -893,6 +897,7 @@ func (h *Handler) handleImportAllPlexViewers(w http.ResponseWriter, r *http.Requ
 					}); id > 0 {
 						vID = id
 						status = "imported"
+						needsEnrich = append(needsEnrich, acct)
 						if !existed {
 							viewers = append(viewers, ViewerRecord{
 								User: core.User{
@@ -971,6 +976,20 @@ func (h *Handler) handleImportAllPlexViewers(w http.ResponseWriter, r *http.Requ
 	if sharedAny && h.deps.SyncPlexFriends != nil {
 		if err := h.deps.SyncPlexFriends(r.Context()); err != nil {
 			h.log.Warn("sync plex friends error after bulk import", "err", err)
+		}
+	}
+
+	if len(needsEnrich) > 0 && h.deps.EnsurePlexFriend != nil {
+		if enrichedUsers := h.listPlexUsers(r.Context()); len(enrichedUsers) > 0 {
+			for _, acct := range needsEnrich {
+				if u := resolvePlexUser(acct, enrichedUsers); u != nil {
+					friend := *u
+					if strings.TrimSpace(friend.Title) == "" {
+						friend.Title = strings.TrimSpace(friend.FriendlyName)
+					}
+					_, _ = h.deps.EnsurePlexFriend(r.Context(), friend)
+				}
+			}
 		}
 	}
 

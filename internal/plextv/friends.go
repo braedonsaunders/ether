@@ -701,15 +701,42 @@ func (c *Client) postV2Share(ctx context.Context, ownerToken string, allLibrarie
 	if err != nil {
 		return fmt.Errorf("plextv: marshal share payload: %w", err)
 	}
-	_, err = c.do(ctx, request{
-		method:      http.MethodPost,
-		path:        "/api/v2/shared_servers",
-		token:       ownerToken,
-		body:        bodyV2,
-		contentType: "application/json",
-		accept:      "application/json",
-	})
-	return err
+	const maxRateLimitRetries = 3
+	for attempt := 0; ; attempt++ {
+		_, err = c.do(ctx, request{
+			method:      http.MethodPost,
+			path:        "/api/v2/shared_servers",
+			token:       ownerToken,
+			body:        bodyV2,
+			contentType: "application/json",
+			accept:      "application/json",
+		})
+		if err == nil {
+			return nil
+		}
+		var ae *APIError
+		if !errors.As(err, &ae) || ae.Status != http.StatusTooManyRequests || attempt >= maxRateLimitRetries {
+			return err
+		}
+		wait := ae.RetryAfter
+		if wait <= 0 {
+			base := 2 * time.Second
+			if c.backoff > 0 && c.backoff < 50*time.Millisecond {
+				base = c.backoff
+			}
+			wait = base << attempt
+		}
+		if wait > 15*time.Second {
+			wait = 15 * time.Second
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 // ShareServer grants usernameOrEmail access to the server's libraries on plex.tv.
@@ -754,6 +781,10 @@ func (c *Client) ShareServer(ctx context.Context, ownerToken, usernameOrEmail st
 	postV2Err := c.postV2Share(ctx, ownerToken, allLibraries, sectionIDs, userID, usernameOrEmail, true)
 	if postV2Err == nil {
 		return nil
+	}
+	var rateErr *APIError
+	if errors.As(postV2Err, &rateErr) && rateErr.Status == http.StatusTooManyRequests {
+		return postV2Err
 	}
 
 	// If v2 reported already sharing (422 / 400), check existing share via v2.
@@ -808,7 +839,7 @@ func (c *Client) ShareServer(ctx context.Context, ownerToken, usernameOrEmail st
 				return nil
 			}
 		}
-		if usernameOrEmail != "" && !strings.Contains(usernameOrEmail, " ") && isAPI &&
+		if strings.Contains(usernameOrEmail, "@") && !strings.Contains(usernameOrEmail, " ") && isAPI &&
 			(ae.Status == http.StatusBadRequest || ae.Status == http.StatusNotFound || ae.Status == http.StatusUnprocessableEntity) {
 			if err := c.postV2Share(ctx, ownerToken, allLibraries, sectionIDs, 0, usernameOrEmail, true); err == nil {
 				return nil
@@ -823,7 +854,7 @@ func (c *Client) ShareServer(ctx context.Context, ownerToken, usernameOrEmail st
 	}
 
 	v1Target := usernameOrEmail
-	if (v1Target == "" || strings.Contains(v1Target, " ")) && userID > 0 {
+	if userID > 0 && (!strings.Contains(v1Target, "@") || strings.Contains(v1Target, " ")) {
 		v1Target = strconv.FormatInt(userID, 10)
 	}
 
