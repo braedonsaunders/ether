@@ -60,6 +60,22 @@ type SessionSubtitleArtifacts interface {
 	SubtitleFontAttachment(ctx context.Context, access SessionAccess, id string, index int, fontIndex int) (SubtitleFontAttachment, error)
 }
 
+// SubtitleSidecarReadiness reports whether a text subtitle track can be served
+// as a sidecar without reading the whole source: either its text is already
+// extracted, or this client can stream it progressively. It answers a question
+// about cost, not about authorization, and must stay cheap enough to call while
+// a playback plan is assembled.
+//
+// A track that is neither cached nor progressive is still deliverable — the
+// extraction is just proportional to the length of the release. A frontend
+// whose startup path blocks on that fetch can use this to omit the artifact and
+// begin playback without the subtitle instead of stalling. Hosts that do not
+// implement it keep the previous behaviour, and implementations are expected to
+// default to false only when they can prove the read is cheap.
+type SubtitleSidecarReadiness interface {
+	SubtitleSidecarReady(ctx context.Context, access SessionAccess, id string, index int) bool
+}
+
 // IsASSSubtitleCodec reports whether a stream codec identifier names an ASS or
 // SSA text subtitle track.
 func IsASSSubtitleCodec(codec string) bool {

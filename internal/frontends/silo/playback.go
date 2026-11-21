@@ -57,6 +57,18 @@ type startRequest struct {
 	} `json:"client_capabilities"`
 }
 
+// sidecarReady reports whether the artifact for the track at index can be
+// produced without reading the whole source. Hosts that do not implement the
+// predicate answer yes, which preserves the previous behaviour of advertising
+// the sidecar and resolving its availability lazily when the client asks.
+func (i *instance) sidecarReady(ctx context.Context, access frontend.SessionAccess, sessionID string, index int) bool {
+	readiness, ok := i.host.Sessions.(frontend.SubtitleSidecarReadiness)
+	if !ok {
+		return true
+	}
+	return readiness.SubtitleSidecarReady(ctx, access, sessionID, index)
+}
+
 func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	v, _, err := i.deviceViewer(r)
 	if err != nil || v == nil {
@@ -380,30 +392,43 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		}
 		inventory = append(inventory, entry)
 		if track.Index == plan.Decision.SubtitleStream {
-			selected["subtitle"] = map[string]any{"id": trackID, "index": ordinal}
-			if plan.Decision.BurnSubtitles {
+			switch {
+			case plan.Decision.BurnSubtitles:
+				selected["subtitle"] = map[string]any{"id": trackID, "index": ordinal}
 				subtitle["mode"] = "burn_in"
 				subtitle["track_id"] = trackID
-			} else if url, e := entry["url"].(string); e {
-				if preserveTrackASS {
+			default:
+				url, e := entry["url"].(string)
+				if !e {
+					i.stopFailedAdmission(r.Context(), access, session.ID)
+					http.Error(w, "Subtitle unavailable", 503)
+					return
+				}
+				switch {
+				case preserveTrackASS:
+					selected["subtitle"] = map[string]any{"id": trackID, "index": ordinal}
 					subtitle["mode"] = "render"
 					subtitle["track_id"] = trackID
 					subtitle["artifact"] = map[string]any{"url": url, "format": "ass", "mime_type": "text/x-ssa", "timing_origin_seconds": 0}
 					// The artifact endpoint must still validate completeness; startup
 					// cannot claim that authored bytes have already been delivered.
-				} else if requireAuthoredFidelity {
+				case requireAuthoredFidelity:
 					i.stopFailedAdmission(r.Context(), access, session.ID)
 					http.Error(w, "Selected track unavailable", http.StatusUnprocessableEntity)
 					return
-				} else {
+				case !i.sidecarReady(r.Context(), access, session.ID, track.Index):
+					// Producing a sidecar for an embedded track reads the whole
+					// source, and the client fetches the selected subtitle
+					// before it starts media. On a full-length release that
+					// read outlives the client's patience and startup stalls on
+					// it, so begin playback without the subtitle instead. The
+					// track stays in the inventory for a later switch.
+				default:
+					selected["subtitle"] = map[string]any{"id": trackID, "index": ordinal}
 					subtitle["mode"] = "convert"
 					subtitle["track_id"] = trackID
 					subtitle["artifact"] = map[string]any{"url": url, "format": "vtt", "mime_type": "text/vtt", "timing_origin_seconds": 0}
 				}
-			} else {
-				i.stopFailedAdmission(r.Context(), access, session.ID)
-				http.Error(w, "Subtitle unavailable", 503)
-				return
 			}
 		}
 		ordinal++

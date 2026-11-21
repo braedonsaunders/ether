@@ -148,6 +148,58 @@ func (b *Broker) HasAuthoredASSSubtitle(ctx context.Context, a frontend.SessionA
 	return err == nil && len(raw) > 0
 }
 
+var _ frontend.SubtitleSidecarReadiness = (*Broker)(nil)
+
+// SubtitleSidecarReady reports whether serving the track at index is a cache
+// read or a progressive stream rather than an extraction that reads the whole
+// source. It authorizes the same way SubtitleURL does, without registering a
+// serving read, so it stays cheap enough to call while a plan is assembled.
+func (b *Broker) SubtitleSidecarReady(ctx context.Context, a frontend.SessionAccess, id string, index int) bool {
+	if index < 0 {
+		return false
+	}
+	s, viewer, err := b.access(ctx, a, id)
+	if err != nil {
+		return false
+	}
+	if viewer.ID != s.public.ViewerID {
+		viewer, err = b.deps.ActiveViewer(ctx, s.public.ViewerID)
+	}
+	if err != nil || !b.currentMediaPolicy(ctx, viewer, s) {
+		return false
+	}
+	ps, ok := b.deps.Playback.Session(s.playID)
+	if !ok || ps == nil {
+		return false
+	}
+	st, ok := subtitleStream(ps.Info, index)
+	if !ok || transcode.IsImageSubtitle(st.Codec) {
+		return false
+	}
+	// An external track is fetched from the subtitle provider, and a track that
+	// can be streamed progressively is teed as the source is read, so neither
+	// pays for a walk over the whole file here.
+	if st.External {
+		return true
+	}
+	if b.subtitleCached(ctx, s, st) {
+		return true
+	}
+	return b.progressiveSubtitle(s, ps.Info, st)
+}
+
+// subtitleCached reports whether the track's text is already extracted.
+func (b *Broker) subtitleCached(ctx context.Context, s *brokerSession, st core.StreamInfo) bool {
+	cache, ok := b.deps.Transcoder.(interface {
+		CachedSubtitle(context.Context, int, string) ([]byte, bool)
+	})
+	if !ok {
+		return false
+	}
+	_, cached := cache.CachedSubtitle(b.subtitleContext(ctx, s.playID), st.Index, st.Codec)
+	return cached
+}
+
 // ServeASSSubtitle extracts or converts the subtitle stream at index as ASS/SSA.
 // When requireAuthored is true, any missing or truncated authored ASS track
 // fails closed with frontend.ErrSubtitleAuthoringUnavailable instead of
