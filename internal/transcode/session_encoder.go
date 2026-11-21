@@ -586,8 +586,8 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 	// new run publishes its own end.
 	s.endSeg = -1
 	s.deliveredCount = 0
-	runLog.Info("ffmpeg started", "segment", seg, "at", spec.Start, "kind", s.decision.Kind,
-		"videoCopy", s.decision.VideoCopy, "audioCopy", s.decision.AudioCopy, "hw", r.hw)
+	runLog.Info("ffmpeg started", "segment", seg, "at", spec.Start, "track", r.track, "kind", spec.Decision.Kind,
+		"videoCopy", spec.Decision.VideoCopy, "audioCopy", spec.Decision.AudioCopy, "hw", r.hw)
 	if s.traceOn() {
 		if cause == "" {
 			cause = "unspecified"

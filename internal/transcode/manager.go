@@ -1251,6 +1251,16 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 		}
 		s.dash = newDASHState(reps, m.opts.dashURLs, manifestID)
 		s.dash.pms = req.PMSDASH
+		if !req.LiveInput && req.FirstSegmentAt > 0 && req.StartOffset == 0 && segDur > 0 && req.FirstSegmentAt < s.info.Duration {
+			at := int(req.FirstSegmentAt / segDur)
+			if total > 1 && at >= total-1 {
+				at = total - 2
+			}
+			if at > startSeg && at < s.total {
+				startSeg = at
+				s.lastReq = startSeg
+			}
+		}
 	}
 	s.Touch()
 	s.log.Info("transcode session starting", "protocol", proto, "kind", d.Kind, "container", d.Container,

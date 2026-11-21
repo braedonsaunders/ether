@@ -138,7 +138,7 @@ func (s *Session) ServeManifest(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			idle := s.cur == nil || s.cur.finished
-			if idle && !restarted && !complete {
+			if idle && !restarted && !complete && (len(s.rungs) <= 1 || s.info.Duration <= 0) {
 				restarted = true
 				if err := s.startRunForLocked(s.lastReq, s.failures > 0, "dash manifest"); err == nil {
 					idle = false

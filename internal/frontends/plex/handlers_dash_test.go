@@ -306,3 +306,49 @@ func TestStartDASHFailures(t *testing.T) {
 		t.Errorf("non-DASH session not stopped: %v", f2.trans.stopped)
 	}
 }
+
+func TestStartDASHResumeHint(t *testing.T) {
+	headers := []string{
+		"X-Plex-Product", "Plex Web",
+		"X-Plex-Platform", "Chrome",
+		"X-Plex-Client-Profile-Extra", "add-transcode-target(type=videoProfile&context=streaming&protocol=dash&container=mp4&videoCodec=h264&audioCodec=aac)",
+	}
+	cases := []struct {
+		name       string
+		queryExtra string
+		videoCopy  bool
+		wantHint   time.Duration
+		wantOffset time.Duration
+	}{
+		{name: "omitted-copy", videoCopy: true, wantHint: 125 * time.Second},
+		{name: "omitted-transcode", videoCopy: false, wantHint: 125 * time.Second},
+		{name: "explicit-zero", queryExtra: "&offset=0", videoCopy: true, wantHint: 0},
+		{name: "explicit-offset", queryExtra: "&offset=62.5", videoCopy: true, wantHint: 0, wantOffset: 62500 * time.Millisecond},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f, dt := dashFixture()
+			defer f.srv.Close()
+			if !tc.videoCopy {
+				f.trans.decision = core.Decision{Kind: core.DecisionTranscode, VideoCopy: false, VideoCodec: "h264", AudioCopy: false, AudioCodec: "aac", Container: "fmp4"}
+			}
+			f.state.set(ownerUser.ID, core.WatchStatus{Key: fightClub.Key, ViewOffset: 125 * time.Second})
+			startPath := "/video/:/transcode/universal/start.mpd?" + dashQuery + tc.queryExtra
+			f.get(t, decisionPath(startPath), headers...)
+			rec := f.get(t, startPath, headers...)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("start.mpd: %d %s", rec.Code, rec.Body.String())
+			}
+			d := dt.session("web-1")
+			if d == nil {
+				t.Fatal("no DASH session started")
+			}
+			if d.req.FirstSegmentAt != tc.wantHint {
+				t.Fatalf("FirstSegmentAt = %v, want %v", d.req.FirstSegmentAt, tc.wantHint)
+			}
+			if d.req.StartOffset != tc.wantOffset {
+				t.Fatalf("StartOffset = %v, want %v", d.req.StartOffset, tc.wantOffset)
+			}
+		})
+	}
+}

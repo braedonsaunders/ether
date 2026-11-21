@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -155,6 +156,12 @@ func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
 		}
 		s.stopPlexHLS(p.sessionID)
 	}
+	var firstSegmentAt time.Duration
+	if !r.URL.Query().Has("offset") && p.offset == 0 && s.state() != nil {
+		if st, err := s.state().Get(ctx, pr.User.ID, p.key); err == nil {
+			firstSegmentAt = st.ViewOffset
+		}
+	}
 	hs, err := s.startPlexHLS(context.WithoutCancel(ctx), pr.User, ps.ID, p.sessionID, frontend.HLSRequest{
 		SoftSubtitleStream:  sessionSoftSubtitle(entry, startPR, dec),
 		TextSubtitleStreams: s.plexTextTracks(startPR, ps.Info, dec),
@@ -164,6 +171,7 @@ func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
 		Info:                ps.Info,
 		Decision:            dec,
 		StartOffset:         p.offset,
+		FirstSegmentAt:      firstSegmentAt,
 		Protocol:            frontend.ProtocolDASH,
 		PMSDASH:             !strings.EqualFold(strings.TrimSpace(startPR.Product), "Plex Web"),
 	})

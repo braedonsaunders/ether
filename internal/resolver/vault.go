@@ -54,7 +54,10 @@ func (s *Service) libraryCandidates(ctx context.Context, req core.ResolveRequest
 		fingerprints[e.Key] = e.ProfileFP
 	}
 	releases = s.normalizeSearchResults(search, releases)
-	if bypass || core.IndexerPurpose(ctx) == core.IndexerPurposeConsole || len(releases) == 0 || req.Prefer != "" || req.PreferredOnly {
+	if bypass || core.IndexerPurpose(ctx) == core.IndexerPurposeConsole || len(releases) == 0 {
+		return releases, nil, false
+	}
+	if _, slot := parseVersionSlot(req.Prefer); slot {
 		return releases, nil, false
 	}
 	local := Trace{}
@@ -62,24 +65,40 @@ func (s *Service) libraryCandidates(ctx context.Context, req core.ResolveRequest
 	if err != nil || len(ranked) == 0 {
 		return releases, nil, false
 	}
-	best := ranked[0]
-	if !reachesVaultCutoff(best, p) || fingerprints[vault.KeyOf(best.rel)] != fp {
+	pickIdx := 0
+	if req.Prefer != "" {
+		pickIdx = -1
+		for i, c := range ranked {
+			if c.rel.ID == req.Prefer {
+				pickIdx = i
+				break
+			}
+		}
+		if pickIdx < 0 {
+			return releases, nil, false
+		}
+	} else if req.PreferredOnly {
 		return releases, nil, false
+	} else {
+		best := ranked[0]
+		if !reachesVaultCutoff(best, p) || fingerprints[vault.KeyOf(best.rel)] != fp {
+			return releases, nil, false
+		}
 	}
 	play, cancel := context.WithTimeout(ctx, playStartDeadline)
 	defer cancel()
-	i, payload, err := s.validateCandidates(play, ranked[:1], &local, 1)
+	i, payload, err := s.validateCandidates(play, ranked[pickIdx:pickIdx+1], &local, 1)
 	if i < 0 || err != nil {
-		return slices.DeleteFunc(releases, func(r core.Release) bool { return r.ID == best.rel.ID }), nil, true
+		return slices.DeleteFunc(releases, func(r core.Release) bool { return r.ID == ranked[pickIdx].rel.ID }), nil, true
 	}
 	tr.Candidates = local.Candidates
-	tr.Winner = best.rel.ID
+	tr.Winner = ranked[pickIdx].rel.ID
 	if counter, ok := s.vault.(vault.SearchCounter); ok {
-		key := vault.KeyOf(best.rel)
+		key := vault.KeyOf(ranked[pickIdx].rel)
 		s.persistBookkeeping(ctx, func(ctx context.Context) { _ = counter.SearchAvoided(ctx, key) })
 	}
 	tr.Discovery = append(tr.Discovery, DiscoveryTrace{Path: "vault", Count: len(releases)})
-	return nil, s.resolution(req.Title.Key, ranked, i, payload, tr), false
+	return nil, s.resolution(req.Title.Key, ranked, pickIdx, payload, tr), false
 }
 
 func (s *Service) verifyVault(ctx context.Context, key vault.Key) error {
