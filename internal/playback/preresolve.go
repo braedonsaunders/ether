@@ -455,7 +455,7 @@ func (m *Manager) prewarm(requestCtx context.Context, user *core.User, key core.
 			prefetchBytes = bigWarmPrefetchBytes
 		}
 	}
-	if metadata {
+	if cachedMetadata || playProbe {
 		prefetchBytes = 0
 	}
 	if prefetchBytes > maxWarmPrefetchBytes {
@@ -921,7 +921,7 @@ func (m *Manager) prewarm(requestCtx context.Context, user *core.User, key core.
 		if facts.info.Estimated {
 			facts = nil
 		}
-		if !metadata && (automaticReserve || reason == core.PrewarmDetail || reason == core.PrewarmNextEpisode) {
+		if !cachedMetadata && !playProbe && (automaticReserve || reason == core.PrewarmDetail || reason == core.PrewarmNextEpisode) {
 			info := generation.infoSnapshot()
 			if info.Duration > 0 {
 				prefetchBytes = min(int64(256<<20), max(int64(8<<20), int64(float64(generation.src.Size())*25/info.Duration.Seconds())))

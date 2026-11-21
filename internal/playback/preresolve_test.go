@@ -340,3 +340,48 @@ func TestMetadataProbeRespectsDisabledSettings(t *testing.T) {
 		})
 	}
 }
+
+type probePrefetchRecorder struct {
+	core.Engine
+	started chan int64
+	hold    chan struct{}
+}
+
+func (e *probePrefetchRecorder) Prefetch(ctx context.Context, _ string, _ []byte, _, n int64) error {
+	select {
+	case e.started <- n:
+	default:
+	}
+	select {
+	case <-e.hold:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func TestProbeMetadataPublishesImmediatelyAndPrefetchesOpeningBytes(t *testing.T) {
+	h := newHarness(t, []*fakeRelease{mkv("r1", 2<<20, time.Minute)}, []string{"r1"})
+	rec := &probePrefetchRecorder{
+		Engine:  h.engine,
+		started: make(chan int64, 1),
+		hold:    make(chan struct{}),
+	}
+	h.m.deps.Engine = rec
+	defer close(rec.hold)
+
+	if err := h.m.ProbeMetadata(t.Context(), owner, movieKey, defaultCaps("client")); err != nil {
+		t.Fatalf("ProbeMetadata: %v", err)
+	}
+	if _, ok := h.m.WarmProbeInfo(owner, defaultCaps("client"), movieKey); !ok {
+		t.Fatal("WarmProbeInfo not published immediately after ProbeMetadata")
+	}
+	select {
+	case n := <-rec.started:
+		if n <= 0 {
+			t.Fatalf("expected positive prefetch bytes, got %d", n)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("ProbeMetadata did not prefetch opening bytes in background")
+	}
+}
