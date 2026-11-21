@@ -668,6 +668,19 @@ const detailWarmWaitBudget = 1500 * time.Millisecond
 // the same total bound.
 const detailVariantReserve = 500 * time.Millisecond
 
+func interactiveDetailWaitClient(pr *Request) bool {
+	if pr == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(pr.Product)) {
+	case "plex web", "plex for xbox", "plex", "plex htpc",
+		"plex for windows", "plex for mac", "plex for linux",
+		"plezy", "infuse":
+		return true
+	}
+	return strings.EqualFold(pr.Platform, "Xbox")
+}
+
 // Apple TV can refresh detail metadata and obtains the admitted source's
 // tracks again on Play. Keep speculative preparation behind its browse
 // pages; share a short allowance across the probe and version discovery.
@@ -684,11 +697,11 @@ func startDetailPageWait(pr *Request) {
 		pr.detailWaitUntil = time.Now().Add(4 * time.Second)
 	} else if strings.EqualFold(pr.Platform, "tvOS") || strings.EqualFold(pr.Product, "Plex for Apple TV") {
 		pr.detailWaitUntil = time.Now().Add(250 * time.Millisecond)
-	} else if !strings.EqualFold(pr.Platform, "Tizen") && !strings.EqualFold(pr.Product, "Plex for Samsung") {
-		// Interactive clients (Plex Web, Plex for Xbox, Plex Desktop, etc.)
+	} else if interactiveDetailWaitClient(pr) {
+		// Known interactive clients (Plex Web, Plex for Xbox, Plex Desktop, etc.)
 		// get a bounded wait budget so warmDetail can wait for WaitWarmProbe
-		// and return real tracks on first detail open. Samsung refreshes
-		// detail repeatedly while browsing and is excluded.
+		// and return real tracks on first detail open without stalling scripts
+		// or browse-heavy TV clients.
 		pr.detailWaitUntil = time.Now().Add(detailWarmWaitBudget)
 	}
 }
@@ -748,9 +761,11 @@ func (s *Server) warmDetail(ctx context.Context, pr *Request, t *frontend.Title)
 	if waiter, ok := s.playback().(frontend.WarmProbeWaiter); ok {
 		budget := detailWarmWaitBudget
 		if !pr.detailWaitUntil.IsZero() {
-			budget = min(budget, time.Until(pr.detailWaitUntil))
+			budget = min(budget, time.Until(pr.detailWaitUntil)-detailVariantReserve)
 		}
-		waiter.WaitWarmProbe(ctx, pr.User, caps, t.Key, budget)
+		if budget > 0 {
+			waiter.WaitWarmProbe(ctx, pr.User, caps, t.Key, budget)
+		}
 	}
 }
 
