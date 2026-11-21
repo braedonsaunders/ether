@@ -744,3 +744,160 @@ it("keeps suggested match selectable from Match existing dropdown", async () => 
     viewerId: 2,
   });
 });
+
+it("splits Plex import drawer by Plex.tv relationship and history", async () => {
+  const candidateServers = [
+    {
+      serverId: 1,
+      serverName: "One.Plex",
+      plexDirectoryTotal: 65,
+      accounts: [
+        {
+          serverId: 1,
+          serverName: "One.Plex",
+          accountId: 1,
+          accountName: "One.Night",
+          isOwner: true,
+          matchedViewerId: 1,
+          matchedViewerName: "One.Night",
+          plexRelation: "owner",
+          plexSources: ["owner"],
+        },
+        {
+          serverId: 1,
+          serverName: "One.Plex",
+          accountId: 1001,
+          accountName: "Kids Home",
+          isOwner: false,
+          matchedViewerId: 0,
+          plexUsername: "kidshome",
+          plexRelation: "home",
+          plexSources: ["home", "ether_share"],
+        },
+        {
+          serverId: 1,
+          serverName: "One.Plex",
+          accountId: 1002,
+          accountName: "Alice Shared",
+          isOwner: false,
+          matchedViewerId: 0,
+          plexUsername: "alice99",
+          plexRelation: "shared",
+          plexSources: ["ether_share", "pms_share"],
+        },
+        {
+          serverId: 1,
+          serverName: "One.Plex",
+          accountId: 1003,
+          accountName: "dsabelag",
+          isOwner: false,
+          matchedViewerId: 0,
+          plexUsername: "dsabelag",
+          plexRelation: "pending",
+          plexSources: ["pending_invite"],
+        },
+        {
+          serverId: 1,
+          serverName: "One.Plex",
+          accountId: 1004,
+          accountName: "Community Pal",
+          isOwner: false,
+          matchedViewerId: 0,
+          plexUsername: "compal",
+          plexRelation: "friend",
+          plexSources: ["community_friend", "friend"],
+        },
+        {
+          serverId: 1,
+          serverName: "One.Plex",
+          accountId: 143639010,
+          accountName: "Patricson Poliard",
+          isOwner: false,
+          matchedViewerId: 0,
+          plexRelation: "historical",
+          plexSources: ["pms_history"],
+        },
+      ],
+    },
+  ];
+
+  renderApp(
+    "/viewers",
+    {},
+    extraRoutes((method, path) => {
+      if (path === "/viewers/plex-candidates" && method === "GET") {
+        return candidateServers;
+      }
+      return undefined;
+    }),
+  );
+
+  fireEvent.click(await screen.findByRole("button", { name: /Import from Plex/i }, WAIT));
+  const drawer = await screen.findByRole(
+    "dialog",
+    { name: /Import users from connected Plex servers/i },
+    WAIT,
+  );
+
+  expect(
+    await within(drawer).findByText("Plex.tv matched: 5 (65 in directory)", {}, WAIT),
+  ).toBeInTheDocument();
+  expect(within(drawer).getByText("PMS history only: 1")).toBeInTheDocument();
+
+  const filterGroup = within(drawer).getByRole("group", { name: "Account category" });
+  expect(within(filterGroup).getByRole("button", { name: "All (6)" })).toBeInTheDocument();
+  expect(within(filterGroup).getByRole("button", { name: "Unmapped (5)" })).toBeInTheDocument();
+  expect(
+    within(filterGroup).getByRole("button", { name: "Accepted shares (2)" }),
+  ).toBeInTheDocument();
+  expect(within(filterGroup).getByRole("button", { name: "Home users (1)" })).toBeInTheDocument();
+  expect(
+    within(filterGroup).getByRole("button", { name: "Pending invites (1)" }),
+  ).toBeInTheDocument();
+  expect(within(filterGroup).getByRole("button", { name: "Friends (1)" })).toBeInTheDocument();
+  expect(
+    within(filterGroup).getByRole("button", { name: "Community friends (1)" }),
+  ).toBeInTheDocument();
+  expect(
+    within(filterGroup).getByRole("button", { name: "PMS history only (1)" }),
+  ).toBeInTheDocument();
+
+  // Grouped section headers in All view.
+  expect(within(drawer).getByText("Server owner & Home users")).toBeInTheDocument();
+  expect(within(drawer).getByText("Accepted shares")).toBeInTheDocument();
+  expect(within(drawer).getByText("Pending invites")).toBeInTheDocument();
+  expect(within(drawer).getByText("Friends")).toBeInTheDocument();
+  expect(
+    within(drawer).getByText(
+      "Historical accounts from this Plex server no longer in your Plex.tv friends or shares",
+    ),
+  ).toBeInTheDocument();
+
+  // Provenance badges and Plex username display.
+  expect(within(drawer).getByText("(@alice99)")).toBeInTheDocument();
+  expect(within(drawer).getAllByText("Shared on Ether").length).toBeGreaterThan(0);
+  expect(within(drawer).getByText("Shared on One.Plex")).toBeInTheDocument();
+  expect(within(drawer).getByText("Pending invite")).toBeInTheDocument();
+  expect(within(drawer).getByText("Community friend")).toBeInTheDocument();
+  expect(within(drawer).getAllByText("PMS history only").length).toBeGreaterThan(0);
+
+  // Filter by PMS history only.
+  fireEvent.click(within(filterGroup).getByRole("button", { name: "PMS history only (1)" }));
+  expect(within(drawer).getByText("Patricson Poliard")).toBeInTheDocument();
+  expect(within(drawer).queryByText("Alice Shared")).toBeNull();
+  expect(within(drawer).queryByText("dsabelag")).toBeNull();
+
+  // Filter by Pending invites.
+  fireEvent.click(within(filterGroup).getByRole("button", { name: "Pending invites (1)" }));
+  expect(within(drawer).getByText("dsabelag")).toBeInTheDocument();
+  expect(within(drawer).queryByText("Patricson Poliard")).toBeNull();
+
+  // Switch back to All and search by plexUsername.
+  fireEvent.click(within(filterGroup).getByRole("button", { name: "All (6)" }));
+  const searchInput = within(drawer).getByPlaceholderText(
+    /Search by account name or Plex username/i,
+  );
+  fireEvent.change(searchInput, { target: { value: "alice99" } });
+  expect(within(drawer).getByText("Alice Shared")).toBeInTheDocument();
+  expect(within(drawer).queryByText("Patricson Poliard")).toBeNull();
+});

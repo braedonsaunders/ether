@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/admin"
+	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/plextv"
@@ -1250,5 +1252,111 @@ func TestViewersPlexImportFallsBackToGlobalPMSAccountID(t *testing.T) {
 	}
 	if len(ensured) != 1 || ensured[0].PlexID != 143639010 || ensured[0].Title != "Patricson Poliard" {
 		t.Fatalf("unexpected bulk EnsurePlexFriend calls: %+v", ensured)
+	}
+}
+
+func TestViewersPlexCandidatesClassifiesPlexRelations(t *testing.T) {
+	storeCfg := newStore(t, func(c *config.Config) {
+		seededConfig(c)
+		c.Server.MachineIdentifier = "ether-mid"
+	})
+
+	pms := &mockPlexServers{
+		servers: []plexwatch.PMSServer{{ID: 10, Name: "One.Plex", MachineID: "pms-mid"}},
+		accounts: map[int64][]plexwatch.PMSAccount{
+			10: {
+				{ID: 1, Name: "OwnerAccount", Owner: true, UserID: 1},
+				{ID: 1001, Name: "Kids Home", Owner: false, UserID: 0},
+				{ID: 1002, Name: "Alice Shared", Owner: false, UserID: 0},
+				{ID: 1003, Name: "dsabelag", Owner: false, UserID: 0},
+				{ID: 1004, Name: "Community Pal", Owner: false, UserID: 0},
+				{ID: 143639010, Name: "Patricson Poliard", Owner: false, UserID: 0},
+			},
+		},
+	}
+
+	deps := admin.Deps{
+		Config:       storeCfg,
+		IsOwnerToken: storedOwner(storeCfg),
+		PlexServers:  pms,
+		ListPlexUsers: func(ctx context.Context) ([]plextv.SharedUser, error) {
+			return []plextv.SharedUser{
+				{
+					PlexID:        1001,
+					Username:      "kidshome",
+					Title:         "Kids Home",
+					Home:          true,
+					AcceptedShare: true,
+					Servers:       []string{"ether-mid"},
+				},
+				{
+					PlexID:        1002,
+					Username:      "alice99",
+					Title:         "Alice Shared",
+					AcceptedShare: true,
+					Friend:        true,
+					Servers:       []string{"ether-mid", "pms-mid"},
+				},
+				{
+					PlexID:         1003,
+					Username:       "dsabelag",
+					Title:          "dsabelag",
+					PendingShare:   true,
+					PendingServers: []string{"ether-mid"},
+				},
+				{
+					PlexID:          1004,
+					Username:        "compal",
+					FriendlyName:    "Community Pal",
+					Friend:          true,
+					CommunityFriend: true,
+				},
+			}, nil
+		},
+	}
+	h := admin.NewHandler(deps)
+
+	r := req(http.MethodGet, "/ether/api/viewers/plex-candidates", "")
+	r.Header.Set("X-Plex-Token", ownerToken)
+	res := serve(h, r)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", res.Code, res.Body)
+	}
+	if len(pms.mapped) != 0 {
+		t.Fatalf("GET /api/viewers/plex-candidates must not mutate mappings: %+v", pms.mapped)
+	}
+
+	var out []admin.PlexCandidateServer
+	if err := json.Unmarshal(res.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 1 || out[0].PlexDirectoryTotal != 4 || len(out[0].Accounts) != 6 {
+		t.Fatalf("unexpected server candidate payload: %+v", out)
+	}
+
+	byID := make(map[int64]admin.PlexCandidateAccount, len(out[0].Accounts))
+	for _, a := range out[0].Accounts {
+		byID[a.AccountID] = a
+	}
+
+	if got := byID[1]; got.PlexRelation != "owner" || !slices.Equal(got.PlexSources, []string{"owner"}) {
+		t.Fatalf("unexpected owner classification: %+v", got)
+	}
+	if got := byID[1001]; got.PlexRelation != "home" || got.PlexUsername != "kidshome" || !slices.Contains(got.PlexSources, "home") {
+		t.Fatalf("unexpected home classification: %+v", got)
+	}
+	if got := byID[1002]; got.PlexRelation != "shared" || got.PlexUsername != "alice99" ||
+		!slices.Contains(got.PlexSources, "ether_share") || !slices.Contains(got.PlexSources, "pms_share") || !slices.Contains(got.PlexSources, "friend") {
+		t.Fatalf("unexpected shared classification: %+v", got)
+	}
+	if got := byID[1003]; got.PlexRelation != "pending" || !slices.Contains(got.PlexSources, "pending_invite") {
+		t.Fatalf("unexpected pending classification: %+v", got)
+	}
+	if got := byID[1004]; got.PlexRelation != "friend" || got.PlexUsername != "compal" ||
+		!slices.Contains(got.PlexSources, "community_friend") || !slices.Contains(got.PlexSources, "friend") {
+		t.Fatalf("unexpected friend classification: %+v", got)
+	}
+	if got := byID[143639010]; got.PlexRelation != "historical" || !slices.Equal(got.PlexSources, []string{"pms_history"}) || got.PlexUsername != "" {
+		t.Fatalf("unexpected historical classification: %+v", got)
 	}
 }

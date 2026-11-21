@@ -402,6 +402,12 @@ func TestSharedServerUsersAndPendingResolve(t *testing.T) {
 	if len(users) != 2 || users[0].FriendlyName != "Patricson Poliard" || users[1].Username != "dsabelag" {
 		t.Fatalf("unexpected SharedServerUsers: %+v", users)
 	}
+	if !users[0].AcceptedShare || users[0].PendingShare || !slices.Contains(users[0].Servers, "other-pms") {
+		t.Fatalf("expected accepted share provenance for Patricson Poliard, got %+v", users[0])
+	}
+	if !users[1].PendingShare || users[1].AcceptedShare || !slices.Contains(users[1].PendingServers, "test-mid") {
+		t.Fatalf("expected pending share provenance for dsabelag, got %+v", users[1])
+	}
 
 	if err := c.ShareServer(context.Background(), "owner-token", "Patricson Poliard", 0, nil); err != nil {
 		t.Fatalf("ShareServer failed for FriendlyName: %v", err)

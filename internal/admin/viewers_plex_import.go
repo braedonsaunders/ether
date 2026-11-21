@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -13,22 +14,26 @@ import (
 )
 
 type PlexCandidateAccount struct {
-	ServerID              int64  `json:"serverId"`
-	ServerName            string `json:"serverName"`
-	AccountID             int64  `json:"accountId"`
-	AccountName           string `json:"accountName"`
-	IsOwner               bool   `json:"isOwner"`
-	MatchedViewerID       int64  `json:"matchedViewerId"`
-	MatchedViewerName     string `json:"matchedViewerName,omitempty"`
-	MatchedViewerUsername string `json:"matchedViewerUsername,omitempty"`
-	SuggestedViewerID     int64  `json:"suggestedViewerId,omitempty"`
-	SuggestedViewerName   string `json:"suggestedViewerName,omitempty"`
+	ServerID              int64    `json:"serverId"`
+	ServerName            string   `json:"serverName"`
+	AccountID             int64    `json:"accountId"`
+	AccountName           string   `json:"accountName"`
+	IsOwner               bool     `json:"isOwner"`
+	MatchedViewerID       int64    `json:"matchedViewerId"`
+	MatchedViewerName     string   `json:"matchedViewerName,omitempty"`
+	MatchedViewerUsername string   `json:"matchedViewerUsername,omitempty"`
+	SuggestedViewerID     int64    `json:"suggestedViewerId,omitempty"`
+	SuggestedViewerName   string   `json:"suggestedViewerName,omitempty"`
+	PlexUsername          string   `json:"plexUsername,omitempty"`
+	PlexRelation          string   `json:"plexRelation,omitempty"`
+	PlexSources           []string `json:"plexSources,omitempty"`
 }
 
 type PlexCandidateServer struct {
-	ServerID   int64                  `json:"serverId"`
-	ServerName string                 `json:"serverName"`
-	Accounts   []PlexCandidateAccount `json:"accounts"`
+	ServerID           int64                  `json:"serverId"`
+	ServerName         string                 `json:"serverName"`
+	PlexDirectoryTotal int                    `json:"plexDirectoryTotal,omitempty"`
+	Accounts           []PlexCandidateAccount `json:"accounts"`
 }
 
 type ImportPlexViewerRequest struct {
@@ -347,6 +352,59 @@ func (h *Handler) shareViewerPlexTarget(ctx context.Context, usernameOrEmail str
 	return err
 }
 
+func classifyPlexCandidate(acct plexwatch.PMSAccount, u *plextv.SharedUser, pmsMachineID, etherMachineID string, hasPlexDirectory bool) (plexUsername, relation string, sources []string) {
+	if acct.Owner {
+		return "", "owner", []string{"owner"}
+	}
+	if u == nil {
+		if hasPlexDirectory {
+			return "", "historical", []string{"pms_history"}
+		}
+		return "", "", nil
+	}
+	plexUsername = strings.TrimSpace(u.Username)
+	sharedOnEther := etherMachineID != "" && slices.Contains(u.Servers, etherMachineID)
+	sharedOnPMS := pmsMachineID != "" && slices.Contains(u.Servers, pmsMachineID)
+	pendingOnEther := etherMachineID != "" && slices.Contains(u.PendingServers, etherMachineID)
+	pendingOnPMS := pmsMachineID != "" && slices.Contains(u.PendingServers, pmsMachineID)
+
+	if u.Home {
+		sources = append(sources, "home")
+	}
+	if sharedOnEther {
+		sources = append(sources, "ether_share")
+	}
+	if sharedOnPMS {
+		sources = append(sources, "pms_share")
+	}
+	if u.AcceptedShare && !sharedOnEther && !sharedOnPMS {
+		sources = append(sources, "accepted_share")
+	}
+	if u.PendingShare || pendingOnEther || pendingOnPMS {
+		sources = append(sources, "pending_invite")
+	}
+	if u.CommunityFriend {
+		sources = append(sources, "community_friend")
+	}
+	if u.Friend {
+		sources = append(sources, "friend")
+	}
+
+	switch {
+	case u.Home:
+		relation = "home"
+	case u.AcceptedShare || sharedOnPMS || sharedOnEther:
+		relation = "shared"
+	case u.PendingShare || pendingOnEther || pendingOnPMS:
+		relation = "pending"
+	case u.CommunityFriend || u.Friend:
+		relation = "friend"
+	default:
+		relation = "shared"
+	}
+	return plexUsername, relation, sources
+}
+
 func (h *Handler) handlePlexCandidates(w http.ResponseWriter, r *http.Request) {
 	access, _ := RequestAccess(r.Context())
 	if !access.Owner {
@@ -367,6 +425,13 @@ func (h *Handler) handlePlexCandidates(w http.ResponseWriter, r *http.Request) {
 	viewerByID := make(map[int64]ViewerRecord, len(viewers))
 	for _, v := range viewers {
 		viewerByID[v.ID] = v
+	}
+
+	plexUsers := h.listPlexUsers(r.Context())
+	hasPlexDirectory := len(plexUsers) > 0
+	var etherMachineID string
+	if h.deps.Config != nil {
+		etherMachineID = h.deps.Config.Get().Server.MachineIdentifier
 	}
 
 	var result []PlexCandidateServer
@@ -405,6 +470,12 @@ func (h *Handler) handlePlexCandidates(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			var resolvedPlex *plextv.SharedUser
+			if !acct.Owner && hasPlexDirectory {
+				resolvedPlex = resolvePlexUser(acct, plexUsers)
+			}
+			plexUsername, plexRelation, plexSources := classifyPlexCandidate(acct, resolvedPlex, srv.MachineID, etherMachineID, hasPlexDirectory)
+
 			list = append(list, PlexCandidateAccount{
 				ServerID:              srv.ID,
 				ServerName:            srv.Name,
@@ -416,12 +487,16 @@ func (h *Handler) handlePlexCandidates(w http.ResponseWriter, r *http.Request) {
 				MatchedViewerUsername: matchedUsername,
 				SuggestedViewerID:     suggestedID,
 				SuggestedViewerName:   suggestedName,
+				PlexUsername:          plexUsername,
+				PlexRelation:          plexRelation,
+				PlexSources:           plexSources,
 			})
 		}
 		result = append(result, PlexCandidateServer{
-			ServerID:   srv.ID,
-			ServerName: srv.Name,
-			Accounts:   list,
+			ServerID:           srv.ID,
+			ServerName:         srv.Name,
+			PlexDirectoryTotal: len(plexUsers),
+			Accounts:           list,
 		})
 	}
 	if result == nil {

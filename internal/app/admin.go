@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -443,6 +444,20 @@ func (a *App) listPlexUsers(ctx context.Context) ([]plextv.SharedUser, error) {
 				}
 				dst.Home = dst.Home || u.Home
 				dst.Restricted = dst.Restricted || u.Restricted
+				dst.AcceptedShare = dst.AcceptedShare || u.AcceptedShare
+				dst.PendingShare = dst.PendingShare || u.PendingShare
+				dst.Friend = dst.Friend || u.Friend
+				dst.CommunityFriend = dst.CommunityFriend || u.CommunityFriend
+				for _, s := range u.Servers {
+					if s != "" && !slices.Contains(dst.Servers, s) {
+						dst.Servers = append(dst.Servers, s)
+					}
+				}
+				for _, s := range u.PendingServers {
+					if s != "" && !slices.Contains(dst.PendingServers, s) {
+						dst.PendingServers = append(dst.PendingServers, s)
+					}
+				}
 				continue
 			}
 			idx := len(out)
@@ -574,10 +589,12 @@ func (a *App) listPlexUsers(ctx context.Context) ([]plextv.SharedUser, error) {
 	for _, cf := range communityList {
 		if id, err := strconv.ParseInt(cf.ID, 10, 64); err == nil && id > 0 {
 			mergeUsers([]plextv.SharedUser{{
-				PlexID:       id,
-				Username:     cf.Username,
-				FriendlyName: cf.DisplayName,
-				Thumb:        cf.Avatar,
+				PlexID:          id,
+				Username:        cf.Username,
+				FriendlyName:    cf.DisplayName,
+				Thumb:           cf.Avatar,
+				Friend:          true,
+				CommunityFriend: true,
 			}})
 		}
 		uname := strings.ToLower(strings.TrimSpace(cf.Username))
@@ -586,6 +603,8 @@ func (a *App) listPlexUsers(ctx context.Context) ([]plextv.SharedUser, error) {
 		}
 		if idx, ok := byUser[uname]; ok {
 			dst := &out[idx]
+			dst.Friend = true
+			dst.CommunityFriend = true
 			if cf.DisplayName != "" {
 				if dst.FriendlyName == "" {
 					dst.FriendlyName = cf.DisplayName
