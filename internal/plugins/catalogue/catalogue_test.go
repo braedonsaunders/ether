@@ -710,3 +710,159 @@ func TestEntryIconReturnsActiveCatalogueIconOnly(t *testing.T) {
 		t.Fatalf("EntryIcon(unknown) = %q, want empty", got)
 	}
 }
+
+func TestCatalogueContentPluginWithLibraryInstalls(t *testing.T) {
+	ctx := context.Background()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	manifest := `{
+		"id": "community.music.ether",
+		"name": "Music",
+		"version": "1.0.0",
+		"ether": {
+			"protocol": 1,
+			"kind": "content",
+			"summary": "Curated music library.",
+			"runtime": { "kind": "hosted", "entry": "plugin.js" },
+			"capabilities": ["catalog_provider", "kind_resolver"],
+			"permissions": { "network": ["api.example.com"], "sources": "search" },
+			"contributes": {
+				"mediaKinds": [{
+					"key": "music",
+					"label": "Music",
+					"library": { "name": "Music" },
+					"levels": [
+						{ "key": "album", "label": "Album", "container": true },
+						{ "key": "track", "label": "Track", "playable": true }
+					],
+					"sync": { "mode": "pull", "refresh": "1h" }
+				}]
+			}
+		}
+	}`
+	files := map[string][]byte{
+		"manifest.json": []byte(manifest),
+		"plugin.js":     []byte(`export default {};`),
+	}
+	files["digest"] = []byte(plugins.PkgDigest(files) + "\n")
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, k := range []string{"manifest.json", "plugin.js", "digest"} {
+		w, err := zw.Create(k)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(files[k]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	pkgBytes := buf.Bytes()
+	sum := sha256.Sum256(pkgBytes)
+	digest := hex.EncodeToString(sum[:])
+
+	var srvURL string
+	var currentIndex, currentSig []byte
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.URL.Path {
+		case "/index.json":
+			_, _ = w.Write(currentIndex)
+		case "/index.json.sig":
+			_, _ = w.Write(currentSig)
+		case "/music.etherpkg":
+			_, _ = w.Write(pkgBytes)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	srvURL = srv.URL
+
+	publish := func(idx Index) {
+		raw, err := json.Marshal(idx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mu.Lock()
+		currentIndex = raw
+		currentSig = []byte(SignDetached(raw, priv))
+		mu.Unlock()
+	}
+
+	baseEntry := Entry{
+		ID:           "community.music.ether",
+		Name:         "Music",
+		Summary:      "Curated music library.",
+		Kind:         "content",
+		Capabilities: []string{"catalog_provider", "kind_resolver"},
+		Permissions:  plugins.Permissions{Network: []string{"api.example.com"}, Sources: "search"},
+		Versions: []Version{{
+			Version: "1.0.0",
+			URL:     srvURL + "/music.etherpkg",
+			SHA256:  digest,
+		}},
+	}
+	publish(Index{Schema: 1, GeneratedAt: "2026-11-23T12:00:00Z", Entries: []Entry{baseEntry}})
+
+	db := store.OpenTest(t)
+	mgr, err := plugins.New(plugins.Deps{
+		DB:          db,
+		FetchClient: srv.Client(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cat, err := New(Options{
+		DB:        db,
+		Manager:   mgr,
+		IndexURL:  srvURL + "/index.json",
+		PublicKey: base64.StdEncoding.EncodeToString(pub),
+		Client:    srv.Client(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr.SetCatalogue(cat)
+	if _, err := cat.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// Preview + Install must succeed for a reviewed content plugin declaring a library.
+	preview, err := mgr.PreviewInstall(ctx, plugins.Source{Kind: "catalogue", ID: "community.music.ether"})
+	if err != nil {
+		t.Fatalf("PreviewInstall failed: %v", err)
+	}
+	rec, err := mgr.Install(ctx, preview, plugins.InstallOptions{})
+	if err != nil {
+		t.Fatalf("Install failed: %v", err)
+	}
+	if rec.ID != "community.music.ether" || !rec.Verified {
+		t.Fatalf("unexpected installed record: %+v", rec)
+	}
+
+	// Re-preview cleanly, then drop an approved capability in the signed index.
+	preview2, err := mgr.PreviewInstall(ctx, plugins.Source{Kind: "catalogue", ID: "community.music.ether"})
+	if err != nil {
+		t.Fatalf("PreviewInstall (2) failed: %v", err)
+	}
+	underReviewed := baseEntry
+	underReviewed.Capabilities = []string{"catalog_provider"}
+	publish(Index{Schema: 1, GeneratedAt: "2026-11-23T12:01:00Z", Entries: []Entry{underReviewed}})
+	if _, err := cat.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mgr.Install(ctx, preview2, plugins.InstallOptions{}); err == nil || !strings.Contains(err.Error(), "catalogue review changed") {
+		t.Fatalf("expected Install to reject dropped capability, got: %v", err)
+	}
+	if _, err := mgr.PreviewInstall(ctx, plugins.Source{Kind: "catalogue", ID: "community.music.ether"}); err == nil || !strings.Contains(err.Error(), "beyond the catalogue review") {
+		t.Fatalf("expected PreviewInstall to reject unreviewed capability, got: %v", err)
+	}
+}

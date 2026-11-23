@@ -677,8 +677,7 @@ func (m *Manager) Install(ctx context.Context, p *Preview, opts InstallOptions) 
 			if p.source.reviewed == nil || current.URL != p.source.URL || !strings.EqualFold(current.SHA256, p.source.SHA256) {
 				return Record{}, fmt.Errorf("plugins: catalogue entry changed since the package was reviewed")
 			}
-			approved := Manifest{Ether: &EtherBlock{Permissions: current.Permissions, Capabilities: current.Capabilities}}
-			if man.Ether == nil || man.Ether.Kind != current.Kind || len(PermissionDiff(approved, man)) != 0 {
+			if man.Ether == nil || man.Ether.Kind != current.Kind || len(catalogueReviewDiff(current, man)) != 0 {
 				return Record{}, fmt.Errorf("plugins: catalogue review changed since the package was reviewed")
 			}
 		} else if _, err := cat.Resolve(ctx, man.ID, ""); err != nil && errors.Is(err, ErrRevoked) {
@@ -1419,14 +1418,34 @@ func StremioInstallID(link string) (id, base string, err error) {
 	return "addon." + stremio.Fingerprint(u)[:16], u.String(), nil
 }
 
-// catalogueReviewDiff lists what man asks for beyond its catalogue entry. The
-// package bytes are pinned by the entry's SHA-256, so what it contributes
-// (libraries, screens, flow actions, badges) is exactly what was reviewed;
-// only the permissions and capabilities declared on the entry are compared.
+// catalogueReviewDiff lists what man asks for beyond its catalogue entry.
+// Every capability declared in man must be reviewed on the entry, and
+// contributed mediaKinds / events are only carried into the approved baseline
+// when the entry's reviewed kind and capabilities authorize them.
 func catalogueReviewDiff(reviewed CatalogueArtifact, man Manifest) []string {
-	approved := Manifest{Ether: &EtherBlock{Permissions: reviewed.Permissions, Capabilities: reviewed.Capabilities}}
-	if man.Ether != nil {
-		approved.Ether.Contributes = man.Ether.Contributes
+	approvedCaps := make(map[Capability]bool, len(reviewed.Capabilities))
+	for _, c := range reviewed.Capabilities {
+		approvedCaps[c] = true
 	}
-	return PermissionDiff(approved, man)
+	var added []string
+	if man.Ether != nil {
+		for _, c := range man.Ether.Capabilities {
+			if !approvedCaps[c] {
+				added = append(added, "Capability: "+string(c))
+			}
+		}
+	}
+	approved := Manifest{Ether: &EtherBlock{
+		Permissions:  reviewed.Permissions,
+		Capabilities: reviewed.Capabilities,
+	}}
+	if man.Ether != nil {
+		if reviewed.Kind == KindContent && (approvedCaps[CapCatalogProvider] || approvedCaps[CapKindResolver]) {
+			approved.Ether.Contributes.MediaKinds = man.Ether.Contributes.MediaKinds
+		}
+		if approvedCaps[CapEvents] {
+			approved.Ether.Contributes.Events = man.Ether.Contributes.Events
+		}
+	}
+	return append(added, PermissionDiff(approved, man)...)
 }
