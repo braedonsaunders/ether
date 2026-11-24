@@ -229,20 +229,21 @@ export function PosterAccounts({
       {t("Apps reload posters the next time they open a library; some may need to be restarted.")}
     </p>
   ) : null;
+  const service = POSTER_SERVICES.find((s) => s.id === tab);
   return (
     <>
       {children?.(cards, savedNote)}
-      {editing && (
+      {editing && service && (
         <>
           <IntegrationTab
             id={tab}
-            name={POSTER_SERVICES.find((s) => s.id === tab)!.name}
+            name={service.name}
             enabled={!!config.data?.accounts?.[tab]?.enabled}
             onToggle={(on) => void save({ ...editing, enabled: on })}
             disabled={saving || locked}
             href="/metadata/artwork"
             usage={t("Use {app} posters in Metadata › Artwork.", {
-              app: POSTER_SERVICES.find((s) => s.id === tab)!.name,
+              app: service.name,
             })}
             current={config.data?.source === tab}
           >

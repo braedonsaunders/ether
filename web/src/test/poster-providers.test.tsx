@@ -90,3 +90,25 @@ it("opens the setup drawer from a disabled provider's Set up button", async () =
   expect(screen.getByLabelText("API key")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Save and enable" })).toBeInTheDocument();
 });
+
+it("leaves an enabled provider's tab without throwing", async () => {
+  vi.mocked(api.getConfig).mockResolvedValue({
+    posters: {
+      version: 1,
+      source: "tmdb",
+      accounts: { postersplus: { enabled: true, baseUrl: "https://posters.example" } },
+    },
+  } as unknown as Awaited<ReturnType<typeof api.getConfig>>);
+  const page = (tab: string) => (
+    <MemoryRouter>
+      <PosterAccounts locked={false} tab={tab}>
+        {(cards) => <>{cards}</>}
+      </PosterAccounts>
+    </MemoryRouter>
+  );
+  const view = render(page("postersplus"));
+  expect(await screen.findByLabelText("Server URL")).toBeInTheDocument();
+  view.rerender(page("overview"));
+  await waitFor(() => expect(screen.queryByLabelText("Server URL")).not.toBeInTheDocument());
+  expect(screen.getByRole("switch", { name: "PostersPlus enabled" })).toBeInTheDocument();
+});
