@@ -937,6 +937,12 @@ type StreamInfo struct {
 	ColorTransfer string   `json:"colorTransfer,omitempty"` // smpte2084 = HDR10, arib-std-b67 = HLG
 	// HEVCParameterSets reports a complete VPS/SPS/PPS hvcC record, safe for mp4toannexb.
 	HEVCParameterSets bool `json:"hevcParameterSets,omitempty"`
+	// InBandParameterSets reports an ISO decoder configuration record (avcC
+	// or hvcC) that lacks its parameter sets: they travel only in-band, as in
+	// remuxes of DASH avc3/hev1 streams. An MP4 copy of such a stream needs
+	// the record rebuilt, or the avc1/hvc1 sample entry promises parameter
+	// sets it does not carry. Annex B records (MPEG-TS) never set it.
+	InBandParameterSets bool `json:"inBandParameterSets,omitempty"`
 	// Signalled picture format, in ffprobe's names; empty when the stream
 	// and container leave it unspecified (decoders then assume square
 	// pixels and limited range).
@@ -994,9 +1000,10 @@ type Chapter struct {
 
 // ProbeFactsVersion is the generation of facts a probe is expected to carry,
 // including reference frames, descriptive audio handler titles, HEVC decoder-
-// configuration completeness, AAC channels, scan and rotation facts.
+// configuration completeness, in-band-only parameter sets, AAC channels,
+// scan and rotation facts.
 // Persisted probes from an older generation are cache misses.
-const ProbeFactsVersion = 9
+const ProbeFactsVersion = 10
 
 type MediaInfo struct {
 	Has64bitOffsets       *bool         `json:"has64bitOffsets,omitempty"`

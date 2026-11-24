@@ -305,6 +305,26 @@ func matroskaCopyParameterSets(d core.Decision, v *core.StreamInfo) string {
 	return ""
 }
 
+// mp4CopyParameterSets returns the bitstream filter that rebuilds the
+// decoder configuration record of a copied stream whose source record lacks
+// its parameter sets (they travel only in-band). The MP4 muxers write the
+// avc1/hvc1 sample entry, which promises a complete record; with an empty one
+// AVPlayer fetches the init and first segment, cannot configure its decoder,
+// and stops. The *_metadata filters parse the stream and publish the in-band
+// parameter sets as new extradata before the muxer writes its header.
+func mp4CopyParameterSets(v *core.StreamInfo) string {
+	if v == nil || !v.InBandParameterSets {
+		return ""
+	}
+	switch v.Codec {
+	case "h264":
+		return "h264_metadata"
+	case "hevc":
+		return "hevc_metadata"
+	}
+	return ""
+}
+
 // buildCodecArgs is the input, stream mapping and codec part of a run's
 // command line, shared by HLS and DASH.
 func buildCodecArgs(s runSpec) []string {
@@ -583,8 +603,15 @@ func buildCodecArgs(s runSpec) []string {
 				if ps := matroskaCopyParameterSets(d, v); ps != "" {
 					filter += "," + ps
 				}
+				if container == ContainerFMP4 {
+					if ps := mp4CopyParameterSets(v); ps != "" {
+						filter += "," + ps
+					}
+				}
 				args = append(args, "-bsf:v", filter)
 			} else if ps := matroskaCopyParameterSets(d, v); ps != "" {
+				args = append(args, "-bsf:v", ps)
+			} else if ps := mp4CopyParameterSets(v); ps != "" && container == ContainerFMP4 {
 				args = append(args, "-bsf:v", ps)
 			}
 			if container == ContainerFMP4 && v.Codec != "hevc" {

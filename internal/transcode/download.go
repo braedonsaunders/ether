@@ -213,6 +213,9 @@ func downloadArgs(input string, video, audio *core.StreamInfo, out string) []str
 	}
 	args = append(args, "-map_metadata", "-1", "-map_chapters", "-1", "-sn", "-dn",
 		"-c", "copy")
+	if ps := mp4CopyParameterSets(video); ps != "" {
+		args = append(args, "-bsf:v", ps)
+	}
 	if audio != nil {
 		args = append(args, "-disposition:a:0", "default")
 		if lang := mp4Language(audio.Language); lang != "" {

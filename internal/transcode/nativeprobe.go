@@ -467,6 +467,13 @@ func (s *nativeSource) matroska() (*core.MediaInfo, error) {
 	hasVideo := false
 	for _, t := range parsed {
 		complete := completeHEVCConfig(t.private)
+		inBand := false
+		switch {
+		case t.codecID == "V_MPEGH/ISO/HEVC":
+			inBand = inBandParameterSets("hevc", t.private)
+		case strings.HasPrefix(t.codecID, "V_MPEG4/ISO/AVC"):
+			inBand = inBandParameterSets("h264", t.private)
+		}
 		if t.codecID == "V_MPEGH/ISO/HEVC" && !complete && !t.privScoped && !t.encrypted {
 			sets := hevcParameterNALs(t.private, 0)
 			if len(sets[33]) > 0 {
@@ -501,6 +508,7 @@ func (s *nativeSource) matroska() (*core.MediaInfo, error) {
 		}
 		if si.Type == "video" {
 			si.HEVCParameterSets = complete
+			si.InBandParameterSets = inBand
 			hasVideo = true
 		}
 		if si.TimeBase == "" && scale > 0 && 1_000_000_000%scale == 0 {
