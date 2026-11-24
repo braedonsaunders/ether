@@ -817,6 +817,7 @@ func (i *instance) serve(w http.ResponseWriter, r *http.Request) {
 		i.mux.ServeHTTP(out, r)
 		var saveErr error
 		if (out.Code == http.StatusAccepted && r.URL.Path == "/vela/v0/playback") ||
+			((out.Code == http.StatusServiceUnavailable || out.Code == http.StatusBadGateway) && (r.URL.Path == "/vela/v0/playback" || r.Pattern == "POST /vela/v0/libraries/{id}/live/play") && out.Header().Get("Retry-After") != "") ||
 			(out.Code == http.StatusServiceUnavailable && strings.HasSuffix(r.URL.Path, "/read") && out.Header().Get("Retry-After") != "") ||
 			(out.Code == http.StatusServiceUnavailable && strings.HasSuffix(r.URL.Path, "/commands") && out.Header().Get("Retry-After") != "") ||
 			(out.Code == http.StatusTooManyRequests && strings.HasSuffix(r.URL.Path, "/approve") && out.Header().Get("Retry-After") != "") {

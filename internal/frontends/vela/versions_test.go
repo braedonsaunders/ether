@@ -156,10 +156,14 @@ func (s *versionsSessionsFake) Open(_ context.Context, req frontend.OpenRequest)
 	return frontend.Session{ID: "sess-1", Item: frontend.MovieKey(603)}, nil
 }
 
-func (s *versionsSessionsFake) StartStream(_ context.Context, _ frontend.SessionAccess, id string, req frontend.StreamRequest) (string, error) {
+func (s *versionsSessionsFake) StartStream(ctx context.Context, a frontend.SessionAccess, id string, req frontend.StreamRequest) (string, error) {
 	s.mu.Lock()
 	s.startStreamCnt++
+	fn := s.StartStreamFunc
 	s.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, a, id, req)
+	}
 	if req.Format == frontend.StreamHLS {
 		return "/sessions/media/" + id + "/master.m3u8", nil
 	}

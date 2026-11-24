@@ -189,6 +189,8 @@ func TestVelaLibraryLiveEndpointsAndCapabilities(t *testing.T) {
 	grants := &libraryLiveImageGrantsFake{}
 	var planReqs []frontend.PlanRequest
 	var stopped []string
+	var opens, starts int
+	var openErr, startStreamErr error
 	sess := frontendtest.Sessions{
 		PlanFunc: func(_ context.Context, req frontend.PlanRequest) (frontend.PlayPlan, error) {
 			planReqs = append(planReqs, req)
@@ -201,6 +203,11 @@ func TestVelaLibraryLiveEndpointsAndCapabilities(t *testing.T) {
 			}, nil
 		},
 		OpenFunc: func(_ context.Context, req frontend.OpenRequest) (frontend.Session, error) {
+			opens++
+			if err := openErr; err != nil {
+				openErr = nil
+				return frontend.Session{}, err
+			}
 			return frontend.Session{
 				ID:        "sess-live-1",
 				MediaPath: "/sessions/media/sess-live-1/grant/live/index.m3u8",
@@ -212,6 +219,11 @@ func TestVelaLibraryLiveEndpointsAndCapabilities(t *testing.T) {
 			}, nil
 		},
 		StartStreamFunc: func(_ context.Context, _ frontend.SessionAccess, id string, _ frontend.StreamRequest) (string, error) {
+			starts++
+			if err := startStreamErr; err != nil {
+				startStreamErr = nil
+				return "", err
+			}
 			return "/sessions/media/" + id + "/grant/live/index.m3u8", nil
 		},
 		StopFunc: func(_ context.Context, _ frontend.SessionAccess, id string) error {
@@ -378,6 +390,43 @@ func TestVelaLibraryLiveEndpointsAndCapabilities(t *testing.T) {
 	wNoKey, _ := doReq(http.MethodPost, "/vela/v0/libraries/42/live/play", noKey)
 	if wNoKey.Code != 400 {
 		t.Fatalf("missing idempotencyKey status = %d, want 400", wNoKey.Code)
+	}
+
+	// No start slot after Open: the opened session is stopped and the 503 with
+	// Retry-After is not kept for its key, so the client's retry with the same
+	// key runs the handler again. The success is then replayed.
+	retryReq := object{"idempotencyKey": "live-play-retry", "itemId": "match-1", "tab": "live", "client": playReq["client"]}
+	stopsBefore := len(stopped)
+	startStreamErr = &frontend.SessionBusyError{RetryAfter: time.Second}
+	wBusy, _ := doReq(http.MethodPost, "/vela/v0/libraries/42/live/play", retryReq)
+	if wBusy.Code != 503 || wBusy.Header().Get("Retry-After") != "1" {
+		t.Fatalf("refused live play status = %d Retry-After=%q body=%s", wBusy.Code, wBusy.Header().Get("Retry-After"), wBusy.Body.String())
+	}
+	if len(stopped) != stopsBefore+1 || stopped[len(stopped)-1] != "sess-live-1" {
+		t.Fatalf("refused live play did not stop the opened session: stopped=%v", stopped)
+	}
+	plansBefore, startsBefore := len(planReqs), starts
+	wRetry, _ := doReq(http.MethodPost, "/vela/v0/libraries/42/live/play", retryReq)
+	if wRetry.Code != 200 || len(planReqs) != plansBefore+1 || starts != startsBefore+1 {
+		t.Fatalf("live play retry with the same key = %d plans=%d starts=%d (before %d/%d) body=%s", wRetry.Code, len(planReqs), starts, plansBefore, startsBefore, wRetry.Body.String())
+	}
+	wReplay, _ := doReq(http.MethodPost, "/vela/v0/libraries/42/live/play", retryReq)
+	if wReplay.Code != 200 || len(planReqs) != plansBefore+1 || starts != startsBefore+1 {
+		t.Fatalf("live play success not replayed: %d plans=%d starts=%d", wReplay.Code, len(planReqs), starts)
+	}
+
+	// An Open failure on live is answered without Retry-After, so it is still
+	// stored for its key and replayed.
+	openReq := object{"idempotencyKey": "live-play-open-fail", "itemId": "match-1", "tab": "live", "client": playReq["client"]}
+	openErr = &frontend.SessionBusyError{RetryAfter: time.Second}
+	opensBefore := opens
+	wOpen, _ := doReq(http.MethodPost, "/vela/v0/libraries/42/live/play", openReq)
+	if wOpen.Code != 503 || wOpen.Header().Get("Retry-After") != "" {
+		t.Fatalf("live Open failure status = %d Retry-After=%q body=%s", wOpen.Code, wOpen.Header().Get("Retry-After"), wOpen.Body.String())
+	}
+	wOpenAgain, _ := doReq(http.MethodPost, "/vela/v0/libraries/42/live/play", openReq)
+	if wOpenAgain.Code != 503 || opens != opensBefore+1 || wOpenAgain.Body.String() != wOpen.Body.String() {
+		t.Fatalf("live Open failure not replayed: %d opens=%d (before %d) body=%s", wOpenAgain.Code, opens, opensBefore, wOpenAgain.Body.String())
 	}
 
 	// Feature unavailable when Host.LibraryLive == nil.
