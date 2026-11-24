@@ -1,6 +1,7 @@
 package mediabrowser
 
 import (
+	"context"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -459,6 +460,7 @@ func (i *instance) serveAnonymousStream(w http.ResponseWriter, r *http.Request, 
 			return false
 		}
 	}
+	r = r.WithContext(context.WithValue(r.Context(), verifiedDeviceKey{}, entry.device))
 	i.anon.touch(peer, key, entry.seq)
 	viewer := entry.viewer
 	versionScope, err := i.versionScope(r, &viewer)

@@ -2,6 +2,7 @@ package mediabrowser
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -333,5 +334,60 @@ func TestServeAliasSessionReusesActiveHLSMaster(t *testing.T) {
 	inst.Handler().ServeHTTP(w, r)
 	if w.Code != http.StatusTemporaryRedirect || w.Header().Get("Location") != "/jellyfin/sessions/media/hls-session/scoped/master.m3u8" || startCalls != 0 {
 		t.Fatalf("HLS alias = %d loc=%q startCalls=%d, want 307 without restarting stream", w.Code, w.Header().Get("Location"), startCalls)
+	}
+}
+
+// deviceVersionHandles resolves one version handle only for the device it
+// was issued to, as the session store does: any other or an empty device
+// finds nothing.
+type deviceVersionHandles struct {
+	item   frontend.RatingKey
+	handle string
+	device string
+}
+
+func (h *deviceVersionHandles) Issue(context.Context, frontend.VersionScope, frontend.RatingKey, string) (string, error) {
+	return "", errors.New("not offered")
+}
+func (h *deviceVersionHandles) Resolve(_ context.Context, scope frontend.VersionScope, id string) (frontend.VersionTarget, error) {
+	if scope.Device.ID != h.device || id != h.handle {
+		return frontend.VersionTarget{}, errors.New("unknown handle")
+	}
+	return frontend.VersionTarget{Item: h.item}, nil
+}
+func (h *deviceVersionHandles) MatchSession(_ context.Context, scope frontend.VersionScope, id, session string) error {
+	if scope.Device.ID != h.device || id != h.handle || session != "session-1" {
+		return errors.New("wrong source")
+	}
+	return nil
+}
+
+// A credential-less player that streams a picked version sends no device id;
+// the version is checked against the device that opened the session.
+func TestAnonymousStreamOfPickedVersionUsesSessionDevice(t *testing.T) {
+	handle := "4e0f0a56-014b-4883-89b7-e9465f03462e"
+	state := &anonState{live: []frontend.Session{{ID: "session-1", Item: 5, Protocol: "jellyfin", Device: frontend.Device{ID: "tv"}, MediaPath: "/sessions/media/session-1/scoped/file"}}}
+	viewer := &frontend.Viewer{ID: 1}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	host := frontend.Host{Identity: ident, Sessions: newAnonBroker(state, frontend.Device{ID: "tv"}), Capabilities: frontendtest.Capabilities{}, ClientIP: anonClientIP, VersionHandles: &deviceVersionHandles{item: 5, handle: handle, device: "tv"}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/jellyfin/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo", strings.NewReader(`{"IsPlayback":true,"MediaSourceId":"`+handle+`"}`))
+	r.Header.Set("X-Emby-Token", "grant")
+	r.Header.Set("X-Emby-Device-Id", "tv")
+	r.Header.Set("X-Test-IP", "192.0.2.1")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("PlaybackInfo = %d: %s", w.Code, w.Body.String())
+	}
+
+	if w := anonymousStream(inst, "jellyfin", 5, "192.0.2.1", "&mediaSourceId="+handle); w.Code != http.StatusPartialContent {
+		t.Fatalf("credential-less version stream = %d, want 206: %s", w.Code, w.Body.String())
+	}
+	if len(state.served) != 1 || state.served[0] != "/sessions/media/session-1/scoped/file" {
+		t.Fatalf("served paths = %v, want the opened session's file", state.served)
 	}
 }
