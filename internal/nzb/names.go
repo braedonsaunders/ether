@@ -201,6 +201,7 @@ func Classify(name string) FileInfo {
 var (
 	reQuoted         = regexp.MustCompile(`"([^"]*)"`)
 	reBracketName    = regexp.MustCompile(`\[\s*(?:\d+/)?([^\[\]"]+\.[A-Za-z0-9]{2,5}(?:\.\d{2,4})?)\s*\]`)
+	rePrivateMarker  = regexp.MustCompile(`(?i)\[PRIVATE\]-`)
 	rePrivateCounter = regexp.MustCompile(`^\d+(?:/\d+)?$`)
 	reLeadingNumPath = regexp.MustCompile(`^\d+/(.+\.[A-Za-z0-9]{2,5}(?:\.\d{2,4})?)$`)
 	reFileCounter    = regexp.MustCompile(`[\[(]\s*(\d{1,5})\s*(?:/|of)\s*(\d{1,5})\s*[\])]`)
@@ -365,11 +366,11 @@ func extractBracketName(s string) string {
 // headers, preserving nested bracket tags inside the filename section (such as
 // `[PRiVATE]-[WtFnZb]-[1/5]-[Show_[Group].mkv]`) where a flat `[^\[\]]+` regex fails.
 func parsePrivateFrame(s string) string {
-	idx := strings.Index(strings.ToUpper(s), "[PRIVATE]-")
-	if idx < 0 {
+	loc := rePrivateMarker.FindStringIndex(s)
+	if loc == nil {
 		return ""
 	}
-	rest := s[idx+len("[PRIVATE]-"):]
+	rest := s[loc[1]:]
 	var sections []string
 	for len(rest) > 0 {
 		rest = strings.TrimLeft(rest, "- \t")

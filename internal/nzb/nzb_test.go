@@ -174,6 +174,58 @@ func TestNameFromSubject(t *testing.T) {
 	}
 }
 
+// U+0250 (ɐ) upper-cases to U+2C6F, two bytes to three, so an offset found in
+// an upper-cased copy points past the marker in the subject itself. U+017F (ſ)
+// upper-cases to S, two bytes to one, so the offset points before it.
+func TestParsePrivateFrameMarkerOffset(t *testing.T) {
+	cases := []struct {
+		name, subject, frame, want string
+	}{
+		{"growing letter, nothing after marker", "ɐ[PRiVATE]-", "", "ɐ[PRiVATE]-"},
+		{"two growing letters, one byte after marker", "ɐɐ[PRiVATE]-x", "", "ɐɐ[PRiVATE]-x"},
+		{"growing letters, nested name no later step recovers", "ɐɐ[PRiVATE]-[Grp]-[Show_[Grp].mkv]", "Show_[Grp].mkv", "Show_[Grp].mkv"},
+		{"growing letters, plain name the bracket step recovers", "ɐɐɐɐ[PRiVATE]-[Grp]-[Show.2024.mkv]-[1/5]", "Show.2024.mkv", "Show.2024.mkv"},
+		{"shrinking letters, nested name", "ſſ[PRiVATE]-[Grp]-[Show_[Grp].mkv]", "Show_[Grp].mkv", "Show_[Grp].mkv"},
+		{"mixed-case marker, ASCII only", "[pRiVaTe]-[Grp]-[Show_[Grp].mkv]", "Show_[Grp].mkv", "Show_[Grp].mkv"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := parsePrivateFrame(tc.subject); got != tc.frame {
+				t.Errorf("parsePrivateFrame(%q) = %q, want %q", tc.subject, got, tc.frame)
+			}
+			if got := NameFromSubject(tc.subject); got != tc.want {
+				t.Errorf("NameFromSubject(%q) = %q, want %q", tc.subject, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParsePrivateFrameMarkerOffsetNZB(t *testing.T) {
+	doc := `<?xml version="1.0" encoding="UTF-8"?>
+<nzb xmlns="http://www.newzbin.com/DTD/2003/nzb">
+ <file poster="poster@example.invalid" date="1700000000" subject="ɐ[PRiVATE]-">
+  <groups><group>alt.binaries.example</group></groups>
+  <segments><segment bytes="1000" number="1">part1@example.invalid</segment></segments>
+ </file>
+ <file poster="poster@example.invalid" date="1700000001" subject="ɐɐ[PRiVATE]-[Grp]-[Show_[Grp].mkv]">
+  <groups><group>alt.binaries.example</group></groups>
+  <segments><segment bytes="1000" number="1">part2@example.invalid</segment></segments>
+ </file>
+</nzb>`
+	n, err := Parse([]byte(doc))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	var names []string
+	for _, f := range n.Files {
+		names = append(names, f.Name)
+	}
+	want := []string{"ɐ[PRiVATE]-", "Show_[Grp].mkv"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("file names = %q, want %q", names, want)
+	}
+}
+
 func TestNameFromSubjectRealWorldUnquoted(t *testing.T) {
 	tests := []struct {
 		name    string
