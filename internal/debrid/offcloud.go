@@ -292,9 +292,6 @@ func (p *offcloud) Acquire(ctx context.Context, req AcquireRequest) (*Acquired, 
 		}
 		data, err := p.do(ctx, apiRequest{method: http.MethodPost, path: "/cloud"}, map[string]string{"url": req.Magnet})
 		if err != nil {
-			if errors.Is(err, ErrBlocked) {
-				return nil, fmt.Errorf("offcloud: add refused: %w", ErrAddRefused)
-			}
 			return nil, err
 		}
 		var out struct {
