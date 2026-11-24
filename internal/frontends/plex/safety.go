@@ -217,6 +217,7 @@ func (s *Server) openableTitlesWith(ctx context.Context, vis frontend.Visibility
 		return out
 	}
 	ts = catalog
+	// visibleTitlesWith also applies the Plex metadata rating, in one batch.
 	ts = s.visibleTitlesWith(vis, u, ts)
 	ctx = s.withSeriesRows(ctx, u, ts)
 	if !pinned {
@@ -226,7 +227,7 @@ func (s *Server) openableTitlesWith(ctx context.Context, vis frontend.Visibility
 		out := make([]frontend.Title, 0, len(ts))
 		for _, t := range ts {
 			_, admitted := shelfMember(ctx, t.Key)
-			if (admitted || s.admittedTitle(&t)) && vis.Playable(ctx, u, &t) && s.plexMetaRatingAllowed(u, &t) {
+			if (admitted || s.admittedTitle(&t)) && vis.Playable(ctx, u, &t) {
 				out = append(out, t)
 			}
 		}
@@ -235,7 +236,7 @@ func (s *Server) openableTitlesWith(ctx context.Context, vis frontend.Visibility
 	catOK := make(map[frontend.RatingKey]bool, len(ts))
 	for _, t := range ts {
 		_, admitted := shelfMember(ctx, t.Key)
-		if (admitted || s.admittedTitle(&t)) && vis.Playable(ctx, u, &t) && s.plexMetaRatingAllowed(u, &t) {
+		if (admitted || s.admittedTitle(&t)) && vis.Playable(ctx, u, &t) {
 			catOK[t.Key] = true
 		}
 	}

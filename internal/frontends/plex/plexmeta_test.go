@@ -16,6 +16,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/plexguid"
 	plexmeta "github.com/braedonsaunders/ether/internal/plexmeta"
 	"github.com/braedonsaunders/ether/internal/store"
@@ -234,5 +235,95 @@ func TestPlexMetaOverlayImageChecksViewerVisibility(t *testing.T) {
 	}
 	if !serve(&ownerUser) {
 		t.Fatal("owner should get the Plex overlay art")
+	}
+}
+
+type countingLibraryMetadata struct {
+	frontend.LibraryMetadata
+	single, many atomic.Int32
+}
+
+func (c *countingLibraryMetadata) Cached(ctx context.Context, k core.RatingKey) (frontend.CachedMetadataOverlay, bool) {
+	c.single.Add(1)
+	return c.LibraryMetadata.Cached(ctx, k)
+}
+
+func (c *countingLibraryMetadata) CachedMany(ctx context.Context, keys []core.RatingKey) map[core.RatingKey]frontend.CachedMetadataOverlay {
+	c.many.Add(1)
+	return c.LibraryMetadata.CachedMany(ctx, keys)
+}
+
+type countingLibraryGUIDs struct {
+	frontend.LibraryGUIDs
+	single, many atomic.Int32
+}
+
+func (c *countingLibraryGUIDs) Cached(ctx context.Context, k core.RatingKey) string {
+	c.single.Add(1)
+	return c.LibraryGUIDs.Cached(ctx, k)
+}
+
+func (c *countingLibraryGUIDs) CachedMany(ctx context.Context, keys []core.RatingKey) map[core.RatingKey]string {
+	c.many.Add(1)
+	return c.LibraryGUIDs.CachedMany(ctx, keys)
+}
+
+// A section listing for a capped viewer drops a title whose Plex rating is
+// over the cap; row admission reads the overlays and GUIDs once, in a batch.
+func TestPlexMetaSaferRatingSectionListing(t *testing.T) {
+	f, _ := plexMetaFixture(t, true, &plexMetaRoundTrip{body: `{}`})
+	db := f.srv.runtimeDB()
+	const alienGUID = "plex://movie/5d776825880197001ec967c8"
+	if err := storeVerifiedGUID(db, alien.Key, alienGUID, 348, "Alien", 1979); err != nil {
+		t.Fatal(err)
+	}
+	storePlexOverlay(t, db, fightClub.Key, plexMetaGUID, plexmeta.Overlay{ContentRating: "R"})
+	storePlexOverlay(t, db, alien.Key, alienGUID, plexmeta.Overlay{ContentRating: "PG"})
+	for _, k := range []core.RatingKey{fightClub.Key, alien.Key} {
+		pg := f.catalog.titles[k]
+		pg.ContentRating = "PG"
+		f.catalog.titles[k] = pg
+	}
+	meta := &countingLibraryMetadata{LibraryMetadata: f.srv.libraryMetadata()}
+	guids := &countingLibraryGUIDs{LibraryGUIDs: f.srv.libraryGUIDs()}
+	f.srv.setPlexMeta(meta)
+	f.srv.setPlexGUID(guids)
+
+	list := func(token string) []string {
+		t.Helper()
+		mc := decodeJSON(t, f.get(t, "/library/sections/1/all", "X-Plex-Token", token, "Accept", "application/json"))
+		rows, _ := mc["Metadata"].([]any)
+		var keys []string
+		for _, row := range rows {
+			keys = append(keys, row.(map[string]any)["ratingKey"].(string))
+		}
+		return keys
+	}
+	if got := list(ownerToken); len(got) != 2 {
+		t.Fatalf("owner rows = %v, want both films", got)
+	}
+	kid := core.User{ID: 30, Username: "kid", MaxContentRating: "PG"}
+	f.srv.testAuth().users["kid"] = kid
+	if got := list("kid"); len(got) != 1 || got[0] != alien.Key.String() {
+		t.Fatalf("kid rows = %v, want only %s", got, alien.Key)
+	}
+	// The row admission itself, pinned and not: the batch in
+	// visibleTitlesWith decides, with no per-title reads after it.
+	titles := []core.Title{f.catalog.titles[fightClub.Key], f.catalog.titles[alien.Key]}
+	for _, pinned := range []bool{false, true} {
+		meta.single.Store(0)
+		meta.many.Store(0)
+		guids.single.Store(0)
+		guids.many.Store(0)
+		got := f.srv.openableTitles(t.Context(), &kid, titles, pinned)
+		if len(got) != 1 || got[0].Key != alien.Key {
+			t.Fatalf("pinned=%v: openable = %v, want only %s", pinned, got, alien.Key)
+		}
+		if n, g := meta.many.Load(), guids.many.Load(); n != 1 || g != 1 {
+			t.Fatalf("pinned=%v: batch reads: overlays %d, guids %d, want 1 each", pinned, n, g)
+		}
+		if n, g := meta.single.Load(), guids.single.Load(); n != 0 || g != 0 {
+			t.Fatalf("pinned=%v: single-title reads after the batch: overlays %d, guids %d", pinned, n, g)
+		}
 	}
 }
