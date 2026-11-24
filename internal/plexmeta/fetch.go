@@ -40,6 +40,13 @@ type providerItem struct {
 	Role     []providerPerson `json:"Role"`
 	Director []providerPerson `json:"Director"`
 	Writer   []providerPerson `json:"Writer"`
+	// The provider also sends Guid, Rating, Studio and Summary arrays.
+	// encoding/json matches keys case-insensitively, so without their own
+	// fields they land in guid/rating/studio/summary and fail the decode.
+	GUIDs     json.RawMessage `json:"Guid"`
+	Ratings   json.RawMessage `json:"Rating"`
+	Studios   json.RawMessage `json:"Studio"`
+	Summaries json.RawMessage `json:"Summary"`
 }
 
 type providerPerson struct {

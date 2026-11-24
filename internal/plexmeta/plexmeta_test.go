@@ -85,6 +85,31 @@ func TestBackgroundFetchAndApply(t *testing.T) {
 	}
 }
 
+// The metadata provider sends capitalised arrays next to the scalar fields
+// (Guid next to guid, Rating next to rating, Studio and Summary likewise).
+// encoding/json matches keys case-insensitively, so an array must not land
+// in the scalar field and fail the whole decode.
+func TestProviderArraysBesideScalarsDecode(t *testing.T) {
+	s := testService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"MediaContainer":{"size":1,"Metadata":[{
+			"guid":"` + movieGUID + `","type":"movie","rating":7.2,
+			"studio":"Plex Studio","summary":"Plex summary","slug":"fight-club",
+			"contentRating":"R","year":1999,
+			"Genre":[{"tag":"Drama"}],
+			"Guid":[{"id":"imdb://tt0137523"},{"id":"tmdb://550"}],
+			"Rating":[{"image":"imdb://image.rating","type":"audience","value":8.8}],
+			"Studio":[{"tag":"Plex Studio"},{"tag":"Another Studio"}],
+			"Summary":[{"size":100,"tag":"Short summary.","type":"default"}]
+		}]}}`))
+	}), true)
+	s.Schedule(core.MovieKey(550))
+	s.Wait()
+	got, ok := s.Cached(context.Background(), core.MovieKey(550))
+	if !ok || got.Summary != "Plex summary" || got.Studio != "Plex Studio" || got.Rating != 7.2 || got.Slug != "fight-club" {
+		t.Fatalf("cached %+v ok=%v", got, ok)
+	}
+}
+
 func TestToggleOffDoesNotFetch(t *testing.T) {
 	var calls atomic.Int32
 	s := testService(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {

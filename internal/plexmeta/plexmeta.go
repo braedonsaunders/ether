@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -177,7 +178,9 @@ func (s *Service) worker() {
 				}
 				rctx, cancel := context.WithTimeout(s.ctx, bgLookupTimeout)
 				defer cancel()
-				_ = s.refresh(rctx, k)
+				if err := s.refresh(rctx, k); err != nil {
+					slog.Default().Debug("plexmeta: refresh failed", "key", int64(k), "err", err)
+				}
 			}()
 		}
 	}
