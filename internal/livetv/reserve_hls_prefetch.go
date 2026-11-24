@@ -95,14 +95,15 @@ func (h *hlsInput) next() *hlsFetch {
 	return f
 }
 
-// work fetches queued segments in order until the queue is empty.
+// work fetches queued segments in order until the queue is empty or the
+// grant is cancelled.
 func (h *hlsInput) work(release func()) {
 	defer release()
 	for {
 		f := h.next()
 		if f == nil {
 			h.mu.Lock()
-			if len(h.queue) > 0 {
+			if len(h.queue) > 0 && h.g.ctx.Err() == nil {
 				h.mu.Unlock()
 				continue
 			}

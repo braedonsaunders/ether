@@ -191,3 +191,33 @@ func TestSteadyPrefetchRespectsAccountLimit(t *testing.T) {
 		t.Fatalf("%d provider requests at once on a one-connection account", p)
 	}
 }
+
+// A stop while segments are still queued ends the prefetch worker: the
+// queued fetches are dropped with the grant, not retried forever.
+func TestSteadyPrefetchWorkerStopsOnCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	g := &inputGrant{reserve: time.Second, ctx: ctx, cancel: cancel}
+	h := g.hlsState()
+	h.mu.Lock()
+	h.queue = append(h.queue, &hlsFetch{done: make(chan struct{})}, &hlsFetch{done: make(chan struct{})})
+	h.fetching = true
+	h.mu.Unlock()
+	cancel()
+	done := make(chan struct{})
+	go h.work(func() { close(done) })
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		// Let the worker out so it does not outlive the test.
+		h.mu.Lock()
+		h.queue = nil
+		h.mu.Unlock()
+		<-done
+		t.Fatal("prefetch worker still running 2s after the grant was cancelled")
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.fetching {
+		t.Fatal("fetching still set after the worker returned")
+	}
+}
