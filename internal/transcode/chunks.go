@@ -521,6 +521,10 @@ func trunTotalDuration(p []byte, defDur uint32) (int64, uint32, bool) {
 // emptyClusterSize is the size of emptyCluster's output.
 const emptyClusterSize = 15
 
+// emptyFMP4MaxSize bounds the size of an empty fMP4 placeholder; a larger
+// segment holds samples and is not parsed to tell.
+const emptyFMP4MaxSize = 4 << 10
+
 // emptyCluster is a Matroska Cluster holding only its Timestamp (ms).
 func emptyCluster(at time.Duration) []byte {
 	ms := uint64(max(at, 0) / time.Millisecond)

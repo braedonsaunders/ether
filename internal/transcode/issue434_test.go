@@ -24,6 +24,9 @@ func TestIssue434EmptyFMP4FragmentIsConformant(t *testing.T) {
 		t.Fatalf("decode time = %d, want %d", base, 4*90000)
 	}
 	b := emptyFMP4(3, track, base)
+	if len(b) > emptyFMP4MaxSize {
+		t.Fatalf("emptyFMP4 output is %d bytes, above emptyFMP4MaxSize %d", len(b), emptyFMP4MaxSize)
+	}
 
 	if !isEmptyFMP4(b) {
 		t.Fatalf("emptyFMP4 output not recognised as an empty placeholder: %x", b)

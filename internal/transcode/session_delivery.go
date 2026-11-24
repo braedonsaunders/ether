@@ -256,7 +256,8 @@ func (s *Session) serveSegment(w http.ResponseWriter, r *http.Request, t, n int)
 // positive size when placeholders exist, 0 when aliases duplicate the
 // covering segment directly (MPEG-TS, DASH). The fMP4 placeholder's exact
 // size varies with the track, so it is matched structurally (isEmptyFMP4),
-// not by size.
+// not by size; only a file larger than emptyFMP4MaxSize is taken as a real
+// segment without parsing it.
 func (s *Session) emptyAliasSize() int64 {
 	if s.isDASH() {
 		return 0
@@ -342,6 +343,9 @@ func (s *Session) coveringSegLocked(t, n int) int {
 				return k
 			}
 		case ContainerFMP4:
+			if st.Size() > emptyFMP4MaxSize {
+				return k
+			}
 			b, err := os.ReadFile(path)
 			if err != nil {
 				return -1

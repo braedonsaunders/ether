@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -67,5 +68,33 @@ func TestMatroskaResumeServesCoveringGOP(t *testing.T) {
 	}
 	if paths[0] != gop {
 		t.Fatalf("resume served %s, want covering GOP %s", paths[0], gop)
+	}
+}
+
+// Finding the segment that covers a sequential fMP4 fetch must not read a
+// full media segment into memory just to tell it from a small placeholder.
+func TestFMP4CoveringSegmentSkipsReadingLargeSegment(t *testing.T) {
+	s := &Session{
+		dir:       t.TempDir(),
+		container: ContainerFMP4,
+		segDur:    4 * time.Second,
+		done:      []map[int]bool{{0: true}},
+	}
+	const size = 8 << 20
+	if err := os.WriteFile(s.trackSegPath(0, 0), make([]byte, size), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	for range 20 {
+		if k := s.coveringSegLocked(0, 0); k != 0 {
+			t.Fatalf("coveringSegLocked = %d, want 0", k)
+		}
+	}
+	runtime.ReadMemStats(&after)
+	alloc := after.TotalAlloc - before.TotalAlloc
+	t.Logf("20 covering checks allocated %d bytes", alloc)
+	if alloc >= size {
+		t.Fatalf("20 covering checks of an 8 MiB segment allocated %d bytes, want under %d", alloc, size)
 	}
 }
