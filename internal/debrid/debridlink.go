@@ -286,10 +286,7 @@ func (p *debridLink) Acquire(ctx context.Context, req AcquireRequest) (*Acquired
 				return nil, fmt.Errorf("debrid-link: duplicate torrent not listed: %w", core.ErrSourceUnavailable)
 			}
 		} else if err != nil {
-			switch {
-			case errors.Is(err, ErrBlocked):
-				return nil, fmt.Errorf("debrid-link: add refused: %w", ErrAddRefused)
-			case hashOnly && dlCode(err) == "badArguments":
+			if hashOnly && dlCode(err) == "badArguments" {
 				return nil, fmt.Errorf("debrid-link: hash not cached: %w", core.ErrNotCached)
 			}
 			return nil, err

@@ -916,12 +916,33 @@ func TestDebridLinkErrors(t *testing.T) {
 	if _, err := p.Account(ctx); !errors.Is(err, ErrRateLimited) {
 		t.Fatalf("429: %v", err)
 	}
-	// An infringing torrent refused at add time pauses adds like Real-Debrid.
+	// An infringing torrent refused at add time is blocked for that
+	// release, like Real-Debrid; it does not pause adds on the account.
 	f.mu.Lock()
 	f.errCode, f.errHTTP = "infringingFile", 451
 	f.mu.Unlock()
-	if _, err := p.Acquire(ctx, acquireReq(true)); !errors.Is(err, ErrAddRefused) || !errors.Is(err, core.ErrNotCached) {
+	if _, err := p.Acquire(ctx, acquireReq(true)); !errors.Is(err, ErrBlocked) || errors.Is(err, ErrAddRefused) || !errors.Is(err, core.ErrNotCached) {
 		t.Fatalf("infringing add: %v", err)
+	}
+}
+
+// Two infringing releases in a row must not keep the next release on the
+// same Debrid-Link account from playing.
+func TestDebridLinkBlockedReleasesDoNotPauseAdds(t *testing.T) {
+	f := &fakeDL{cached: true, errCode: "infringingFile", errHTTP: 451}
+	_, svc, _, _ := dlService(t, f)
+	for _, hash := range []string{hashN(1), hashN(2)} {
+		rel := dlRelease()
+		rel.ID, rel.InfoHash = hash, hash
+		if _, err := svc.Acquire(t.Context(), rel); !errors.Is(err, core.ErrNotCached) {
+			t.Fatalf("blocked release: %v", err)
+		}
+	}
+	f.mu.Lock()
+	f.errCode, f.errHTTP = "", 0
+	f.mu.Unlock()
+	if _, err := svc.Acquire(t.Context(), dlRelease()); err != nil {
+		t.Fatalf("next release was prevented from playing: %v", err)
 	}
 }
 
