@@ -23,6 +23,7 @@ import type { EtherConfig } from "../../lib/types";
 import { SchemaField, type FieldDef } from "../settings/SchemaForm";
 import * as schema from "../settings/schema";
 import { PlexStatus } from "../settings/sections";
+import { PlexServers } from "./PlexServers";
 import { claimFailureMessage, plexAccountClaimed, translatePlexFieldError } from "./plex-account";
 import { StatusRow, ConnectionStatusRow } from "../../components/AppStatusList";
 import {
@@ -37,10 +38,10 @@ import { awaySummary } from "./reachability";
 type Obj = Record<string, unknown>;
 type PlexDraft = { plex: Obj };
 type Pin = { id: string; code: string; authUrl: string };
-type PlexSection = "account" | "remote" | "downloads";
+type PlexSection = "account" | "remote" | "servers" | "downloads";
 
 function plexSection(section: string | undefined): PlexSection {
-  if (section === "remote" || section === "downloads") return section;
+  if (section === "remote" || section === "servers" || section === "downloads") return section;
   return "account";
 }
 
@@ -426,6 +427,7 @@ export function PlexApp({
   const tabs = [
     { key: "account", label: t("Account") },
     { key: "remote", label: t("Remote access") },
+    { key: "servers", label: t("Plex servers") },
     { key: "downloads", label: t("Downloads") },
   ];
   const plex = config.data.plex;
@@ -492,6 +494,7 @@ export function PlexApp({
           <RemoteDiagnostics />
         </>
       ) : null}
+      {active === "servers" ? <PlexServers onChanged={() => void refreshDashboard?.()} /> : null}
       {saveBar}
       {downloads}
     </>

@@ -36,3 +36,21 @@ func (i *instance) seriesNextUp(r *http.Request, v *frontend.Viewer, series fron
 	}
 	return []frontend.Title{*title}, nil
 }
+
+// nextUpScoped reports whether a Next Up request names a plugin series or
+// season (seriesId/parentId), such as a sports league. Next Up there is about
+// that one item; Ether has no per-series Next Up for plugin items, so the
+// answer is an empty row, never Next Up from every other show. A library id
+// in parentId (the home row) is not a plugin key and keeps the full row.
+func nextUpScoped(r *http.Request) bool {
+	for _, name := range []string{"seriesId", "parentId"} {
+		raw := firstQuery(r, name)
+		if raw == "" {
+			continue
+		}
+		if key, err := ids.ParseRatingKeyGUID(raw); err == nil && key.IsPluginKey() {
+			return true
+		}
+	}
+	return false
+}

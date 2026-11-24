@@ -78,6 +78,14 @@ func RedactConfig(cfg config.Config) config.Config {
 	out.Posters.URLTemplate = redact(out.Posters.URLTemplate)
 	out.Markers.APIKey = redact(out.Markers.APIKey)
 	out.Plex.Token = redact(out.Plex.Token)
+	if len(cfg.PlexExtraServers) > 0 {
+		out.PlexExtraServers = make([]config.PlexExtraServer, len(cfg.PlexExtraServers))
+		for i, ps := range cfg.PlexExtraServers {
+			ps.Token = redact(ps.Token)
+			ps.Account.Token = redact(ps.Account.Token)
+			out.PlexExtraServers[i] = ps
+		}
+	}
 	out.Catalog.TMDBKey = redact(out.Catalog.TMDBKey)
 	out.Trakt.ClientSecret = redact(out.Trakt.ClientSecret)
 	out.Simkl.ClientSecret = redact(out.Simkl.ClientSecret)

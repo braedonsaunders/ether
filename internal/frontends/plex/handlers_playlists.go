@@ -556,7 +556,7 @@ func (s *Server) handlePlaylistCreate(w http.ResponseWriter, r *http.Request) {
 	var keys []frontend.RatingKey
 	if uri := q.Get("uri"); uri != "" {
 		// Unresolvable sources are valid empty playlist creations.
-		if strings.HasPrefix(uri, "server://"+s.identity().MachineIdentifier+"/") || strings.HasPrefix(uri, "library://") {
+		if strings.HasPrefix(uri, "server://"+s.identityCtx(r.Context()).MachineIdentifier+"/") || strings.HasPrefix(uri, "library://") {
 			keys, _ = s.resolveURI(ctx, pr, uri)
 		}
 
@@ -770,7 +770,7 @@ func (s *Server) handlePlaylistAdd(w http.ResponseWriter, r *http.Request) {
 	pr := FromContext(ctx)
 	uri := r.URL.Query().Get("uri")
 	var keys []frontend.RatingKey
-	if strings.HasPrefix(uri, "server://"+s.identity().MachineIdentifier+"/") || strings.HasPrefix(uri, "library://") {
+	if strings.HasPrefix(uri, "server://"+s.identityCtx(r.Context()).MachineIdentifier+"/") || strings.HasPrefix(uri, "library://") {
 		keys, _ = s.resolveURI(ctx, pr, uri)
 	}
 	if store, ok := s.playlists().(frontend.PlaylistMutator); ok {

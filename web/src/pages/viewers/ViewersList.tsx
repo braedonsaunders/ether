@@ -33,6 +33,8 @@ import { ImportPlexViewersDrawer } from "./ImportPlexViewersDrawer";
 import { SignInLockouts } from "./sections/SignInLockouts";
 import { WatchlistAlerts } from "./sections/WatchlistDefaults";
 import { PlexAccessNote } from "./ViewerStatus";
+import { BulkViewersDrawer, ImportViewersDrawer, exportViewers } from "./BulkViewers";
+import { loadPlexMembers, type PlexMembers } from "../apps/plex-moves";
 
 type PeopleFilter = "all" | "active" | "paused" | "plex";
 
@@ -122,6 +124,14 @@ function People() {
   const state = useAsync(() => loadViewers(true), []);
   // Limits come from the user records; the list still works without them.
   const users = useAsync(() => api.users().catch(() => [] as EtherUser[]), []);
+  const members = useAsync(
+    () => (plexConnected ? loadPlexMembers() : Promise.resolve({} as PlexMembers)),
+    [],
+  );
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const byId = new Map((users.data ?? []).map((u) => [u.id, u]));
   const viewers = state.data ?? [];
   const isPaused = (v: Viewer) => lifecycleOf(v).paused;
@@ -160,8 +170,68 @@ function People() {
         ))}
       </div>
     );
+  const selected = viewers.filter((v) => picked.has(v.id));
+  const togglePick = (id: number, on: boolean) =>
+    setPicked((old) => {
+      const next = new Set(old);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  const allPicked = filtered.length > 0 && filtered.every((v) => v.isOwner || picked.has(v.id));
+  const reloadAll = () => {
+    void state.reload();
+    void users.reload();
+    void members.reload();
+  };
+  const exportPicked = async () => {
+    setExporting(true);
+    try {
+      const n = await exportViewers(selected.length ? selected : viewers, users.data ?? []);
+      toast.success(t("Exported {count} viewers", { count: n }));
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setExporting(false);
+    }
+  };
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" disabled={!selected.length} onClick={() => setBulkOpen(true)}>
+          {t("Bulk actions ({count})", { count: selected.length })}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={exporting}
+          onClick={() => void exportPicked()}
+        >
+          {selected.length ? t("Export selected") : t("Export all viewers")}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+          {t("Import backup")}
+        </Button>
+        {selected.length ? (
+          <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())}>
+            {t("Clear selection")}
+          </Button>
+        ) : null}
+      </div>
+      <BulkViewersDrawer
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        selected={selected}
+        allViewers={viewers}
+        users={users.data ?? []}
+        onDone={reloadAll}
+      />
+      <ImportViewersDrawer
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        viewers={viewers}
+        onDone={reloadAll}
+      />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PlexAccessNote />
         <div role="group" aria-label={t("Viewer status")} className="flex flex-wrap gap-1.5">
@@ -205,6 +275,35 @@ function People() {
         labels={pagedTableLabels({ searchPlaceholder: t("Search viewers…") })}
         columns={[
           {
+            key: "pick",
+            header: (
+              <input
+                type="checkbox"
+                aria-label={t("Select all shown")}
+                checked={allPicked}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setPicked((old) => {
+                    const next = new Set(old);
+                    for (const v of filtered)
+                      if (!v.isOwner) on ? next.add(v.id) : next.delete(v.id);
+                    return next;
+                  });
+                }}
+              />
+            ),
+            cell: (v) =>
+              v.isOwner ? null : (
+                <input
+                  type="checkbox"
+                  aria-label={t("Select {name}", { name: viewerName(v) })}
+                  checked={picked.has(v.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => togglePick(v.id, e.target.checked)}
+                />
+              ),
+          },
+          {
             key: "name",
             header: t("Viewer"),
             search: (v) => `${v.title} ${v.username}`,
@@ -217,6 +316,15 @@ function People() {
                   <span className="flex flex-wrap items-center gap-1.5 font-medium text-fg">
                     {v.isOwner ? t("You") : viewerName(v)}{" "}
                     <LifecycleBadges viewer={v} plexConnected={plexConnected} />
+                    {(members.data?.[String(v.id)] ?? []).map((s) => (
+                      <span
+                        key={s.id}
+                        title={t("Plex server")}
+                        className="rounded-full border border-border px-2 py-0.5 text-xs font-normal text-fg-muted"
+                      >
+                        {t("Plex: {name}", { name: s.name })}
+                      </span>
+                    ))}
                   </span>
                   <span className="block text-xs text-fg-muted">
                     {v.isOwner ? `${viewerName(v)} · ${v.username}` : v.username}

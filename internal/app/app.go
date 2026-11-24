@@ -189,8 +189,10 @@ type App struct {
 
 	// cluster is Solo on SQLite and Postgres on a shared database; peers
 	// caches the other nodes' URIs for the plex.tv publisher.
-	cluster      cluster.Cluster
-	peers        *peerSet
+	cluster cluster.Cluster
+	peers   *peerSet
+	// plexExtras runs the extra Plex servers (plex_servers.go).
+	plexExtras   *plexExtras
 	egress       *egressIP // this node's public address, heartbeated when clustered
 	outboundDial string    // last Usenet dial identity; a change drops warm connections
 	// clusterFatal receives the error that ended this node's cluster
@@ -837,7 +839,7 @@ func (a *App) Run(ctx context.Context) error {
 	a.frontends.start(ctx, addr)
 	defer a.frontends.stop()
 	cfg = a.cfg.Get() // the port may have moved off a busy default
-	front.setTLS(a.certs.TLSConfig)
+	front.setTLS(a.plexTLSConfig)
 	front.setProxies(a.cfg.TrustedProxyCIDRs)
 	front.setRemote(a.cfg.AllowRemoteConsole)
 	front.reconcileConsole(cfg.Server)
@@ -978,6 +980,9 @@ func (a *App) Run(ctx context.Context) error {
 			background.start(func() { a.registrar.RunPortMapping(ctx) })
 		} else if err := a.registrar.Start(ctx); err != nil {
 			a.log.Warn("plex.tv registrar", "err", err)
+		}
+		if a.plexExtras != nil {
+			a.plexExtras.start(ctx)
 		}
 	}
 	if a.registrar != nil {

@@ -559,6 +559,11 @@ type Host struct {
 	TracePlayback bool
 	// ServerIdentity describes how this server presents its machine and build identity.
 	ServerIdentity ServerIdentity
+	// ServerIdentityFor, when set, names the identity one request is for:
+	// Ether can present several Plex servers (each owned by a different
+	// plex.tv account) on one port. ok=false keeps ServerIdentity. Only the
+	// non-empty fields override.
+	ServerIdentityFor func(*http.Request) (ServerIdentity, bool)
 	// OwnerSubscription returns the current owner entitlement snapshot.
 	OwnerSubscription func() (active bool, features []string)
 	// MetadataLanguage is the catalog language (config catalog.language).

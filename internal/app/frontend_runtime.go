@@ -401,7 +401,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 			return r.secureOriginsFor(ctx, id, req)
 		}, SurfaceURL: func(ctx context.Context, req *http.Request) (string, error) {
 			return scorecardSurfaceURL(ctx, r, id, req)
-		}, PublicOrigin: publicOrigin, RepoFileURL: repoFile, TracePlayback: a.tracePlayback, ServerIdentity: serverIdentity, OwnerSubscription: ownerSub, LANViewer: lanViewer, PageFreshness: func() frontend.PageFreshness {
+		}, PublicOrigin: publicOrigin, RepoFileURL: repoFile, TracePlayback: a.tracePlayback, ServerIdentity: serverIdentity, ServerIdentityFor: a.plexIdentityForRequest, OwnerSubscription: ownerSub, LANViewer: lanViewer, PageFreshness: func() frontend.PageFreshness {
 			f := a.browseFreshness()
 			if imageRevision != nil {
 				f.Images = imageRevision()
@@ -797,6 +797,9 @@ func (r *frontendRuntime) publishLibrarySections() {
 		})
 	}
 	r.app.registrar.SetLibrarySections(libraries)
+	if r.app.plexExtras != nil {
+		r.app.plexExtras.setLibrarySections(libraries)
+	}
 }
 
 func (r *frontendRuntime) noteOwnerStop(sessionID, reason string) {

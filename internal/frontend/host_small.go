@@ -25,6 +25,17 @@ type ServerIdentity struct {
 	Version         string
 	Platform        string
 	PlatformVersion string
+	// Account describes the plex.tv account of an extra Plex server when
+	// one request is for it (ServerIdentityFor); nil for the main server.
+	Account *ServerAccount
+}
+
+// ServerAccount is the owning plex.tv account of one Plex server identity.
+type ServerAccount struct {
+	OwnerUsername string
+	Claimed       bool
+	PlexPass      bool
+	OwnerFeatures []string
 }
 
 // Cluster coordination primitives used by protocol adapters when clustered.

@@ -409,7 +409,10 @@ func (i *instance) browseRoutes() error {
 			if purpose == frontend.RowNextUp {
 				series = nextUpSeries(r)
 			}
-			if series != 0 {
+			if series == 0 && purpose == frontend.RowNextUp && nextUpScoped(r) {
+				// A series page Ether cannot scope (a plugin series): no row.
+				titles = nil
+			} else if series != 0 {
 				titles, err = i.seriesNextUp(r, v, series)
 				if err != nil {
 					// Jellyfin never fails Next Up; some clients (Roku) exit on

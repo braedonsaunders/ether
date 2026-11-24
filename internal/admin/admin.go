@@ -193,6 +193,12 @@ type Deps struct {
 	// PlexAuth drives wizard step 1 (plex.tv PIN sign-in and claim).
 	PlexAuth PlexAuth
 
+	// PlexExtras manages extra Plex servers on the same port (nil: off).
+	PlexExtras PlexExtras
+
+	// PlexExtrasStatus is the dashboard's "plexExtras" section.
+	PlexExtrasStatus StatusFunc
+
 	// SignIn powers "Sign in with Plex" on the admin login screen.
 	SignIn SignIn
 
@@ -517,6 +523,16 @@ func (h *Handler) routes() *http.ServeMux {
 	api("POST /api/plex/claim", h.handleClaim)
 	api("POST /api/plex/friends/sync", h.handleSyncPlexFriends)
 	api("GET /api/plex/status", h.handlePlexStatus)
+	api("GET /api/plex/servers", h.handlePlexExtras)
+	api("GET /api/plex/servers/members", h.handlePlexExtraMembers)
+	api("POST /api/plex/servers/move", h.handlePlexExtraMove)
+	api("POST /api/plex/servers/invite", h.handlePlexExtraInvite)
+	api("POST /api/plex/servers/{id}/retire", h.handlePlexExtraRetire)
+	api("POST /api/plex/servers/pin", h.handlePlexExtraPINStart)
+	api("GET /api/plex/servers/pin/{id}", h.handlePlexExtraPINPoll)
+	api("POST /api/plex/servers/{id}/start", h.handlePlexExtraStart)
+	api("PATCH /api/plex/servers/{id}", h.handlePlexExtraRename)
+	api("DELETE /api/plex/servers/{id}", h.handlePlexExtraRemove)
 
 	api("POST /api/test/usenet", h.handleTestUsenet)
 	api("POST /api/test/indexer", h.handleTestIndexer)

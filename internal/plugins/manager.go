@@ -120,6 +120,8 @@ type Deps struct {
 
 // Manager is the plugin host. It is safe for concurrent use.
 type Manager struct {
+	replaceMu          sync.Mutex
+	replaceLibs        map[string]bool
 	archiveDirectories archiveDirectoryCache
 	hashMu             sync.Mutex
 	hashJobs           map[string]*folderHashWork
@@ -1541,4 +1543,28 @@ func (m *Manager) Prune(ctx context.Context) (int64, error) {
 		return 0, nil
 	}
 	return m.store.pruneJournal(ctx)
+}
+
+// markReplaceLibraries records that the owner confirmed rebuilding pluginID's
+// changed kinds; the next library sync takes it (TakeReplaceLibraries).
+func (m *Manager) markReplaceLibraries(pluginID string) {
+	m.replaceMu.Lock()
+	defer m.replaceMu.Unlock()
+	if m.replaceLibs == nil {
+		m.replaceLibs = map[string]bool{}
+	}
+	m.replaceLibs[pluginID] = true
+}
+
+// TakeReplaceLibraries reports, once, whether the owner confirmed rebuilding
+// pluginID's changed kinds at its last install.
+func (m *Manager) TakeReplaceLibraries(pluginID string) bool {
+	if m == nil {
+		return false
+	}
+	m.replaceMu.Lock()
+	defer m.replaceMu.Unlock()
+	ok := m.replaceLibs[pluginID]
+	delete(m.replaceLibs, pluginID)
+	return ok
 }

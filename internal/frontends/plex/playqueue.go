@@ -183,7 +183,7 @@ func (s *Server) handlePlayQueueCreate(w http.ResponseWriter, r *http.Request) {
 		p.SourceURI = uri
 		if len(keys) > 0 && !strings.HasPrefix(uri, "library://") {
 			if path, e := uriPath(uri); e == nil {
-				authority := s.identity().MachineIdentifier
+				authority := s.identityCtx(ctx).MachineIdentifier
 				if strings.HasPrefix(uri, "server://") {
 					authority, _, _ = strings.Cut(strings.TrimPrefix(uri, "server://"), "/")
 				}
@@ -242,7 +242,7 @@ func (s *Server) continuousKeys(ctx context.Context, pr *Request, uri string, co
 func (s *Server) expandQueueURI(ctx context.Context, pr *Request, uri string, continuous bool) ([]frontend.RatingKey, error) {
 	if strings.HasPrefix(uri, "server://") {
 		authority, _, _ := strings.Cut(strings.TrimPrefix(uri, "server://"), "/")
-		if authority != s.identity().MachineIdentifier {
+		if authority != s.identityCtx(ctx).MachineIdentifier {
 			return nil, nil
 		}
 	}

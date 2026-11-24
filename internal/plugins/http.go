@@ -384,6 +384,9 @@ type installRequest struct {
 	AutoUpdate             bool                       `json:"autoUpdate"`
 	Shadow                 bool                       `json:"shadow"`
 	AcceptAddedPermissions bool                       `json:"acceptAddedPermissions"`
+	// ReplaceLibraries confirms rebuilding the libraries of kinds whose
+	// shape changed (levels), which an update cannot do additively.
+	ReplaceLibraries bool `json:"replaceLibraries"`
 }
 
 func (req installRequest) source() Source {
@@ -461,7 +464,7 @@ func (m *Manager) handleInstall(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		src = Source{Kind: "pkg", Pkg: b}
-		opts = InstallOptions{Grants: req.Grants, Settings: req.Settings, AutoUpdate: req.AutoUpdate, Shadow: req.Shadow, AcceptAddedPermissions: req.AcceptAddedPermissions}
+		opts = InstallOptions{Grants: req.Grants, Settings: req.Settings, AutoUpdate: req.AutoUpdate, Shadow: req.Shadow, AcceptAddedPermissions: req.AcceptAddedPermissions, ReplaceLibraries: req.ReplaceLibraries}
 	} else if strings.HasPrefix(r.Header.Get("Content-Type"), "application/octet-stream") ||
 		strings.HasPrefix(r.Header.Get("Content-Type"), "application/zip") {
 		b, err := io.ReadAll(io.LimitReader(r.Body, 64<<20))
@@ -477,7 +480,7 @@ func (m *Manager) handleInstall(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		src = req.source()
-		opts = InstallOptions{Grants: req.Grants, Settings: req.Settings, AutoUpdate: req.AutoUpdate, Shadow: req.Shadow, AcceptAddedPermissions: req.AcceptAddedPermissions}
+		opts = InstallOptions{Grants: req.Grants, Settings: req.Settings, AutoUpdate: req.AutoUpdate, Shadow: req.Shadow, AcceptAddedPermissions: req.AcceptAddedPermissions, ReplaceLibraries: req.ReplaceLibraries}
 	}
 	p, err := m.PreviewInstall(r.Context(), src)
 	if err != nil {

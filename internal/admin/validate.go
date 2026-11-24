@@ -226,6 +226,15 @@ func ValidateConfig(cfg config.Config) []FieldError {
 	}
 
 	v.port("plex.publicPort", cfg.Plex.PublicPort, true)
+	if cfg.Plex.MaxExtraServers < 0 || cfg.Plex.MaxExtraServers > config.MaxExtraPlexServersLimit {
+		v.add("plex.maxExtraServers", "must be between 0 and %d", config.MaxExtraPlexServersLimit)
+	}
+	if cfg.Plex.SeatsPerServer < 0 || cfg.Plex.SeatsPerServer > 1000 {
+		v.add("plex.seatsPerServer", "must be between 0 and 1000")
+	}
+	if cfg.Plex.SeatWarning < 0 || cfg.Plex.SeatWarning > cfg.PlexSeatsPerServer() {
+		v.add("plex.seatWarning", "must be between 0 and the viewers per server")
+	}
 	if cfg.Plex.SecureConnections != "" {
 		v.oneOf("plex.secureConnections", cfg.Plex.SecureConnections, "required", "preferred", "disabled")
 	}

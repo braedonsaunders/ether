@@ -44,6 +44,10 @@ func (h *Handler) saveConfig(next, prev config.Config, plexFields map[string]jso
 	}
 	err := h.deps.Config.Update(func(c *config.Config) error {
 		keepMachine, keepClient := c.Server.MachineIdentifier, c.Plex.ClientIdentifier
+		// Extra Plex servers are managed through /api/plex/servers only: a
+		// settings save never adds, removes or rewrites one (their tokens are
+		// redacted in the document the console edits).
+		next.PlexExtraServers = c.PlexExtraServers
 		livePlex := c.Plex
 		// An omitted field or a redacted token represents no identity edit.
 		// Unchanged snapshot values also must not undo a concurrent claim.

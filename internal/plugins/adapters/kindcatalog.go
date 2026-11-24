@@ -193,6 +193,9 @@ func (c *KindCatalog) syncPlugin(ctx context.Context, r plugins.Record) {
 	}
 
 	active := c.recordAllowsCatalogSync(ctx, r)
+	// The owner confirmed a non-additive kind change at install: kinds whose
+	// shape changed are rebuilt (their items purged); others are untouched.
+	replace := c.mgr != nil && c.mgr.TakeReplaceLibraries(r.ID)
 	keep := make(map[string]bool, len(declared))
 	for _, k := range declared {
 		keep[k.Key] = true
@@ -235,7 +238,7 @@ func (c *KindCatalog) syncPlugin(ctx context.Context, r plugins.Record) {
 		// sync pass releases kindLock after at most one chunk rather than
 		// blocking plugin install/upgrade/disable.
 		c.items.CancelKindSync(r.ID, k.Key)
-		if _, err := c.items.UpsertKind(ctx, r.ID, lib.ID, k, false); err != nil {
+		if _, err := c.items.UpsertKind(ctx, r.ID, lib.ID, k, replace); err != nil {
 			c.log.Warn("upsert plugin kind failed", "plugin", r.ID, "kind", k.Key, "err", err)
 			if c.mgr != nil {
 				c.mgr.RecordFailure(ctx, r.ID, err.Error())

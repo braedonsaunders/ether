@@ -44,19 +44,22 @@ type Config struct {
 	ClientIdentity ClientIdentity `json:"clientIdentity"`
 	// Prowlarr is the saved connection for indexer sync. Empty means the
 	// owner has not saved one. The API key is a secret, redacted like indexer keys.
-	Prowlarr      Prowlarr      `json:"prowlarr,omitempty"`
-	Cache         Cache         `json:"cache"`
-	Catalog       Catalog       `json:"catalog"`
-	Resolver      Resolver      `json:"resolver"`
-	Quality       Quality       `json:"quality"`
-	Transcode     Transcode     `json:"transcode"`
-	Trakt         Trakt         `json:"trakt"`
-	Simkl         Simkl         `json:"simkl"`
-	MDBList       MDBList       `json:"mdblist"`
-	PlexServers   PlexServers   `json:"plexServers"`
-	OpenSubtitles OpenSubtitles `json:"openSubtitles"`
-	SubDL         SubDL         `json:"subdl"`
-	SubSource     SubSource     `json:"subsource"`
+	Prowlarr    Prowlarr    `json:"prowlarr,omitempty"`
+	Cache       Cache       `json:"cache"`
+	Catalog     Catalog     `json:"catalog"`
+	Resolver    Resolver    `json:"resolver"`
+	Quality     Quality     `json:"quality"`
+	Transcode   Transcode   `json:"transcode"`
+	Trakt       Trakt       `json:"trakt"`
+	Simkl       Simkl       `json:"simkl"`
+	MDBList     MDBList     `json:"mdblist"`
+	PlexServers PlexServers `json:"plexServers"`
+	// PlexExtraServers are extra Plex servers, each claimed by a different
+	// plex.tv account, served on the same port (plex_extra_servers.go).
+	PlexExtraServers []PlexExtraServer `json:"plexExtraServers,omitempty"`
+	OpenSubtitles    OpenSubtitles     `json:"openSubtitles"`
+	SubDL            SubDL             `json:"subdl"`
+	SubSource        SubSource         `json:"subsource"`
 	// Subtitles is the ordered subtitle provider list (OpenSubtitles and
 	// Stremio subtitle add-ons). Empty means OpenSubtitles alone, as before.
 	Subtitles Subtitles `json:"subtitles,omitempty"`
@@ -267,6 +270,20 @@ type Plex struct {
 	KeyFile           string `json:"keyFile"`
 	CertHash          string `json:"certHash"`          // plex.direct subdomain hash
 	SecureConnections string `json:"secureConnections"` // "required", "preferred", "disabled"
+	// SeatsPerServer is how many viewers one Plex server takes before new
+	// invites go to the next started server (default 99).
+	SeatsPerServer int `json:"seatsPerServer,omitempty"`
+	// SeatWarning is no longer used; it is kept so saved settings load.
+	SeatWarning int `json:"seatWarning,omitempty"`
+	// MainRetired stops new invites on the main Plex server (a ban): new
+	// viewers go to the extra servers.
+	MainRetired bool `json:"mainRetired,omitempty"`
+	// ExtraServersEnabled turns on extra Plex servers: other Plex accounts
+	// the owner connects to this Ether. Off by default.
+	ExtraServersEnabled bool `json:"extraServersEnabled,omitempty"`
+	// MaxExtraServers caps how many extra Plex servers can be added; 0 is
+	// the default (DefaultMaxExtraPlexServers).
+	MaxExtraServers int `json:"maxExtraServers,omitempty"`
 }
 
 type Usenet struct {

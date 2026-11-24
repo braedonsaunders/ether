@@ -36,8 +36,9 @@ import type { Viewer } from "../../lib/contract";
 import { useAsync } from "../../lib/hooks";
 import { MIN_LOCAL_PASSWORD } from "../me/SignInMethods";
 import { PLEX_ACCESS_URL, viewerLifecycle } from "./ViewerStatus";
+import { PlexMovePanel } from "../apps/plex-moves";
 
-type Panel = "invite" | "password" | "tvcode" | "copy" | "merge" | "remove" | null;
+type Panel = "invite" | "password" | "tvcode" | "copy" | "merge" | "remove" | "plexmove" | null;
 
 /**
  * The viewer page's one Actions menu: Home, sign-in help, access and removal.
@@ -146,11 +147,15 @@ export function ViewerActions({
       onSelect: onPreviewHome,
     },
     { key: "sep-signin", separator: true },
-    ...(!plexManaged && !viewer.isOwner
+    ...(!viewer.isOwner
       ? [
           {
             key: "invite",
-            label: t("Send invite link"),
+            // A Plex viewer gets a local sign-in too, so Jellyfin, Emby and
+            // Silo keep working if Plex stops: same viewer, same history.
+            label: plexManaged
+              ? t("Add a local sign-in (Jellyfin, Emby, Silo)")
+              : t("Send invite link"),
             icon: Link2,
             onSelect: () => setPanel("invite"),
           } satisfies ContextMenuEntry,
@@ -210,6 +215,12 @@ export function ViewerActions({
       ? [
           { key: "sep-plex", separator: true } satisfies ContextMenuEntry,
           {
+            key: "plexmove",
+            label: t("Move to another Plex server"),
+            icon: ExternalLink,
+            onSelect: () => setPanel("plexmove"),
+          } satisfies ContextMenuEntry,
+          {
             key: "plex",
             label: t("Manage on plex.tv"),
             icon: ExternalLink,
@@ -250,6 +261,12 @@ export function ViewerActions({
         {t("Actions")} <ChevronDown size={14} />
       </ActionMenu>
       <InvitePanel viewerId={id} open={panel === "invite"} onClose={() => setPanel(null)} />
+      <PlexMovePanel
+        viewerId={id}
+        open={panel === "plexmove"}
+        onClose={() => setPanel(null)}
+        onDone={onChange}
+      />
       <ResetPasswordPanel
         viewer={viewer}
         open={panel === "password"}

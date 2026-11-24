@@ -42,18 +42,22 @@ var sectionScopes = map[string]Scope{
 	"simkl":          Shared,
 	"mdblist":        Shared,
 	"plexServers":    Shared,
-	"openSubtitles":  Shared,
-	"subdl":          Shared,
-	"subsource":      Shared,
-	"llm":            Shared,
-	"updates":        Shared, // incl. maxDrain: every node drains the same way
-	"markers":        Shared,
-	"personalize":    Shared,
-	"clients":        Shared,
-	"setupComplete":  Shared,
-	"subtitles":      Shared,
-	"liveTV":         Shared,
-	"plugins":        Shared,
+
+	// Extra Plex servers on the same port (plex_extra_servers.go).
+	"plexExtraServers": Shared,
+
+	"openSubtitles": Shared,
+	"subdl":         Shared,
+	"subsource":     Shared,
+	"llm":           Shared,
+	"updates":       Shared, // incl. maxDrain: every node drains the same way
+	"markers":       Shared,
+	"personalize":   Shared,
+	"clients":       Shared,
+	"setupComplete": Shared,
+	"subtitles":     Shared,
+	"liveTV":        Shared,
+	"plugins":       Shared,
 	// Spike serves files from this node's disk.
 	"spike": Local,
 	// Each node holds its own connection settings; the URL is sealed.
@@ -100,6 +104,11 @@ var mixedSections = map[string]map[string]Scope{
 		"remoteAccess":               Shared,
 		"customUrls":                 Shared,
 		"certHash":                   Shared,
+		"seatsPerServer":             Shared,
+		"seatWarning":                Shared,
+		"mainRetired":                Shared,
+		"extraServersEnabled":        Shared,
+		"maxExtraServers":            Shared,
 		"secureConnections":          Shared,
 		"usePlexMetadata":            Shared,
 		"delivery":                   Shared,

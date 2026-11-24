@@ -382,6 +382,8 @@ export interface EtherConfig {
     keyFile: string;
     certHash: string;
     secureConnections: string;
+    seatsPerServer?: number;
+    seatWarning?: number;
   };
   usenet: {
     providers: UsenetProvider[] | null;

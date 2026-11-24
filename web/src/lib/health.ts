@@ -23,6 +23,7 @@ export interface HealthItem {
     | "remote"
     | "plexdirect"
     | "storage"
+    | "plexservers"
     | "transcode";
   label: string;
   level: HealthLevel;
@@ -979,6 +980,41 @@ export function storageHealth(v: unknown): HealthItem | null {
   };
 }
 
+/**
+ * Plex servers: an error when plex.tv seems to have blocked one, and a short
+ * status line when extra Plex servers are in use.
+ */
+export function plexServersHealth(v: unknown): HealthItem | null {
+  if (!isPlainObject(v) || v.claimed !== true) return null;
+  const servers = Array.isArray(v.servers) ? (v.servers as Record<string, unknown>[]) : [];
+  const href = "/apps/plex/servers";
+  const blocked = Array.isArray(v.blocked) ? v.blocked.map(str).filter(Boolean) : [];
+  if (blocked.length) {
+    return {
+      id: "plexservers",
+      label: t("Plex servers"),
+      href,
+      level: "error",
+      summary: t("plex.tv seems to have blocked {names}", { names: blocked.join(", ") }),
+      note:
+        v.room === true
+          ? t("Another Plex server still has room. Open Plex servers and use Move viewers.")
+          : t("You can give viewers a local sign-in for Jellyfin, Emby and Silo."),
+      details: [],
+    };
+  }
+  if (v.enabled !== true || servers.length <= 1) return null;
+  const started = servers.filter((s) => s.state === "active").length;
+  return {
+    id: "plexservers",
+    label: t("Plex servers"),
+    href,
+    level: "ok",
+    summary: t("{started} of {total} Plex servers started", { started, total: servers.length }),
+    details: [],
+  };
+}
+
 /** One Plex row until the server is claimed. The certificate check is the same missing sign-in. */
 function plexConnectionHealth(remote: unknown, now: Date): HealthItem[] {
   if (isPlainObject(remote) && remote.claimed === false) {
@@ -1011,6 +1047,7 @@ export function computeHealth(
     databaseHealth(s.database, now),
     storageHealth(s.storage),
     ...(plexOn ? plexConnectionHealth(s.remote, now) : []),
+    plexOn ? plexServersHealth(s.plexExtras) : null,
   ].filter((item): item is HealthItem => item !== null);
   const transcode = transcodeHealth(s.hwaccel);
   if (transcode) items.push(transcode);

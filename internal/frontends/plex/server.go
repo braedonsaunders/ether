@@ -833,7 +833,41 @@ func (s *Server) sessionHeartbeat() time.Duration {
 }
 
 // ServeHTTP implements http.Handler.
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.router.ServeHTTP(w, r) }
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h := s.getHost(); h.ServerIdentityFor != nil {
+		if id, ok := h.ServerIdentityFor(r); ok && id.MachineID != "" {
+			r = r.WithContext(context.WithValue(r.Context(), identityOverrideKey{}, id))
+		}
+	}
+	s.router.ServeHTTP(w, r)
+}
+
+// identityOverrideKey carries the server identity one request is for when
+// Ether presents several Plex servers on one port.
+type identityOverrideKey struct{}
+
+// identityCtx is identity as the request in ctx sees it: an extra Plex
+// server's machine identifier and name when the request is for one.
+func (s *Server) identityCtx(ctx context.Context) Identity {
+	id := s.identity()
+	if ctx == nil {
+		return id
+	}
+	if o, ok := ctx.Value(identityOverrideKey{}).(frontend.ServerIdentity); ok {
+		if o.MachineID != "" {
+			id.MachineIdentifier = o.MachineID
+		}
+		if o.FriendlyName != "" {
+			id.FriendlyName = o.FriendlyName
+		}
+		if o.Account != nil {
+			// The extra server's own account: never the main owner's Plex Pass.
+			id.MyPlexSubscription = o.Account.PlexPass
+			id.OwnerFeatures = o.Account.OwnerFeatures
+		}
+	}
+	return id
+}
 
 // Closed reports whether Close has begun.
 func (s *Server) Closed() bool {
@@ -1219,4 +1253,16 @@ type noopResources struct{}
 
 func (noopResources) Query(int, int64, int64, int64, bool, bool, bool) []frontend.ResourceSample {
 	return nil
+}
+
+// accountCtx is the plex.tv owner and claim state of the server the request
+// in ctx is for: an extra Plex server's own account, else the main one.
+func (s *Server) accountCtx(ctx context.Context) (owner string, claimed bool) {
+	if ctx != nil {
+		if o, ok := ctx.Value(identityOverrideKey{}).(frontend.ServerIdentity); ok && o.Account != nil {
+			return o.Account.OwnerUsername, o.Account.Claimed
+		}
+	}
+	c := s.cfg()
+	return c.Plex.OwnerUsername, c.Plex.Claimed || c.Plex.Token != ""
 }
