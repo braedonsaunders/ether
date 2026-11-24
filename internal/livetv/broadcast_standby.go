@@ -26,7 +26,16 @@ type steadyStandby struct {
 	produced atomic.Bool
 	failed   atomic.Bool
 	done     chan struct{}
+	cancel   context.CancelFunc // stops run, which may be parked on a full frames channel
 	once     sync.Once
+}
+
+// startSteadyStandby starts buffering the decoder's first frames.
+func startSteadyStandby(ctx context.Context, src StreamSource, link *steadyLink, decoder transcode.Decoder, buffer int) *steadyStandby {
+	ctx, cancel := context.WithCancel(ctx)
+	sb := &steadyStandby{src: src, link: link, decoder: decoder, frames: make(chan transcode.RawFrame, buffer), done: make(chan struct{}), cancel: cancel}
+	go sb.run(ctx)
+	return sb
 }
 
 func (sb *steadyStandby) ready() bool {
@@ -47,6 +56,7 @@ func (sb *steadyStandby) run(ctx context.Context) {
 		select {
 		case sb.frames <- frame:
 		case <-ctx.Done():
+			sb.err = ctx.Err()
 			return
 		}
 	}
@@ -62,6 +72,7 @@ func (sb *steadyStandby) close(s *Service) {
 		return
 	}
 	sb.once.Do(func() {
+		sb.cancel()
 		sb.decoder.Close()
 		<-sb.done
 		sb.link.close(s)
@@ -85,6 +96,7 @@ func (d *standbyDecoder) Next(ctx context.Context) (transcode.RawFrame, error) {
 // Close stops the decoder; the adopted link now belongs to the planner.
 func (d *standbyDecoder) Close() error {
 	d.sb.once.Do(func() {
+		d.sb.cancel()
 		d.sb.decoder.Close()
 		<-d.sb.done
 	})
@@ -237,8 +249,7 @@ func (p *providerBroadcastPlanner) openStandby(ctx context.Context, primary Stre
 			link.close(p.s)
 			continue
 		}
-		sb := &steadyStandby{src: src, link: link, decoder: decoder, frames: make(chan transcode.RawFrame, max(1, p.format.FPSNum/p.format.FPSDen/2)), done: make(chan struct{})}
-		go sb.run(ctx)
+		sb := startSteadyStandby(ctx, src, link, decoder, max(1, p.format.FPSNum/p.format.FPSDen/2))
 		p.mu.Lock()
 		if p.standby != nil || ctx.Err() != nil {
 			p.mu.Unlock()
