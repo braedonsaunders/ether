@@ -33,6 +33,23 @@ type client struct {
 	MaxHeight        int                                    `json:"maxHeight,omitempty"`
 	MaxBitrate       int                                    `json:"maxBitrate,omitempty"`
 	HDR              []string                               `json:"hdr,omitempty"`
+
+	// Dolby Vision variants shown as Dolby Vision ("5", "8.1", "8.4") and
+	// variants the client reshapes itself. Nil is a client that does not
+	// declare them; an empty list declares none.
+	DolbyVisionProfiles *[]string    `json:"dolbyVisionProfiles,omitempty"`
+	DolbyVisionReshape  *[]string    `json:"dolbyVisionReshape,omitempty"`
+	AudioOutput         *audioOutput `json:"audioOutput,omitempty"`
+}
+
+// audioOutput is what the client's audio route delivers. It is advisory: the
+// route can change after negotiation, so it never limits what is played.
+type audioOutput struct {
+	Passthrough   []string `json:"passthrough"`
+	Immersive     []string `json:"immersive"`
+	MaxChannels   int      `json:"maxChannels"`
+	MaxSampleRate int      `json:"maxSampleRate,omitempty"`
+	Lossless      bool     `json:"lossless"`
 }
 type playSession struct {
 	id               string
