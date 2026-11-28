@@ -235,3 +235,20 @@ https://example.invalid/b
 		t.Fatalf("unexpected channels: %+v", cs)
 	}
 }
+
+func TestXMLTVTrimsChannelIDs(t *testing.T) {
+	doc := `<tv><channel id=" a "><display-name>Alpha</display-name></channel>
+<programme start="20260101000000" channel=" a "><title>one</title></programme>
+<programme start="20260101010000" channel="a"><title>two</title></programme>
+<programme start="20260101200000" channel=" a "><title>far</title></programme></tv>`
+	day := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	g, _, err := parseXMLTV(strings.NewReader(doc), guideFilter{From: day, Until: day.Add(12 * time.Hour), IDs: map[string]struct{}{"a": {}}})
+	if err != nil || g.Channels["a"].GuideID != "a" || len(g.Names["a"]) != 1 || len(g.Programmes) != 2 {
+		t.Fatalf("guide = %+v, err = %v", g, err)
+	}
+	for i, p := range g.Programmes {
+		if p.ChannelID != "a" || !p.End.Equal(day.Add([]time.Duration{1, 20}[i]*time.Hour)) {
+			t.Fatalf("unexpected programme: %+v", p)
+		}
+	}
+}

@@ -488,7 +488,7 @@ func parseXMLTV(r io.Reader, f guideFilter) (XMLGuide, bool, error) {
 		}
 		switch el.Name.Local {
 		case "channel":
-			id := xmlAttr(el, "id")
+			id := strings.TrimSpace(xmlAttr(el, "id"))
 			if sawProgramme {
 				// Invalid per the DTD: only count it. Name matching has
 				// already run, and buffering would not help.
@@ -511,13 +511,13 @@ func parseXMLTV(r io.Reader, f guideFilter) (XMLGuide, bool, error) {
 				}
 				return g, dropped, err
 			}
-			name := c.ID
+			name := id
 			if len(c.Name) > 0 {
 				name = c.Name[0].Value
 			}
-			g.Channels[c.ID] = Channel{GuideID: c.ID, Name: name, Logo: c.Icon.Src}
+			g.Channels[id] = Channel{GuideID: id, Name: name, Logo: c.Icon.Src}
 			for _, n := range c.Name {
-				g.Names[c.ID] = append(g.Names[c.ID], strings.TrimSpace(n.Value))
+				g.Names[id] = append(g.Names[id], strings.TrimSpace(n.Value))
 			}
 		case "programme":
 			if !sawProgramme {
@@ -553,9 +553,8 @@ func parseXMLTV(r io.Reader, f guideFilter) (XMLGuide, bool, error) {
 				from := f.from(channel)
 				outside = !start.Before(f.Until) || (!end.IsZero() && !end.After(from)) || (end.IsZero() && start.Before(from.Add(-24*time.Hour)))
 				if !start.Before(f.Until) {
-					id := xmlAttr(el, "channel")
-					if first, ok := firstAfter[id]; !ok || start.Before(first) {
-						firstAfter[id] = start
+					if first, ok := firstAfter[channel]; !ok || start.Before(first) {
+						firstAfter[channel] = start
 					}
 				}
 			}
@@ -609,7 +608,7 @@ func parseXMLTV(r io.Reader, f guideFilter) (XMLGuide, bool, error) {
 			if len(p.Rating) > 0 {
 				item.Rating = p.Rating[0].Value
 			}
-			g.Programmes = append(g.Programmes, Programme{ID: stableID(p.Channel, rawStart), ChannelID: p.Channel, Start: start, End: end, Item: item})
+			g.Programmes = append(g.Programmes, Programme{ID: stableID(channel, rawStart), ChannelID: channel, Start: start, End: end, Item: item})
 		}
 	}
 	if err := limited.overflow(); err != nil {
