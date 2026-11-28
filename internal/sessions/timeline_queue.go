@@ -32,10 +32,16 @@ func (s *PlayQueues) TimelineQueue(user int64, client string, key core.RatingKey
 		return 0, false
 	}
 	var qid int64
+	now := s.now()
 	s.mu.Lock()
 	for _, q := range s.queues {
 		if i, ok := find(q); ok {
 			key = q.Items[i].Key
+			// Keep active queues alive without rewriting them on every timeline.
+			if q.Selected == i && now.Sub(q.UpdatedAt) <= queueCacheTTL {
+				s.mu.Unlock()
+				return key
+			}
 			qid = q.ID
 			break
 		}
@@ -60,15 +66,17 @@ func (s *PlayQueues) TimelineQueue(user int64, client string, key core.RatingKey
 			}
 			if i, ok := find(q); ok {
 				key = q.Items[i].Key
-				qid = id
 				s.cache(q)
+				if q.Selected != i || now.Sub(q.UpdatedAt) > queueCacheTTL {
+					qid = id
+				}
 				break
 			}
 		}
 		rows.Close()
 	}
 	if qid != 0 {
-		_, _ = s.With(qid, user, s.now(), func(q *PlayQueue) {
+		_, _ = s.With(qid, user, now, func(q *PlayQueue) {
 			if i, ok := find(q); ok {
 				q.Selected = i
 			}
