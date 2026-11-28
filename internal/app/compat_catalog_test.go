@@ -153,7 +153,7 @@ func TestBuiltinAppsCoverConformProfilesAndCertification(t *testing.T) {
 		}
 	}
 	for _, device := range builtinDevices(nil) {
-		if device.Name == "Apple TV" && !slices.Equal(device.DolbyVisionProfiles, []int{5, 8}) {
+		if device.Name == "Apple TV 4K" && !slices.Equal(device.DolbyVisionProfiles, []int{5, 8}) {
 			t.Fatalf("apple tv device: %+v", device)
 		}
 	}
@@ -171,7 +171,7 @@ func TestBuiltinDevicesMatchRuntimeRegistry(t *testing.T) {
 			id := device.Identity
 			play := transcode.PlaybackDefaultsFor(id.Product, id.Platform, id.Device, id.DeviceName, id.Model, id.Version, edits)
 			base := transcode.PlaybackDefaultsFor(id.Product, id.Platform, id.Device, id.DeviceName, id.Model, id.Version, nil)
-			policy := transcode.ResolvePolicy(core.ClientCaps{Product: id.Product, Platform: id.Platform, Device: id.Device, Version: id.Version}, edits)
+			policy := transcode.ResolvePolicy(core.ClientCaps{Product: id.Product, Platform: id.Platform, Device: id.Device, Model: id.Model, Version: id.Version}, edits)
 			if play.ID == "generic" {
 				t.Errorf("%s unexpectedly uses generic playback", row.Name)
 			}

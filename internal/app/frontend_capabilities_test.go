@@ -86,7 +86,7 @@ func TestSurfaceCapabilitiesApplyQuirksAndOwnerRules(t *testing.T) {
 	}
 	var apple *compatDevice
 	for i := range payload.Devices {
-		if payload.Devices[i].Name == "Apple TV" {
+		if payload.Devices[i].Name == "Apple TV 4K" {
 			apple = &payload.Devices[i]
 		}
 	}

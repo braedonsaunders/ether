@@ -51,6 +51,7 @@ func (pr *Request) ClientCapsWith(remoteMaxKbps int, overrides []frontend.Client
 		PlatformVersion:            pr.PlatformVersion,
 		Device:                     pr.Device,
 		DeviceName:                 pr.DeviceName,
+		Model:                      pr.Model,
 		ClientID:                   pr.ClientID,
 		Version:                    pr.Version,
 		MaxHeight:                  b.maxHeight,

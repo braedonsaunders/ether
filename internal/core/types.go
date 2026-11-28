@@ -576,7 +576,8 @@ type ClientCaps struct {
 	PlatformVersion string                    `json:"platformVersion"`
 	Device          string                    `json:"device"`
 	DeviceName      string                    `json:"deviceName"`
-	ClientID        string                    `json:"clientId"` // X-Plex-Client-Identifier
+	Model           string                    `json:"model,omitempty"` // X-Plex-Model, e.g. "AppleTV5,3"; recorded for display
+	ClientID        string                    `json:"clientId"`        // X-Plex-Client-Identifier
 	Version         string                    `json:"version"`
 	MultiviewGroup  string                    `json:"multiviewGroup,omitempty"`
 	MultiviewTile   int                       `json:"multiviewTile,omitempty"`

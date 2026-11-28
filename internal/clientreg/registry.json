@@ -319,7 +319,8 @@
     }
   ],
   "devices": [
-    {"name": "Apple TV", "identity": {"product": "Plex for Apple TV", "platform": "tvOS", "device": "Apple TV"}, "aliases": ["tvOS", "Apple TV 4K"]},
+    {"id": "Apple TV", "name": "Apple TV 4K", "identity": {"product": "Plex for Apple TV", "platform": "tvOS", "device": "Apple TV", "model": "AppleTV14,1"}, "aliases": ["Apple TV", "tvOS"]},
+    {"name": "Apple TV HD", "parent": "Apple TV", "identity": {"product": "Plex for Apple TV", "platform": "tvOS", "device": "Apple TV", "model": "AppleTV5,3"}, "aliases": ["AppleTV5,3"]},
     {"name": "iOS", "identity": {"product": "Plex for iOS", "platform": "iOS", "device": "iPhone"}, "aliases": ["iPhone", "iPad", "iPadOS"]},
     {"name": "Android", "identity": {"product": "Plex for Android (Mobile)", "platform": "Android"}, "aliases": ["Android phone", "Android tablet", "Pixel", "Galaxy"]},
     {"name": "Android TV", "identity": {"product": "Plex for Android (TV)", "platform": "Android", "device": "Android TV"}, "aliases": ["Android TV box"]},
@@ -335,6 +336,28 @@
     {"name": "Kodi", "identity": {"product": "Kodi"}, "aliases": ["XBMC", "CoreELEC", "LibreELEC"]},
     {"name": "Mac", "identity": {"product": "Plex for Mac", "platform": "macOS"}, "aliases": ["macOS", "MacBook", "iMac"]},
     {"name": "Browser", "identity": {"product": "Plex Web"}, "aliases": ["Web", "Chrome", "Safari", "Firefox", "Edge"]}
+  ],
+  "models": [
+    {"model": "AppleTV5,3", "name": "Apple TV HD"},
+    {"model": "AppleTV6,2", "name": "Apple TV 4K (1st gen)"},
+    {"model": "AppleTV11,1", "name": "Apple TV 4K (2nd gen)"},
+    {"model": "AppleTV14,1", "name": "Apple TV 4K (3rd gen)"},
+    {"model": "AFTB", "name": "Fire TV (1st gen)"},
+    {"model": "AFTS", "name": "Fire TV (2nd gen)"},
+    {"model": "AFTN", "name": "Fire TV (3rd gen)"},
+    {"model": "AFTM", "name": "Fire TV Stick (1st gen)"},
+    {"model": "AFTT", "name": "Fire TV Stick (2nd gen)"},
+    {"model": "AFTSSS", "name": "Fire TV Stick (3rd gen)"},
+    {"model": "AFTSS", "name": "Fire TV Stick Lite"},
+    {"model": "AFTMM", "name": "Fire TV Stick 4K"},
+    {"model": "AFTKM", "name": "Fire TV Stick 4K (2nd gen)"},
+    {"model": "AFTKA", "name": "Fire TV Stick 4K Max"},
+    {"model": "AFTKRT", "name": "Fire TV Stick 4K Max (2nd gen)"},
+    {"model": "AFTA", "name": "Fire TV Cube (1st gen)"},
+    {"model": "AFTR", "name": "Fire TV Cube (2nd gen)"},
+    {"model": "AFTGAZL", "name": "Fire TV Cube (3rd gen)"},
+    {"model": "mdarcy", "name": "NVIDIA Shield TV Pro (2019)"},
+    {"model": "sif", "name": "NVIDIA Shield TV (2019)"}
   ],
   "presets": {
     "text": {
@@ -548,6 +571,27 @@
         {"field": "product", "op": "equals", "value": "pm4k"},
         {"field": "product", "op": "equals", "value": "plex for kodi"}
       ]}
+    },
+    {
+      "id": "apple-tv-hd",
+      "role": "policy",
+      "class": "tv",
+      "family": "Apple TV",
+      "preset": "text",
+      "notes": "Apple TV HD (AppleTV5,3, A8): 1080p SDR. No HDR10 or Dolby Vision; 4K and HDR sources are transcoded.",
+      "dolbyVisionProfiles": [],
+      "match": {
+        "all": [
+          {
+            "any": [
+              {"field": "identity", "op": "contains", "value": "apple tv"},
+              {"field": "identity", "op": "contains", "value": "appletv"},
+              {"field": "identity", "op": "contains", "value": "tvos"}
+            ]
+          },
+          {"field": "model", "op": "prefix", "value": "AppleTV5,"}
+        ]
+      }
     },
     {
       "id": "apple-tv",
@@ -765,6 +809,27 @@
               {"field": "device", "op": "contains", "value": "ipad"}
             ]
           }
+        ]
+      }
+    },
+    {
+      "id": "apple-tv-hd",
+      "role": "playback",
+      "class": "tv",
+      "preset": "apple",
+      "maxHeight": 1080,
+      "hdr10": false,
+      "dolbyVision": false,
+      "match": {
+        "all": [
+          {
+            "any": [
+              {"field": "identity", "op": "contains", "value": "apple tv"},
+              {"field": "identity", "op": "contains", "value": "appletv"},
+              {"field": "identity", "op": "contains", "value": "tvos"}
+            ]
+          },
+          {"field": "model", "op": "prefix", "value": "AppleTV5,"}
         ]
       }
     },

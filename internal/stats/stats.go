@@ -83,6 +83,10 @@ CREATE INDEX stats_plays_device_latest ON stats_plays(platform,device,updated DE
 	store.Register("stats_seen_devices", 2, `UPDATE stats_plays SET device_match=COALESCE((SELECT p2.device_match FROM stats_plays p2 WHERE p2.platform=stats_plays.platform AND p2.device=stats_plays.device AND p2.device_match<>'' ORDER BY p2.updated DESC,p2.id DESC LIMIT 1),'') WHERE device_match='' AND device<>'';
 UPDATE stats_plays SET device_match=device WHERE device_match='' AND product<>'' AND device<>'';
 UPDATE stats_plays SET device_match=COALESCE((SELECT p2.device_match FROM stats_plays p2 WHERE p2.platform=stats_plays.platform AND p2.device=stats_plays.device AND p2.device_match<>'' ORDER BY p2.updated DESC,p2.id DESC LIMIT 1),'') WHERE device_match='' AND product='' AND device<>'';`)
+	// The hardware model the client reported (X-Plex-Model). Seen devices
+	// shows it so two clients with the same device name (every Apple TV
+	// says "Apple TV") can be told apart. Older plays stay empty.
+	store.Register("stats_seen_devices", 3, `ALTER TABLE stats_plays ADD COLUMN model TEXT NOT NULL DEFAULT '';`)
 }
 
 type Options struct {
@@ -337,9 +341,10 @@ func (s *Service) record(ctx context.Context, r playRecord) error {
 		}
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO stats_plays(id,user_id,rating_key,username,title,platform,device,decision,started,updated,ended,bytes,watched_ms,duration_ms,failovers,error,node_id,`+
-		`measured,played,pictured,ttff_ms,start_failed,buffer_events,buffer_ms,down_failovers,source_kbps,uhd,hdr,remote,origin,release_name,reason_kind,reason_detail,quality_fallback,client_ip,audio_copy,product,device_match,channel_id,channel_name,channel_number,live_source_name,live_login_label,live_login_number,chapter_count) `+
-		`VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET username=excluded.username,title=excluded.title,platform=excluded.platform,device=excluded.device,decision=excluded.decision,updated=excluded.updated,`+
+		`measured,played,pictured,ttff_ms,start_failed,buffer_events,buffer_ms,down_failovers,source_kbps,uhd,hdr,remote,origin,release_name,reason_kind,reason_detail,quality_fallback,client_ip,audio_copy,product,device_match,channel_id,channel_name,channel_number,live_source_name,live_login_label,live_login_number,chapter_count,model) `+
+		`VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET username=excluded.username,title=excluded.title,platform=excluded.platform,device=excluded.device,decision=excluded.decision,updated=excluded.updated,`+
 		`ended=excluded.ended,product=CASE WHEN excluded.product='' THEN stats_plays.product ELSE excluded.product END,device_match=CASE WHEN excluded.device_match='' THEN stats_plays.device_match ELSE excluded.device_match END,`+
+		`model=CASE WHEN excluded.model='' THEN stats_plays.model ELSE excluded.model END,`+
 		`bytes=CASE WHEN excluded.bytes>stats_plays.bytes THEN excluded.bytes ELSE stats_plays.bytes END,`+
 		`watched_ms=CASE WHEN excluded.watched_ms>stats_plays.watched_ms THEN excluded.watched_ms ELSE stats_plays.watched_ms END,`+
 		`duration_ms=CASE WHEN excluded.duration_ms>stats_plays.duration_ms THEN excluded.duration_ms ELSE stats_plays.duration_ms END,`+
@@ -365,7 +370,7 @@ func (s *Service) record(ctx context.Context, r playRecord) error {
 		`live_login_number=CASE WHEN excluded.live_source_name='' THEN stats_plays.live_login_number ELSE excluded.live_login_number END,`+
 		`chapter_count=excluded.chapter_count`,
 		p.ID, p.UserID, int64(p.Key), p.Username, p.TitleName, p.Client.Platform, device, string(p.Decision), start.Unix(), now.Unix(), end, p.BytesServed, r.watchedMS, p.Info.Duration.Milliseconds(), p.Failovers, problem, s.opts.NodeID,
-		q.played, q.pictured, q.ttffMS, q.startFailed, q.bufferEvents, q.bufferMS, p.DownFailovers, q.sourceKbps, q.uhd, q.hdr, q.remote, p.Origin, q.release, q.reasonKind, q.reasonDetail, p.QualityFallback, nullIP(p.Client.ClientIP), audioCopy(p), p.Client.Product, deviceMatch, channelID, channelName, channelNumber, liveSourceName, liveLoginLabel, liveLoginNumber, p.ProbedChapterCount())
+		q.played, q.pictured, q.ttffMS, q.startFailed, q.bufferEvents, q.bufferMS, p.DownFailovers, q.sourceKbps, q.uhd, q.hdr, q.remote, p.Origin, q.release, q.reasonKind, q.reasonDetail, p.QualityFallback, nullIP(p.Client.ClientIP), audioCopy(p), p.Client.Product, deviceMatch, channelID, channelName, channelNumber, liveSourceName, liveLoginLabel, liveLoginNumber, p.ProbedChapterCount(), p.Client.Model)
 	if err == nil && r.deliveredVOD && s.opts.DeliveredVOD != nil {
 		s.opts.DeliveredVOD(p.ID, p.UserID, p.Key, p.Client.Protocol, start)
 	}

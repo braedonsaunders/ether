@@ -108,18 +108,88 @@ func Apps() []App {
 // Evaluate it through Playback and Policy just like a runtime client. Actual
 // clients can still declare capabilities or match more specific model rules.
 type Device struct {
+	// ID is the device type id quality rules store. Empty means Name; it is
+	// set only where a row was renamed after rules already saved its id
+	// (Apple TV became "Apple TV 4K" when Apple TV HD got its own row).
+	ID       string   `json:"id,omitempty"`
 	Name     string   `json:"name"`
 	Identity Identity `json:"identity"`
 	// Aliases are other names owners search for ("iPad" for iOS).
 	Aliases []string `json:"aliases,omitempty"`
+	// Parent is the device type id this one narrows: a rule naming the
+	// parent ("Apple TV") also matches it ("Apple TV HD").
+	Parent string `json:"parent,omitempty"`
+}
+
+// TypeID is the id quality rules use for this device type.
+func (d Device) TypeID() string {
+	if d.ID != "" {
+		return d.ID
+	}
+	return d.Name
 }
 
 // Devices returns the registry's catalogue identities in display order.
 func Devices() []Device { return slices.Clone(loaded.Devices) }
 
+// hardwareModel names one hardware model code a client reports
+// (X-Plex-Model, or X-Plex-Device on Android TV boxes).
+type hardwareModel struct {
+	Model string `json:"model"`
+	Name  string `json:"name"`
+}
+
+// CanonicalModel is the client's hardware model code in the form the
+// registry lists it. Plex for Apple TV sends only the numeric part of the
+// Apple identifier ("5,3" for AppleTV5,3), which on its own says nothing
+// about the vendor, so it is prefixed when the client is an Apple TV.
+func CanonicalModel(id Identity) string {
+	m := strings.TrimSpace(id.Model)
+	if bareAppleModel(m) {
+		ident := strings.ToLower(id.Product + " " + id.Platform + " " + id.Device)
+		if strings.Contains(ident, "apple tv") || strings.Contains(ident, "appletv") || strings.Contains(ident, "tvos") {
+			return "AppleTV" + m
+		}
+	}
+	return m
+}
+
+// bareAppleModel reports a "<major>,<minor>" code with no vendor prefix.
+func bareAppleModel(m string) bool {
+	major, minor, ok := strings.Cut(m, ",")
+	if !ok || major == "" || minor == "" {
+		return false
+	}
+	for _, part := range []string{major, minor} {
+		for _, r := range part {
+			if r < '0' || r > '9' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// ModelName is the product name of a reported hardware model code
+// ("AppleTV5,3" is "Apple TV HD"), or "" when the code is not known.
+// Codes are compared exactly, ignoring case and surrounding space.
+func ModelName(code string) string {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return ""
+	}
+	for _, m := range loaded.Models {
+		if strings.EqualFold(m.Model, code) {
+			return m.Name
+		}
+	}
+	return ""
+}
+
 type document struct {
 	Apps        []App             `json:"apps"`
 	Devices     []Device          `json:"devices"`
+	Models      []hardwareModel   `json:"models"`
 	Version     int               `json:"version"`
 	Presets     map[string]preset `json:"presets"`
 	Definitions []definition      `json:"definitions"`
@@ -280,7 +350,7 @@ func fieldValue(id Identity, name string) string {
 	case "device":
 		return id.Device
 	case "model":
-		return id.Model
+		return CanonicalModel(id)
 	case "version":
 		return id.Version
 	case "identity":

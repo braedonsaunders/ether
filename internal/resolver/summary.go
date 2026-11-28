@@ -361,9 +361,9 @@ func newSummaryDeviceMatcher(dev SummaryDevice) summaryDeviceMatcher {
 			}
 		}
 		for _, d := range clientreg.Devices() {
-			if d.Name == dev.Value {
+			if d.TypeID() == dev.Value {
 				m.hasCaps = true
-				m.caps = core.ClientCaps{Product: d.Identity.Product, Platform: d.Identity.Platform, Device: d.Identity.Device}
+				m.caps = core.ClientCaps{Product: d.Identity.Product, Platform: d.Identity.Platform, Device: d.Identity.Device, Model: d.Identity.Model}
 				break
 			}
 		}
@@ -409,7 +409,7 @@ func (m summaryDeviceMatcher) matches(d config.DeviceMatch) bool {
 	case "group":
 		return m.group != "" && m.group == v
 	case "type":
-		return m.devType != "" && m.devType == v
+		return clientreg.DeviceTypeMatches(m.devType, v)
 	case "app":
 		return m.app != "" && m.app == v
 	case "client":

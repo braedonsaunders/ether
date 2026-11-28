@@ -66,8 +66,8 @@ type DeviceTypeInfo struct {
 }
 
 type deviceSignature struct {
-	name, policy, class string
-	aliases             []string
+	id, name, policy, class, parent string
+	aliases                         []string
 	// words name the device type in a client's identity ("playstation"),
 	// so types sharing a policy record ("console") can be told apart.
 	words []string
@@ -80,7 +80,7 @@ var deviceSignatures = sync.OnceValue(func() []deviceSignature {
 		for _, a := range d.Aliases {
 			words = append(words, strings.ToLower(a))
 		}
-		out = append(out, deviceSignature{name: d.Name, policy: first("policy", d.Identity).ID, class: Class(d.Identity), aliases: d.Aliases, words: words})
+		out = append(out, deviceSignature{id: d.TypeID(), name: d.Name, parent: d.Parent, policy: first("policy", d.Identity).ID, class: Class(d.Identity), aliases: d.Aliases, words: words})
 	}
 	return out
 })
@@ -91,7 +91,7 @@ func DeviceTypes() []DeviceTypeInfo {
 	sigs := deviceSignatures()
 	out := make([]DeviceTypeInfo, 0, len(sigs))
 	for _, s := range sigs {
-		out = append(out, DeviceTypeInfo{ID: s.name, Name: s.name, Group: s.class, Aliases: slices.Clone(s.aliases)})
+		out = append(out, DeviceTypeInfo{ID: s.id, Name: s.name, Group: s.class, Aliases: slices.Clone(s.aliases)})
 	}
 	return out
 }
@@ -100,7 +100,7 @@ func DeviceTypes() []DeviceTypeInfo {
 // for iOS); nil when the type has none.
 func DeviceAliases(name string) []string {
 	for _, s := range deviceSignatures() {
-		if s.name == name {
+		if s.id == name || s.name == name {
 			return slices.Clone(s.aliases)
 		}
 	}
@@ -125,13 +125,36 @@ func DeviceType(id Identity) string {
 			continue
 		}
 		if slices.ContainsFunc(s.words, func(w string) bool { return strings.Contains(identity, w) }) {
-			return s.name
+			return s.id
 		}
 		if found == "" && policy != "generic" {
-			found = s.name
+			found = s.id
 		}
 	}
 	return found
+}
+
+// DeviceTypeMatches reports whether a client of device type have fits a
+// rule naming device type want: the same type, or a type that narrows it
+// (an "Apple TV" rule covers "Apple TV HD").
+func DeviceTypeMatches(have, want string) bool {
+	if have == "" || want == "" {
+		return false
+	}
+	for seen := 0; have != "" && seen < 8; seen++ {
+		if have == want {
+			return true
+		}
+		parent := ""
+		for _, s := range deviceSignatures() {
+			if s.id == have {
+				parent = s.parent
+				break
+			}
+		}
+		have = parent
+	}
+	return false
 }
 
 // AppID is the opaque id a quality rule uses for a registry app:

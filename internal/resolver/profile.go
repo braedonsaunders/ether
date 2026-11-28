@@ -34,7 +34,7 @@ func clientDevice(caps core.ClientCaps) string {
 }
 
 func clientIdentity(caps core.ClientCaps) clientreg.Identity {
-	return clientreg.Identity{Product: caps.Product, Platform: caps.Platform, Device: clientDevice(caps), DeviceName: caps.DeviceName, Version: caps.Version}
+	return clientreg.Identity{Product: caps.Product, Platform: caps.Platform, Device: clientDevice(caps), DeviceName: caps.DeviceName, Model: caps.Model, Version: caps.Version}
 }
 
 // defaultCappedAndroidClient reports whether caps describes an Android
@@ -177,7 +177,7 @@ func (f *clientFacts) matches(d config.DeviceMatch) bool {
 		return f.class == v
 	case "type":
 		f.load()
-		return f.deviceType == v
+		return clientreg.DeviceTypeMatches(f.deviceType, v)
 	case "app":
 		f.load()
 		return f.appID == v

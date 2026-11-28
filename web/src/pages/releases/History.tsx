@@ -31,6 +31,26 @@ import { pagedTableLabels } from "../../i18n/appkit-labels";
 import { useLocale } from "../../i18n/react";
 import { searchLink } from "./Pinned";
 
+/** "4K" for 2160, else "1080p". */
+function heightLabel(h: number) {
+  return h >= 2160 ? t("4K") : t("{height}p", { height: h });
+}
+
+/**
+ * The height a device's own limit held this decision to, when it is below
+ * the profile's ceiling (an Apple TV HD on a 4K profile plays at most
+ * 1080p); 0 when the profile's ceiling applied unchanged.
+ */
+export function deviceCappedHeight(h: HistoryRecord): number {
+  // Records from before the configured ceiling was tracked: unknown, not "Any".
+  if (h.profileMaxHeight === undefined || h.profileMaxHeight === null) return 0;
+  const effective = Number(h.effectiveMaxHeight ?? 0);
+  const client = Number(h.clientMaxHeight ?? 0);
+  const profile = Number(h.profileMaxHeight ?? 0);
+  if (effective <= 0 || client <= 0 || client > effective) return 0;
+  return profile === 0 || effective < profile ? effective : 0;
+}
+
 /** A max-height ceiling from loose JSON: a positive number, else 0 ("Any"). */
 function ceiling(v: unknown): number {
   const n = Number(v ?? 0);
@@ -331,7 +351,25 @@ export function HistoryTab() {
                   key: "profile",
                   header: t("Profile"),
                   sortValue: (h) => h.profile ?? "",
-                  cell: (h) => (h.profile ? <Badge variant="secondary">{h.profile}</Badge> : "—"),
+                  cell: (h) => {
+                    if (!h.profile) return "—";
+                    const capped = deviceCappedHeight(h);
+                    return (
+                      <span className="flex flex-wrap items-center gap-1">
+                        <Badge variant="secondary">{h.profile}</Badge>
+                        {capped ? (
+                          <Badge
+                            variant="outline"
+                            title={t("The device's limit capped this profile at {resolution}.", {
+                              resolution: heightLabel(capped),
+                            })}
+                          >
+                            {t("→ {resolution}", { resolution: heightLabel(capped) })}
+                          </Badge>
+                        ) : null}
+                      </span>
+                    );
+                  },
                 },
                 {
                   key: "candidates",

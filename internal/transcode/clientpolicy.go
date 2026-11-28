@@ -20,7 +20,7 @@ type ClientPolicy struct {
 }
 
 func identityOf(c core.ClientCaps) clientreg.Identity {
-	id := identityWith(c.Product, c.Platform, c.Device, c.DeviceName, "", c.Version)
+	id := identityWith(c.Product, c.Platform, c.Device, c.DeviceName, c.Model, c.Version)
 	if id.Device == "" {
 		// ClientCaps historically fall back to the friendly name here.
 		id.Device = c.DeviceName

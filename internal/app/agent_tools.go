@@ -932,8 +932,8 @@ func (qs *appQualityRulesService) ExplainQuality(ctx context.Context, req builti
 					found = lookupSeenClient(dev.Value)
 				case "type":
 					for _, d := range clientreg.Devices() {
-						if d.Name == dev.Value {
-							client = qualityClient{ID: req.ClientID, Name: d.Name, Product: d.Identity.Product, Platform: d.Identity.Platform, Device: d.Identity.Device}
+						if d.TypeID() == dev.Value {
+							client = qualityClient{ID: req.ClientID, Name: d.Name, Product: d.Identity.Product, Platform: d.Identity.Platform, Device: d.Identity.Device, Model: d.Identity.Model}
 							found = true
 							break
 						}
@@ -1027,6 +1027,7 @@ func (qs *appQualityRulesService) ExplainQuality(ctx context.Context, req builti
 		Platform:   client.Platform,
 		Device:     client.Device,
 		DeviceName: devName,
+		Model:      client.Model,
 		Remote:     req.Remote,
 		User:       u,
 	}

@@ -1167,6 +1167,7 @@ func (s *Server) prepare(ctx context.Context, pr *Request, p *playRequest) (*fro
 		return t, nil, frontend.Decision{}, err
 	}
 	admitted = true
+	s.logClientIdentity(pr, p.caps)
 	if v := ps.Info.Video(); v != nil {
 		s.log.Debug("playback media decision", "key", p.key, "client", pr.ClientID, "device", pr.Device, "model", pr.Model, "platformVersion", pr.PlatformVersion, "video", v.Codec, "videoProfile", v.Profile, "height", v.Height, "bitDepth", v.BitDepth, "transfer", v.ColorTransfer, "dvProfile", v.DolbyVisionProfile, "dvLevel", v.DolbyVisionLevel, "dvCompatibility", v.DolbyVisionCompatibilityID, "kind", dec.Kind, "outputContainer", dec.Container, "videoCopy", dec.VideoCopy, "audioCopy", dec.AudioCopy, "hdrCap", p.caps.HDR10, "dvCap", p.caps.DolbyVision, "profileExtra", pr.ProfileExtra)
 	}
