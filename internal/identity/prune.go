@@ -62,6 +62,9 @@ func (g *Grants) Prune(ctx context.Context) (int64, error) {
 		{`DELETE FROM identity_refresh_families WHERE id IN (SELECT id FROM identity_refresh_families WHERE revoked=1 AND idle_expiry<? ORDER BY idle_expiry LIMIT ?)`, []any{revokedFamilyCutoff}},
 		{`DELETE FROM identity_grants WHERE hash IN (SELECT hash FROM identity_grants d WHERE d.revoked=0 AND d.expires<? AND NOT EXISTS (SELECT 1 FROM identity_refresh_families f WHERE f.access_hash=d.hash) ORDER BY d.expires LIMIT ?)`, []any{cutoff}},
 		{`DELETE FROM identity_grants WHERE hash IN (SELECT hash FROM identity_grants d WHERE d.revoked=1 AND d.last_used<? AND NOT EXISTS (SELECT 1 FROM identity_refresh_families f WHERE f.access_hash=d.hash) ORDER BY d.last_used LIMIT ?)`, []any{cutoff}},
+		// A quick-connect row keeps the issued token only for its short
+		// replay window; past that it must not sit in the database.
+		{`UPDATE identity_quickconnect SET replay_token='' WHERE code IN (SELECT code FROM identity_quickconnect WHERE replay_token<>'' AND replay_until<? ORDER BY replay_until LIMIT ?)`, []any{now}},
 		{`DELETE FROM identity_quickconnect WHERE code IN (SELECT code FROM identity_quickconnect WHERE expires<? AND replay_until<? ORDER BY expires LIMIT ?)`, []any{cutoff, cutoff}},
 		{`DELETE FROM identity_invites WHERE hash IN (SELECT hash FROM identity_invites WHERE expires<? ORDER BY expires LIMIT ?)`, []any{cutoff}},
 	}
