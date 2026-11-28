@@ -38,9 +38,11 @@ type Runner struct {
 	language string
 	clientID func() config.ClientIdentity
 
-	mu       sync.Mutex
-	loggedIn bool
-	version  int64 // version of the session row the jar holds
+	mu            sync.Mutex
+	loggedIn      bool
+	version       int64 // version of the session row the jar holds
+	loginFailedAt time.Time
+	loginFailed   error
 }
 
 // runnerOptions carries a Runner's dependencies.
