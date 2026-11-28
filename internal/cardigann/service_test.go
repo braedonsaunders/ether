@@ -131,7 +131,15 @@ func TestServiceTestRecordsStatusAndRebuildsRunners(t *testing.T) {
 	if err != nil || len(statuses) != 1 || !statuses[0].OK || statuses[0].Message != "2 results" {
 		t.Fatalf("statuses = %+v %v", statuses, err)
 	}
-	// The saved session from the test is reused by searches.
+	// The test signs in on a throwaway session: the saved row is untouched, so
+	// the first search logs in itself.
+	siteURL, _ := url.Parse(site.srv.URL)
+	if _, ok, err := s.sessions.load(ctx, ix.ID, siteOrigin(siteURL)); err != nil || ok {
+		t.Fatalf("test wrote the saved session: ok=%v err=%v", ok, err)
+	}
+	if site.loginCount() != 1 {
+		t.Fatalf("test logins = %d", site.loginCount())
+	}
 	b, err := s.Backend(ix)
 	if err != nil {
 		t.Fatal(err)
@@ -139,7 +147,7 @@ func TestServiceTestRecordsStatusAndRebuildsRunners(t *testing.T) {
 	if _, err := b.Search(ctx, core.SearchRequest{Type: core.TypeMovie, Title: "Private Film"}, func(context.Context, string) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if site.loginCount() != 1 {
+	if site.loginCount() != 2 {
 		t.Fatalf("logins = %d", site.loginCount())
 	}
 	// Changing the password drops the stored session.

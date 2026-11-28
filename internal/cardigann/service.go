@@ -355,13 +355,10 @@ func (s *Service) test(ctx context.Context, cfg config.Indexer) TestResult {
 	if err != nil {
 		return TestResult{Error: err.Error()}
 	}
+	// A throwaway session store: a test, possibly with unsaved settings, must
+	// not overwrite the saved indexer's shared session row.
+	r.sessions = &sessionStore{now: s.now}
 	res, _ := r.Test(ctx)
-	if res.OK {
-		// The cached runner adopts the session the test saved.
-		s.mu.Lock()
-		delete(s.runners, cfg.ID)
-		s.mu.Unlock()
-	}
 	return res
 }
 
