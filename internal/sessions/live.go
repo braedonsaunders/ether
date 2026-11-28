@@ -21,10 +21,27 @@ func tileGateKey(viewerID int64, clientID, groupID string, tile int) string {
 
 // Caller holds b.mu.
 func (b *Broker) bumpNonGroupEpochLocked(viewerID int64, clientID string) {
+	b.pruneExpiredMultiviewLocked(b.deps.Now())
+	if len(b.multiviewGroups) == 0 {
+		b.nonGroupEpoch = nil
+		return
+	}
+	key := ownerGateKey(viewerID, clientID)
+	active := false
+	for _, g := range b.multiviewGroups {
+		if g.viewerID == viewerID && g.clientID == clientID {
+			active = true
+			break
+		}
+	}
+	if !active {
+		delete(b.nonGroupEpoch, key)
+		return
+	}
 	if b.nonGroupEpoch == nil {
 		b.nonGroupEpoch = make(map[string]uint64)
 	}
-	b.nonGroupEpoch[ownerGateKey(viewerID, clientID)]++
+	b.nonGroupEpoch[key]++
 }
 
 func livePlanContainer(caps core.ClientCaps) string {
