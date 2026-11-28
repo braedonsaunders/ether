@@ -88,6 +88,12 @@ func (s *ssdp) serve(ctx context.Context, conn *ipv4.PacketConn) {
 		if ctx.Err() != nil {
 			return
 		}
+		// Parse first: the group carries every device's NOTIFY chatter, and only
+		// a search we would answer is worth the viewer lookup.
+		targets := searchTargets(string(buf[:n]), s.uuid())
+		if len(targets) == 0 {
+			continue
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost/", nil)
 		if err != nil {
 			continue
@@ -95,10 +101,6 @@ func (s *ssdp) serve(ctx context.Context, conn *ipv4.PacketConn) {
 		req.RemoteAddr = peer.String()
 		viewer, err := s.host.LANViewer(ctx, req)
 		if err != nil || viewer == nil {
-			continue
-		}
-		targets := searchTargets(string(buf[:n]), s.uuid())
-		if len(targets) == 0 {
 			continue
 		}
 		if s.host.SurfaceURL == nil {
