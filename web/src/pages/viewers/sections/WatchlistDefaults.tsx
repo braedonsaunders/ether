@@ -62,9 +62,19 @@ export function useDiscoverySettings() {
     setSaving(true);
     setError(null);
     try {
+      // Several pages edit this document; re-read it and apply only the keys
+      // this page changed so a stale page never undoes another page's save.
+      const base = doc.data as Record<string, unknown> | undefined;
+      const edited = draft as Record<string, unknown>;
+      const changed = Object.fromEntries(
+        Object.entries(edited).filter(
+          ([key, value]) => JSON.stringify(value) !== JSON.stringify(base?.[key]),
+        ),
+      );
+      const live = await apiFetch<DiscoverySettings>("/discovery/settings");
       const next = await apiFetch<DiscoverySettings>("/discovery/settings", {
         method: "PUT",
-        body: JSON.stringify(draft),
+        body: JSON.stringify({ ...live, ...changed }),
       });
       doc.setData(next);
       toast.success(toastTitle);
