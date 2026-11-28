@@ -121,10 +121,13 @@ func TestM3UAndXMLTVFixtures(t *testing.T) {
 	if cs2[0].ID != cs[0].ID {
 		t.Fatal("unstable imported id")
 	}
-	bad := []string{"not a playlist", "#EXTM3U\n#EXTINF:-1,Unsafe\nfile:///private/secret", "#EXTM3U\n#EXTINF:-1,Dangling"}
-	for _, v := range bad {
-		if _, e := ParseM3U(strings.NewReader(v), "s"); e == nil {
-			t.Fatalf("accepted %q", v)
+	if _, err := ParseM3U(strings.NewReader("not a playlist"), "s"); err == nil {
+		t.Fatal("accepted a playlist with no header")
+	}
+	for _, v := range []string{"#EXTM3U\n#EXTINF:-1,Unsafe\nfile:///private/secret", "#EXTM3U\n#EXTINF:-1,Dangling"} {
+		channels, stats, err := parseM3U(strings.NewReader(v), "s")
+		if err != nil || len(channels) != 0 || stats.SkippedInvalid != 1 {
+			t.Fatalf("unexpected result for %q: %v, %+v, %v", v, channels, stats, err)
 		}
 	}
 	guide := `<?xml version="1.0"?><tv><channel id="one"><display-name>Channel &amp; One</display-name></channel><programme channel="one" start="20261019090000 -0400" stop="20261019100000 -0400"><title>Morning &amp; News</title><desc>Owner guide</desc><rating system="MPAA"><value>PG</value></rating><icon src="https://owner.invalid/cover.png"/></programme></tv>`

@@ -37,8 +37,9 @@ func validHTTP(raw string) bool {
 
 // m3uStats records what ParseM3U left out and any #EXTM3U guide URLs.
 type m3uStats struct {
-	SkippedVOD int
-	GuideURLs  []string
+	SkippedVOD     int
+	SkippedInvalid int
+	GuideURLs      []string
 }
 
 // parseM3UGuideURLs extracts HTTP(S) guide URLs from an #EXTM3U header's
@@ -137,7 +138,7 @@ func m3uChannelArchive(a ChannelArchive, stream string) *ChannelArchive {
 }
 
 // ParseM3U preserves only explicitly provided HTTP(S) streams. Executable,
-// file and media-tool pseudo protocols are rejected.
+// file and media-tool pseudo protocols are skipped.
 func ParseM3U(r io.Reader, sourceID string) ([]Channel, error) {
 	channels, _, err := parseM3U(r, sourceID)
 	return channels, err
@@ -163,7 +164,7 @@ func parseM3U(r io.Reader, sourceID string) ([]Channel, m3uStats, error) {
 		}
 		if !header {
 			if !strings.HasPrefix(line, "#EXTM3U") {
-				return nil, stats, fmt.Errorf("playlist must start with #EXTM3U")
+				continue
 			}
 			stats.GuideURLs = parseM3UGuideURLs(line)
 			attrs := map[string]string{}
@@ -175,12 +176,10 @@ func parseM3U(r io.Reader, sourceID string) ([]Channel, m3uStats, error) {
 			continue
 		}
 		if strings.HasPrefix(line, "#EXTINF:") {
-			pendingHeaders = nil
-			attrs := map[string]string{}
-			for _, m := range m3uAttr.FindAllStringSubmatch(line, -1) {
-				attrs[strings.ToLower(m[1])] = m[2]
-				playlistMediaHeader(&pendingHeaders, m[1], m[2])
+			if pending != nil {
+				stats.SkippedInvalid++
 			}
+			pendingHeaders = nil
 			// Commas inside quoted attributes are not the display-name separator.
 			quote := false
 			comma := -1
@@ -193,12 +192,27 @@ func parseM3U(r io.Reader, sourceID string) ([]Channel, m3uStats, error) {
 					break
 				}
 			}
+			metadata := line
+			if comma >= 0 {
+				metadata = line[:comma]
+			}
+			attrs := map[string]string{}
+			for _, m := range m3uAttr.FindAllStringSubmatch(metadata, -1) {
+				attrs[strings.ToLower(m[1])] = m[2]
+				playlistMediaHeader(&pendingHeaders, m[1], m[2])
+			}
 			name := attrs["tvg-name"]
 			if comma >= 0 && strings.TrimSpace(line[comma+1:]) != "" {
 				name = strings.TrimSpace(line[comma+1:])
 			}
 			pendingArchive = m3uArchiveAttrs(attrs, archiveDefaults)
 			pending = &Channel{Name: name, TvgName: attrs["tvg-name"], Number: attrs["tvg-chno"], Logo: attrs["tvg-logo"], GuideID: attrs["tvg-id"], ProviderGuideID: attrs["tvg-id"], Group: attrs["group-title"], SourceID: sourceID, Kind: "iptv", Enabled: true}
+			continue
+		}
+		if group, ok := strings.CutPrefix(line, "#EXTGRP:"); ok {
+			if pending != nil && pending.Group == "" {
+				pending.Group = strings.TrimSpace(group)
+			}
 			continue
 		}
 		if pending != nil && strings.HasPrefix(line, "#EXTVLCOPT:") {
@@ -210,11 +224,10 @@ func parseM3U(r io.Reader, sourceID string) ([]Channel, m3uStats, error) {
 		if strings.HasPrefix(line, "#") {
 			continue
 		}
-		if pending == nil {
-			return nil, stats, fmt.Errorf("stream has no #EXTINF entry")
-		}
-		if !validHTTP(line) {
-			return nil, stats, fmt.Errorf("channel %q needs an HTTP(S) stream", pending.Name)
+		if pending == nil || !validHTTP(line) {
+			stats.SkippedInvalid++
+			pending = nil
+			continue
 		}
 		if isVODStream(line) {
 			stats.SkippedVOD++
@@ -265,10 +278,10 @@ func parseM3U(r io.Reader, sourceID string) ([]Channel, m3uStats, error) {
 		return nil, stats, err
 	}
 	if pending != nil {
-		return nil, stats, fmt.Errorf("playlist ends before a stream URL")
+		stats.SkippedInvalid++
 	}
 	if !header {
-		return nil, stats, fmt.Errorf("empty playlist")
+		return nil, stats, fmt.Errorf("playlist needs an #EXTM3U header")
 	}
 	return out, stats, nil
 }

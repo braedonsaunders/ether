@@ -198,3 +198,40 @@ func TestXMLTVInfersStopBeyondWindow(t *testing.T) {
 		t.Fatalf("inferred end = %v", got)
 	}
 }
+
+func TestM3USkipsBadEntries(t *testing.T) {
+	doc := `Provider banner
+# Comment before the header
+#EXTM3U
+#EXTINF:-1,A
+https://example.invalid/a
+https://example.invalid/orphan
+#EXTINF:-1,B
+rtmp://example.invalid/b
+#EXTINF:-1,C
+https://example.invalid/c
+#EXTINF:-1,Dangling
+`
+	cs, stats, err := parseM3U(strings.NewReader(doc), "source")
+	if err != nil || len(cs) != 2 || stats.SkippedInvalid != 3 || cs[0].Name != "A" || cs[1].Name != "C" {
+		t.Fatalf("channels = %+v, stats = %+v, err = %v", cs, stats, err)
+	}
+}
+
+func TestM3UExtGroupAndDisplayName(t *testing.T) {
+	doc := `#EXTM3U
+#EXTINF:-1 tvg-name="A,B",A group-title="wrong" tvg-id="wrong"
+#EXTGRP:Sports
+https://example.invalid/a
+#EXTINF:-1 group-title="News",B
+#EXTGRP:Ignored
+https://example.invalid/b
+`
+	cs, err := ParseM3U(strings.NewReader(doc), "source")
+	if err != nil || len(cs) != 2 {
+		t.Fatalf("channels = %+v, err = %v", cs, err)
+	}
+	if cs[0].Group != "Sports" || cs[0].GuideID != "" || cs[0].TvgName != "A,B" || cs[0].Name != `A group-title="wrong" tvg-id="wrong"` || cs[1].Group != "News" {
+		t.Fatalf("unexpected channels: %+v", cs)
+	}
+}
