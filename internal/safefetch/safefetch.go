@@ -101,12 +101,31 @@ var ErrUnsupportedTransport = errors.New("safefetch: unsupported transport")
 // either: a feed must not reach the owner's overlay network.
 var cgnat = netip.MustParsePrefix("100.64.0.0/10")
 
+// specialNonPublic lists IANA special-purpose ranges that Go's
+// IsGlobalUnicast reports as true because they are outside RFC 1918/4193,
+// link-local and loopback: RFC 1122 "this network", IETF protocol
+// assignments, benchmarking, reserved/broadcast, NAT64, 6to4, Teredo and
+// discard-only. TEST-NET ranges (192.0.2.0/24, 198.51.100.0/24,
+// 203.0.113.0/24, 2001:db8::/32) are intentionally left out so offline
+// tests using documentation addresses keep working.
+var specialNonPublic = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("64:ff9b::/96"),
+	netip.MustParsePrefix("64:ff9b:1::/48"),
+	netip.MustParsePrefix("2002::/16"),
+	netip.MustParsePrefix("2001::/32"),
+	netip.MustParsePrefix("100::/64"),
+}
+
 var cloudMetadataIP = netip.MustParseAddr("169.254.169.254")
 
 // IsPublicIP reports whether ip is a routable public unicast address.
 // Loopback, RFC 1918 / RFC 4193 private, link-local (including
-// 169.254.0.0/16 cloud metadata), CGNAT, multicast and unspecified
-// addresses are not public.
+// 169.254.0.0/16 cloud metadata), CGNAT, special-purpose, multicast and
+// unspecified addresses are not public.
 func IsPublicIP(ip netip.Addr) bool {
 	if !ip.IsValid() {
 		return false
@@ -116,6 +135,11 @@ func IsPublicIP(ip netip.Addr) bool {
 		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() ||
 		cgnat.Contains(ip) {
 		return false
+	}
+	for _, p := range specialNonPublic {
+		if p.Contains(ip) {
+			return false
+		}
 	}
 	return ip.IsGlobalUnicast()
 }
