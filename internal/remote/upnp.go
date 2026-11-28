@@ -138,7 +138,7 @@ func ssdpSearch(ctx context.Context, target string, wait time.Duration) ([]strin
 	seen := map[string]bool{}
 	buf := make([]byte, 2048)
 	for {
-		n, _, err := conn.ReadFromUDP(buf)
+		n, src, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
@@ -158,6 +158,10 @@ func ssdpSearch(ctx context.Context, target string, wait time.Duration) ([]strin
 		if resp.StatusCode != http.StatusOK || loc == "" || seen[loc] {
 			continue
 		}
+		// Only fetch device descriptions hosted by the SSDP responder itself.
+		if !locationMatchesResponder(loc, src) {
+			continue
+		}
 		seen[loc] = true
 		locs = append(locs, loc)
 	}
@@ -165,6 +169,32 @@ func ssdpSearch(ctx context.Context, target string, wait time.Duration) ([]strin
 		return nil, ErrNoIGD
 	}
 	return locs, nil
+}
+
+func locationMatchesResponder(location string, src *net.UDPAddr) bool {
+	if src == nil || src.IP == nil {
+		return false
+	}
+	u, err := url.Parse(strings.TrimSpace(location))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+	hostIP := net.ParseIP(u.Hostname())
+	return hostIP != nil && hostIP.Equal(src.IP)
+}
+
+func sameHost(a, b *url.URL) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	ha, hb := strings.TrimSpace(a.Hostname()), strings.TrimSpace(b.Hostname())
+	if ha == "" || hb == "" {
+		return false
+	}
+	if ipa, ipb := net.ParseIP(ha), net.ParseIP(hb); ipa != nil && ipb != nil {
+		return ipa.Equal(ipb)
+	}
+	return strings.EqualFold(ha, hb)
 }
 
 type upnpRoot struct {
@@ -223,12 +253,13 @@ func LoadIGD(ctx context.Context, client *http.Client, location string) (*IGD, e
 		}
 	}
 	walk(root.Device)
-	base, err := url.Parse(location)
-	if err != nil {
-		return nil, err
+	locURL, err := url.Parse(location)
+	if err != nil || (locURL.Scheme != "http" && locURL.Scheme != "https") || locURL.Hostname() == "" {
+		return nil, fmt.Errorf("upnp: invalid location %q", location)
 	}
+	base := locURL
 	if root.URLBase != "" {
-		if b, err := url.Parse(strings.TrimSpace(root.URLBase)); err == nil {
+		if b, err := url.Parse(strings.TrimSpace(root.URLBase)); err == nil && (b.Scheme == "http" || b.Scheme == "https") && sameHost(b, locURL) {
 			base = b
 		}
 	}
@@ -238,7 +269,7 @@ func LoadIGD(ctx context.Context, client *http.Client, location string) (*IGD, e
 				continue
 			}
 			ctl, err := base.Parse(strings.TrimSpace(f.svc.ControlURL))
-			if err != nil {
+			if err != nil || (ctl.Scheme != "http" && ctl.Scheme != "https") || !sameHost(ctl, locURL) {
 				continue
 			}
 			name := root.Device.FriendlyName
