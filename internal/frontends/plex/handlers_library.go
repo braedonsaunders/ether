@@ -1229,7 +1229,7 @@ func (s *Server) browse(ctx context.Context, pr *Request, br browseRequest) ([]f
 	// Custom policies without SQL predicates are evaluated in bounded chunks.
 	const chunk, maxScan = 200, 5000
 	var out []frontend.Title
-	matched, scanned, total := 0, 0, 0
+	matched, scanned, total, hidden := 0, 0, 0, 0
 	for scanned < maxScan {
 		q := br.q
 		q.Offset, q.Limit = scanned, chunk
@@ -1243,7 +1243,7 @@ func (s *Server) browse(ctx context.Context, pr *Request, br browseRequest) ([]f
 		}
 		for _, t := range page.Items {
 			if needsPostPolicy && !s.visibleTitle(ctx, pr.User, &t) {
-				total--
+				hidden++
 				continue
 			}
 			if matched >= offset && len(out) < size {
@@ -1256,6 +1256,8 @@ func (s *Server) browse(ctx context.Context, pr *Request, br browseRequest) ([]f
 			break
 		}
 	}
+	// Hidden titles from every scanned chunk, not just the last, leave the total.
+	total -= hidden
 	if total < matched {
 		total = matched
 	}

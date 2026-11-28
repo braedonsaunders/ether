@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"fmt"
 	"github.com/braedonsaunders/ether/internal/core"
 	"net/http"
 	"net/http/httptest"
@@ -524,4 +525,29 @@ func TestPersonPortraitUsesOnlyScopedTitleAndHonorsCancellation(t *testing.T) {
 		t.Fatal("late cancellation served or fetched portrait")
 	}
 
+}
+
+func TestBrowseTotalIncludesPolicyFromEveryChunk(t *testing.T) {
+	f := newFixture(func(d *testServerDeps) { setDepsPolicy(d, keywordPolicy{blocked: "blocked"}) })
+	defer f.srv.Close()
+	for n := range 401 {
+		title := fightClub
+		title.Key = core.MovieKey(int64(10000 + n))
+		title.Title = fmt.Sprintf("Paging %04d", n)
+		if n%2 == 0 {
+			title.Keywords = []string{"blocked"}
+		}
+		f.catalog.titles[title.Key] = title
+	}
+	for key, title := range f.catalog.titles {
+		if title.Type == core.TypeMovie && key < core.MovieKey(10000) {
+			delete(f.catalog.titles, key)
+		}
+	}
+	pr := &Request{User: &friendUser, HasPage: true, Start: 195, Size: 10}
+	br := browseRequest{q: core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie}}}
+	items, total, _, err := f.srv.browse(t.Context(), pr, br)
+	if err != nil || len(items) != 5 || total != 200 {
+		t.Fatalf("items=%d total=%d err=%v, want 5 of 200", len(items), total, err)
+	}
 }
