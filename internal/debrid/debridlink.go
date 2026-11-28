@@ -93,6 +93,8 @@ type dlTorrent struct {
 	Name            string   `json:"name"`
 	HashString      string   `json:"hashString"`
 	Status          int      `json:"status"`
+	Error           int      `json:"error"`
+	ErrorString     string   `json:"errorString"`
 	DownloadPercent int      `json:"downloadPercent"`
 	IsZip           bool     `json:"isZip"`
 	SrvMaint        bool     `json:"srvMaint"`
@@ -343,6 +345,13 @@ func (p *debridLink) acquire(ctx context.Context, req AcquireRequest) (_ *Acquir
 			if t, err = p.torrent(ctx, id); err != nil && (!added || !errors.Is(err, ErrGone)) {
 				return nil, err
 			}
+		}
+		if t != nil && (t.Status < 0 || t.Error != 0) {
+			cleanup()
+			if !added {
+				return nil, fmt.Errorf("debrid-link: torrent failed (%d): %w: %w", t.Error, ErrGone, core.ErrNotCached)
+			}
+			return nil, fmt.Errorf("debrid-link: torrent failed (%d): %w", t.Error, core.ErrNotCached)
 		}
 		// A torrent just added may not be listed yet, and its metadata may
 		// be incomplete at first.
