@@ -48,7 +48,8 @@ func RasterVariant(ctx context.Context, cache VariantCache, data []byte, content
 	if cache == nil {
 		out, outType, err = render(ctx)
 	} else {
-		key := fmt.Sprintf("raster-transform-v2/%d/%d/%s/%t/%t/%d", transform.Width, transform.Height, transform.Format, transform.Fit, transform.Blur, transform.Quality)
+		w, h := fitKeySize(data, transform)
+		key := fmt.Sprintf("raster-transform-v2/%d/%d/%s/%t/%t/%d", w, h, transform.Format, transform.Fit, transform.Blur, transform.Quality)
 		out, outType, err = cache.Variant(ctx, data, contentType, key, render)
 	}
 	// Fitting only makes a picture smaller. When it fails (an oversized or
@@ -59,6 +60,26 @@ func RasterVariant(ctx context.Context, cache VariantCache, data []byte, content
 		return data, contentType, nil
 	}
 	return out, outType, err
+}
+
+// fitKeySize clamps a fit request's box the way transformRaster does, so
+// requests that render the same picture share one cached variant.
+func fitKeySize(data []byte, transform RasterTransform) (int, int) {
+	if !transform.Fit {
+		return transform.Width, transform.Height
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
+		return transform.Width, transform.Height
+	}
+	w, h := cfg.Width, cfg.Height
+	if transform.Width > 0 {
+		w = min(w, transform.Width)
+	}
+	if transform.Height > 0 {
+		h = min(h, transform.Height)
+	}
+	return min(w, 4000), min(h, 4000)
 }
 
 func transformRaster(data []byte, contentType string, transform RasterTransform) ([]byte, string, error) {
