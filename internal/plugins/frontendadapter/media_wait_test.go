@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -78,14 +79,17 @@ func TestDownloadPreparationHold(t *testing.T) {
 				req := httptest.NewRequestWithContext(ctx, http.MethodGet, KindMediaPath+token, nil)
 				req.Header.Set("Range", tc.byteRange)
 				rec := &httptest.ResponseRecorder{Body: new(bytes.Buffer)}
+				watched := &headerWatch{ResponseRecorder: rec}
 				served := make(chan struct{})
 				go func() {
 					defer close(served)
-					h.ServeHTTP(rec, req)
+					h.ServeHTTP(watched, req)
 				}()
 				if tc.wait > 0 {
 					synctest.Wait()
-					if rec.Code != 0 {
+					// The handler keeps running after Wait; only the atomic flag is
+					// safe to read before it returns.
+					if watched.wrote.Load() {
 						t.Error("sent response headers while the job was pending")
 					}
 				}
@@ -153,4 +157,20 @@ func TestDownloadPreparationLimitsAreShared(t *testing.T) {
 		}
 	}
 	check("another-plugin")
+}
+
+// headerWatch records, race-free, whether the handler started a response.
+type headerWatch struct {
+	*httptest.ResponseRecorder
+	wrote atomic.Bool
+}
+
+func (w *headerWatch) WriteHeader(code int) {
+	w.wrote.Store(true)
+	w.ResponseRecorder.WriteHeader(code)
+}
+
+func (w *headerWatch) Write(b []byte) (int, error) {
+	w.wrote.Store(true)
+	return w.ResponseRecorder.Write(b)
 }
