@@ -19,11 +19,12 @@ import (
 
 // renderOpts controls how much of an item is rendered.
 type renderOpts struct {
-	detail      bool // full tags, Guid children, streams
-	batchDetail bool // multi-key metadata batch: keep list season counts for ungrouped shows
-	slotPage    *slotMediaPage
-	listRender  bool // multi-item render: never trigger plugin /resolve per row
-	media       bool // Media/Part for playable items
+	membershipChecked bool // the page was filtered before slicing
+	detail            bool // full tags, Guid children, streams
+	batchDetail       bool // multi-key metadata batch: keep list season counts for ungrouped shows
+	slotPage          *slotMediaPage
+	listRender        bool // multi-item render: never trigger plugin /resolve per row
+	media             bool // Media/Part for playable items
 	// inSection: the container already carries the section attributes
 	// (section listings, children), so items omit librarySection*.
 	inSection bool
@@ -1896,7 +1897,9 @@ func (s *Server) renderTitles(ctx context.Context, pr *Request, ts []frontend.Ti
 		vis = *o.vis
 	}
 	ctx = s.withSeriesRows(ctx, pr.User, ts)
-	ts = s.openableTitlesWith(ctx, vis, pr.User, ts, o.availabilityInSQL || shelfContainsAll(ctx, ts))
+	if !o.membershipChecked {
+		ts = s.openableTitlesWith(ctx, vis, pr.User, ts, o.availabilityInSQL || shelfContainsAll(ctx, ts))
+	}
 	if len(ts) == 0 {
 		return nil
 	}
