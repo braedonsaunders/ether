@@ -30,3 +30,18 @@ func inputSafetyArgs(input string, live bool) []string {
 	}
 	return []string{"-format_whitelist", formats, "-protocol_whitelist", protocols}
 }
+
+// subtitleInputFormats lists self-contained subtitle demuxers (plus container
+// formats that may carry a single subtitle stream) for sidecar -i inputs.
+const subtitleInputFormats = "srt,subrip,ass,ssa,webvtt,vtt,microdvd,mpl2,pjs,realtext,sami,stl,subviewer,subviewer1,jacosub,vplayer,matroska,webm,mov,mp4"
+
+// subtitleInputSafetyArgs bounds a sidecar subtitle -i to subtitle demuxers
+// and its transport protocol so a provider-supplied file cannot act as a
+// playlist or open other inputs.
+func subtitleInputSafetyArgs(input string) []string {
+	protocols := "http,https,tcp,tls,crypto"
+	if !isNetworkURL(input) {
+		protocols = "file"
+	}
+	return []string{"-format_whitelist", subtitleInputFormats, "-protocol_whitelist", protocols}
+}

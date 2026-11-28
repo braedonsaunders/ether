@@ -614,6 +614,7 @@ func buildCodecArgs(s runSpec) []string {
 		// stay on the title's zero while output_ts_offset places the video
 		// at the resume point, and the Matroska muxer holds the picture
 		// waiting to interleave them.
+		args = append(args, subtitleInputSafetyArgs(textSub.ExternalURL)...)
 		if s.Start > 0 {
 			args = append(args, "-ss", secs(s.Start))
 		}
