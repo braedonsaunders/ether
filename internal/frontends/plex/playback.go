@@ -2441,11 +2441,13 @@ func (s *Server) handleTranscodeStop(w http.ResponseWriter, r *http.Request) {
 	if e, ok := s.transcodes.get(id); id != "" && ok && e.userID == pr.User.ID {
 		unlockOwner, err := s.lockPlaybackOwner(r.Context(), e.userID, e.clientID)
 		if err != nil {
+			writeHTTPError(w, http.StatusServiceUnavailable)
 			return
 		}
 		defer unlockOwner()
 		unlockEncoder, err := s.lockEncoder(r.Context(), id)
 		if err != nil {
+			writeHTTPError(w, http.StatusServiceUnavailable)
 			return
 		}
 		defer unlockEncoder()
