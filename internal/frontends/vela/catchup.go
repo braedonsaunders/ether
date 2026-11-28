@@ -95,10 +95,11 @@ type catchUpPlayback struct {
 	info             frontend.CatchUpInfo
 	tuneID, mediaKey string
 	// savedAt is when the position was last saved as watch state.
-	savedAt time.Time
+	savedAt    time.Time
+	savedState string
 }
 
-// catchUpSaveEvery spaces out watch-state saves while an airing plays.
+// catchUpSaveEvery spaces out watch-state saves while an airing plays or stays paused.
 const catchUpSaveEvery = 10 * time.Second
 
 // catchUpToSave returns the airing to save a position for, or false: only a
@@ -108,10 +109,10 @@ const catchUpSaveEvery = 10 * time.Second
 func (s *playSession) catchUpToSave(state string, now time.Time) (frontend.CatchUpInfo, bool) {
 	a := s.archive
 	if a == nil || a.info.ChannelID == "" || a.info.ProgrammeID == "" || a.info.StartOver || state == "buffering" ||
-		state == "playing" && now.Sub(a.savedAt) < catchUpSaveEvery {
+		(state == "playing" || state == "paused" && a.savedState == state) && now.Sub(a.savedAt) < catchUpSaveEvery {
 		return frontend.CatchUpInfo{}, false
 	}
-	a.savedAt = now
+	a.savedAt, a.savedState = now, state
 	return a.info, true
 }
 

@@ -50,8 +50,14 @@ func TestCatchUpPositionSaved(t *testing.T) {
 	if save("buffering", now.Add(20*time.Second), 3*time.Minute) {
 		t.Fatal("buffering sample saved")
 	}
-	if !save("paused", now.Add(6*time.Second), 4*time.Minute) || !save("playing", now.Add(17*time.Second), 5*time.Minute) {
-		t.Fatal("pause or due playing sample not saved")
+	if !save("paused", now.Add(6*time.Second), 4*time.Minute) {
+		t.Fatal("pause transition not saved")
+	}
+	if save("paused", now.Add(7*time.Second), 4*time.Minute) {
+		t.Fatal("repeated paused sample was saved")
+	}
+	if !save("playing", now.Add(17*time.Second), 5*time.Minute) {
+		t.Fatal("due playing sample not saved")
 	}
 	if !save("stopped", now.Add(18*time.Second), 6*time.Minute) || !save("ended", now.Add(19*time.Second), 58*time.Minute) {
 		t.Fatal("stop or end not saved")
