@@ -237,3 +237,48 @@ func TestHistoricalImportDoesNotChangeActivePlaybackStats(t *testing.T) {
 		t.Fatalf("historical import changed active play: %+v", plays)
 	}
 }
+
+func TestObserveStateUsesLivePlayIndex(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{
+			sql:  `EXPLAIN QUERY PLAN SELECT id,completed,(SELECT COUNT(*) FROM stats_plays WHERE user_id=? AND rating_key=? AND ended=0 AND channel_id='') FROM stats_plays WHERE user_id=? AND rating_key=? AND ended=0 AND channel_id='' LIMIT 1`,
+			args: []any{7, 99, 7, 99},
+		},
+		{
+			sql:  `EXPLAIN QUERY PLAN UPDATE stats_plays SET timeline=? WHERE id=(SELECT id FROM stats_plays WHERE user_id=? AND rating_key=? AND ended=0 AND channel_id='') AND (SELECT COUNT(*) FROM stats_plays WHERE user_id=? AND rating_key=? AND ended=0 AND channel_id='')=1`,
+			args: []any{1000, 7, 99, 7, 99},
+		},
+	} {
+		rows, err := db.QueryContext(ctx, q.sql, q.args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var details []string
+		for rows.Next() {
+			var id, parent, unused int
+			var detail string
+			if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+				rows.Close()
+				t.Fatal(err)
+			}
+			details = append(details, detail)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		plan := strings.Join(details, "\n")
+		if strings.Count(plan, "stats_plays_live") < 2 {
+			t.Fatalf("ObserveState query did not use stats_plays_live for both subqueries:\n%s", plan)
+		}
+	}
+}

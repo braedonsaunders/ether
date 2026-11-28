@@ -68,6 +68,9 @@ ALTER TABLE stats_plays ADD COLUMN channel_number TEXT NOT NULL DEFAULT '';`)
 ALTER TABLE stats_plays ADD COLUMN live_login_label TEXT NOT NULL DEFAULT '';
 ALTER TABLE stats_plays ADD COLUMN live_login_number INTEGER NOT NULL DEFAULT 0;`)
 	store.Register("stats", 17, `ALTER TABLE stats_plays ADD COLUMN chapter_count INTEGER;`)
+	// ObserveState correlates every progress event by (user_id, rating_key)
+	// among open plays; keep that lookup off the full per-viewer history index.
+	store.Register("stats", 18, `CREATE INDEX stats_plays_live ON stats_plays(user_id,rating_key) WHERE ended=0;`)
 	store.RegisterAfter("stats_seen_devices", "stats")
 	store.Register("stats_seen_devices", 1, `ALTER TABLE stats_plays ADD COLUMN product TEXT NOT NULL DEFAULT '';
 ALTER TABLE stats_plays ADD COLUMN device_match TEXT NOT NULL DEFAULT '';
