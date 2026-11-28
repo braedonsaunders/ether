@@ -67,11 +67,7 @@ type Policy struct {
 	Bypass   []string
 }
 
-var (
-	current      atomic.Pointer[Policy]
-	transportsMu sync.Mutex
-	transports   = map[Capability]*http.Transport{}
-)
+var current atomic.Pointer[Policy]
 
 func init() { current.Store(&Policy{}) }
 
@@ -89,15 +85,6 @@ func Set(p Policy) {
 		p.Bypass = append([]string(nil), p.Bypass...)
 	}
 	current.Store(&p)
-	transportsMu.Lock()
-	cached := make([]*http.Transport, 0, len(transports))
-	for _, tr := range transports {
-		cached = append(cached, tr)
-	}
-	transportsMu.Unlock()
-	for _, tr := range cached {
-		tr.CloseIdleConnections()
-	}
 }
 
 // Current returns a copy of the live policy. The proxy URL is shared and
@@ -206,29 +193,18 @@ func ScrubProxy(s string, proxy *url.URL) string {
 }
 
 // Transport is a default-like transport whose proxy selector follows cap.
-// Callers that customize TLS or dial fields receive their own clone.
 func Transport(cap Capability) *http.Transport {
 	tr := baseTransport()
 	tr.Proxy = ProxyFunc(cap)
 	return tr
 }
 
-func sharedTransport(cap Capability) *http.Transport {
-	transportsMu.Lock()
-	defer transportsMu.Unlock()
-	if tr := transports[cap]; tr != nil {
-		return tr
-	}
-	tr := Transport(cap)
-	transports[cap] = tr
-	return tr
-}
-
 // Client is an HTTP client for cap. A zero timeout means no client timeout.
-// Clients for the same capability share a transport pool; the proxy selector
-// reads the live policy on every request.
+// The proxy selector reads the live policy on every request.
 func Client(cap Capability, timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout, Transport: sharedTransport(cap)}
+	tr := baseTransport()
+	tr.Proxy = ProxyFunc(cap)
+	return &http.Client{Timeout: timeout, Transport: tr}
 }
 
 // SnapshotClient is an HTTP client bound to p, for a check that must not

@@ -3,11 +3,9 @@ package egress
 import (
 	"errors"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -96,65 +94,4 @@ func get(cap Capability, raw string) error {
 		resp.Body.Close()
 	}
 	return err
-}
-
-func TestClientSharesTransportAndReusesConnections(t *testing.T) {
-	prev := Current()
-	t.Cleanup(func() { Set(prev) })
-	Set(Policy{})
-
-	c1 := Client(CapMetadata, 5*time.Second)
-	c2 := Client(CapMetadata, 30*time.Second)
-	if c1.Transport == nil || c1.Transport != c2.Transport {
-		t.Fatal("Client calls for the same capability did not share a Transport")
-	}
-	if Client(CapDirect, 5*time.Second).Transport == c1.Transport {
-		t.Fatal("distinct capabilities shared a Transport")
-	}
-	if Transport(CapMetadata) == c1.Transport {
-		t.Fatal("Transport returned the shared Client transport instead of a customizable clone")
-	}
-
-	var dials atomic.Int32
-	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	srv.Config.ConnState = func(_ net.Conn, state http.ConnState) {
-		if state == http.StateNew {
-			dials.Add(1)
-		}
-	}
-	srv.Start()
-	defer srv.Close()
-
-	for i := 0; i < 3; i++ {
-		if err := get(CapMetadata, srv.URL); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if got := dials.Load(); got != 1 {
-		t.Fatalf("per-call Client opened %d connections, want 1", got)
-	}
-
-	// An already-created client's shared transport must follow policy changes.
-	var proxyHits atomic.Int32
-	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		proxyHits.Add(1)
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer proxy.Close()
-	pu, err := url.Parse(proxy.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	Set(Policy{Enabled: true, Proxy: pu, Metadata: true})
-	resp, err := c1.Get("http://meta.example/item")
-	if err != nil {
-		t.Fatal(err)
-	}
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
-	if got := proxyHits.Load(); got != 1 {
-		t.Fatalf("proxy hits after Set = %d, want 1", got)
-	}
 }
