@@ -122,6 +122,18 @@ func TestJellyfinTrickplayRouteUsesBorrowedTiles(t *testing.T) {
 	if sw.Code != 200 || sw.Header().Get("Content-Type") != "image/jpeg" || sw.Body.Len() == 0 {
 		t.Fatal(sw.Code, sw.Header(), sw.Body.Bytes())
 	}
+	etag := sw.Header().Get("ETag")
+	if etag == "" || sw.Header().Get("Cache-Control") == "" {
+		t.Fatalf("sheet lacks validators: %v", sw.Header())
+	}
+	again := httptest.NewRequest(http.MethodGet, "/Videos/"+id+"/Trickplay/320/0.jpg", nil)
+	again.Header.Set("X-Emby-Token", "grant")
+	again.Header.Set("If-None-Match", etag)
+	aw := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(aw, again)
+	if aw.Code != http.StatusNotModified || aw.Body.Len() != 0 {
+		t.Fatalf("revalidation = %d with %d body bytes", aw.Code, aw.Body.Len())
+	}
 	wrong := httptest.NewRequest(http.MethodGet, "/Videos/"+id+"/Trickplay/160/0.jpg", nil)
 	wrong.Header.Set("X-Emby-Token", "grant")
 	ww := httptest.NewRecorder()

@@ -7,6 +7,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
+	kitimages "github.com/braedonsaunders/ether/internal/frontend/kit/images"
 )
 
 func (i *instance) trickplayImage(w http.ResponseWriter, r *http.Request) {
@@ -53,6 +54,12 @@ func (i *instance) trickplayImage(w http.ResponseWriter, r *http.Request) {
 	body, err := tiles.TrickplaySheet(r.Context(), access, key, index)
 	if err != nil || len(body) == 0 {
 		http.NotFound(w, r)
+		return
+	}
+	// Sheets are re-validated, not cached blind: one can still be a partial
+	// render. The ETag keeps a scrub from re-downloading unchanged tiles.
+	w.Header().Set("Cache-Control", kitimages.Revalidate)
+	if kitimages.NotModified(w, r, kitimages.ETag(body, "image/jpeg")) {
 		return
 	}
 	w.Header().Set("Content-Type", "image/jpeg")
