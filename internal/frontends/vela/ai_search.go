@@ -140,7 +140,7 @@ func (i *instance) startAISearch(w http.ResponseWriter, r *http.Request) {
 						return
 					} // The final projection still reports failures.
 					i.aiMu.Lock()
-					if j.status == "running" {
+					if j.status == "running" || j.status == "partial" {
 						j.page, j.titles, j.status = partial, cards, "partial"
 					}
 					i.aiMu.Unlock()

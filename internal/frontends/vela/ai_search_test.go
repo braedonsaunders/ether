@@ -44,6 +44,7 @@ func (f *aiSearchFake) AISearch(ctx context.Context, _ *frontend.Viewer, _ front
 }
 func (f *aiSearchFake) AISearchProgress(ctx context.Context, v *frontend.Viewer, d frontend.Device, query string, q frontend.ItemQuery, publish func(frontend.SearchPage)) (frontend.SearchPage, error) {
 	publish(frontend.SearchPage{Page: frontend.Page{Items: []frontend.Title{{Key: 3, Title: "Provisional"}}}, Descriptive: &frontend.DescriptiveSearchStatus{State: frontend.DescriptivePartial, RetryAfterSeconds: 2}, Continuation: frontend.ContinuationUnknown})
+	publish(frontend.SearchPage{Page: frontend.Page{Items: []frontend.Title{{Key: 3, Title: "Provisional"}, {Key: 4, Title: "Second result"}}}, Descriptive: &frontend.DescriptiveSearchStatus{State: frontend.DescriptivePartial, RetryAfterSeconds: 2}, Continuation: frontend.ContinuationUnknown})
 	return f.AISearch(ctx, v, d, query, q)
 }
 func (f *aiSearchFake) DescriptiveSearchAvailable() bool { return f.available }
@@ -141,13 +142,15 @@ func checkAISearch(t *testing.T) {
 		if provisional["status"] == "partial" {
 			results := provisional["results"].(map[string]any)
 			descriptive := results["descriptive"].(map[string]any)
-			if len(results["items"].([]any)) != 1 || descriptive["state"] != "partial" || descriptive["retry"].(map[string]any)["allowed"] != true {
+			if descriptive["state"] != "partial" || descriptive["retry"].(map[string]any)["allowed"] != true {
 				t.Fatal(provisional)
 			}
-			break
+			if len(results["items"].([]any)) == 2 {
+				break
+			}
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("partial was not visible before completion", provisional)
+			t.Fatal("second partial was not visible before completion", provisional)
 		}
 		time.Sleep(time.Millisecond)
 	}
