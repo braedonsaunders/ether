@@ -136,8 +136,9 @@ func TestM3UAndXMLTVFixtures(t *testing.T) {
 	if p.Start.Hour() != 13 || p.End.Sub(p.Start) != time.Hour || p.Item.Rating != "PG" || p.Item.Title != "Morning & News" {
 		t.Fatalf("XMLTV lost data: %+v", p)
 	}
-	if _, e := ParseXMLTV(strings.NewReader(`<tv><programme channel="one" start="bad" stop="bad"/></tv>`)); e == nil {
-		t.Fatal("invalid timestamps accepted")
+	badGuide, err := ParseXMLTV(strings.NewReader(`<tv><programme channel="one" start="bad" stop="bad"/></tv>`))
+	if err != nil || len(badGuide.Programmes) != 0 || badGuide.SkippedProgrammes != 1 {
+		t.Fatalf("unexpected invalid-time result: %+v, %v", badGuide, err)
 	}
 }
 func TestPersistenceImportsPoliciesAndAtomicFailure(t *testing.T) {

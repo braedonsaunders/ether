@@ -456,7 +456,7 @@ func fetchSourceGuide(ctx context.Context, s *Service, src *Source, cs []Channel
 		if progress != nil {
 			progress.setProgrammes(len(g.Programmes))
 		}
-		s.o.Logger.Info("Live TV source read", "sourceId", src.ID, "source", src.Name, "step", "guide", "guideChannels", len(g.Channels), "nameCandidates", nameCandidateCount, "lateChannels", g.LateChannels, "programmes", len(g.Programmes))
+		s.o.Logger.Info("Live TV source read", "sourceId", src.ID, "source", src.Name, "step", "guide", "guideChannels", len(g.Channels), "nameCandidates", nameCandidateCount, "lateChannels", g.LateChannels, "skippedProgrammes", g.SkippedProgrammes, "programmes", len(g.Programmes))
 	}
 	return g, nil
 }
