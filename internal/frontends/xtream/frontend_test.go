@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
@@ -634,5 +635,49 @@ func TestArchiveHLSRoutesPartsOnTheSameSession(t *testing.T) {
 	auth.revoked = true
 	if w = request(h, archive+part); w.Code != http.StatusUnauthorized {
 		t.Fatalf("segment status after revocation = %d", w.Code)
+	}
+}
+
+func TestXMLTVFailureIsAtomicAndGuideIsCached(t *testing.T) {
+	host, _ := testHost(t)
+	var calls int
+	fail := true
+	var revision uint64
+	host.Now = func() time.Time { return time.Unix(1700000000, 0) }
+	host.PageFreshness = func() frontend.PageFreshness { return frontend.PageFreshness{Safety: revision} }
+	host.LiveTV = frontendtest.LiveTV{
+		ChannelsFunc: func(context.Context, *frontend.Viewer) ([]frontend.LiveChannel, error) {
+			channels := make([]frontend.LiveChannel, frontend.MaxLiveGuideExportChannels+1)
+			for n := range channels {
+				channels[n] = frontend.LiveChannel{ID: strconv.Itoa(n), Name: "News"}
+			}
+			return channels, nil
+		},
+		GuideFunc: func(_ context.Context, _ *frontend.Viewer, q frontend.LiveGuideQuery) ([]frontend.LiveProgramme, error) {
+			calls++
+			if fail && len(q.Channels) == 1 {
+				return nil, fmt.Errorf("guide unavailable")
+			}
+			return nil, nil
+		},
+	}
+	h := mount(t, host)
+	path := "/xmltv.php?" + authQuery()
+	if w := request(h, path); w.Code != http.StatusServiceUnavailable || strings.Contains(w.Body.String(), xml.Header) {
+		t.Fatalf("HTTP %d: XML prefix sent on failed guide query", w.Code)
+	}
+	fail = false
+	w := request(h, path)
+	var doc struct{ XMLName xml.Name }
+	if w.Code != http.StatusOK || xml.Unmarshal(w.Body.Bytes(), &doc) != nil || doc.XMLName.Local != "tv" {
+		t.Fatalf("HTTP %d: invalid XMLTV response", w.Code)
+	}
+	before := calls
+	if again := request(h, path); again.Code != http.StatusOK || again.Body.String() != w.Body.String() || calls != before {
+		t.Fatalf("duplicate export queried Guide: calls=%d, want %d", calls, before)
+	}
+	revision++
+	if w := request(h, path); w.Code != http.StatusOK || calls != before+2 {
+		t.Fatalf("freshness change did not reload Guide: calls=%d, want %d", calls, before+2)
 	}
 }
