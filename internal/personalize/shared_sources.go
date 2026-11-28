@@ -27,8 +27,9 @@ const (
 )
 
 type sharedBrowses struct {
-	mu      sync.Mutex
-	entries map[string]sharedBrowse
+	mu       sync.Mutex
+	entries  map[string]sharedBrowse
+	showcase *sharedShowcase
 }
 
 type sharedBrowse struct {
@@ -37,16 +38,53 @@ type sharedBrowse struct {
 	at    time.Time
 }
 
+type sharedShowcase struct {
+	windows map[string][]core.Title
+	epoch   int64
+	at      time.Time
+}
+
+func (b *builder) sharedViewerUnrestricted() bool {
+	if b.user.MaxContentRating != "" {
+		return false
+	}
+	if f := b.e.opts.CatalogRulesRevision; f != nil && f(&b.user) != 0 {
+		return false
+	}
+	return true
+}
+
 // sharedBrowseKey reports the shared cache key for q, or "" when this
 // builder's viewer must browse alone.
 func (b *builder) sharedBrowseKey(q core.BrowseQuery) string {
-	if b.user.MaxContentRating != "" || q.Filter.MaxContentRating != "" || q.Filter.Group != nil {
-		return ""
-	}
-	if f := b.e.opts.CatalogRulesRevision; f != nil && f(&b.user) != 0 {
+	if !b.sharedViewerUnrestricted() || q.Filter.MaxContentRating != "" || q.Filter.Group != nil {
 		return ""
 	}
 	return fmt.Sprintf("%+v", q)
+}
+
+func (e *Engine) sharedShowcaseGet(epoch int64, now time.Time) (map[string][]core.Title, bool) {
+	e.shared.mu.Lock()
+	defer e.shared.mu.Unlock()
+	ent := e.shared.showcase
+	if ent == nil || ent.epoch != epoch || now.Sub(ent.at) >= sharedBrowseTTL || now.Before(ent.at) {
+		return nil, false
+	}
+	out := make(map[string][]core.Title, len(ent.windows))
+	for k, items := range ent.windows {
+		out[k] = append([]core.Title(nil), items...)
+	}
+	return out, true
+}
+
+func (e *Engine) sharedShowcasePut(epoch int64, now time.Time, windows map[string][]core.Title) {
+	cp := make(map[string][]core.Title, len(windows))
+	for k, items := range windows {
+		cp[k] = append([]core.Title(nil), items...)
+	}
+	e.shared.mu.Lock()
+	defer e.shared.mu.Unlock()
+	e.shared.showcase = &sharedShowcase{windows: cp, epoch: epoch, at: now}
 }
 
 // policyEpoch is read once per build: one indexed point read.

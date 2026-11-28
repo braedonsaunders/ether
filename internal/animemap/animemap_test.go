@@ -142,6 +142,10 @@ func TestLoadIsSharedCachedAndBacksOff(t *testing.T) {
 	}
 	now = now.Add(25 * time.Hour)
 	_, _, _, _ = s.Lookup(context.Background(), ep(1000, 1, 1, 1), Kitsu)
+	deadline := time.Now().Add(2 * time.Second)
+	for hits.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if hits.Load() != 2 {
 		t.Fatalf("stale dataset not refreshed: %d fetches", hits.Load())
 	}
@@ -361,7 +365,51 @@ func TestDurableDiskCacheAndLookupCached(t *testing.T) {
 	if id, episode, ok := s2.LookupCached(ep(1000, 1, 5, 5), AniList); !ok || id != 301 || episode != 5 || hits.Load() != 1 {
 		t.Fatalf("stale LookupCached: %d:%d ok=%v hits=%d", id, episode, ok, hits.Load())
 	}
-	if _, _, ok, err := s2.Lookup(context.Background(), ep(1000, 1, 5, 5), AniList); err != nil || !ok || hits.Load() != 2 {
-		t.Fatalf("expired Lookup refresh: ok=%v err=%v hits=%d, want hits=2", ok, err, hits.Load())
+	if _, _, ok, err := s2.Lookup(context.Background(), ep(1000, 1, 5, 5), AniList); err != nil || !ok {
+		t.Fatalf("expired Lookup refresh: ok=%v err=%v", ok, err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for hits.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if hits.Load() != 2 {
+		t.Fatalf("expired Lookup refresh: hits=%d, want hits=2", hits.Load())
+	}
+}
+
+func TestStaleWhileRevalidateDoesNotBlock(t *testing.T) {
+	var hits atomic.Int64
+	block := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hits.Add(1) == 2 {
+			select {
+			case <-block:
+			case <-r.Context().Done():
+			}
+		}
+		_, _ = w.Write([]byte(fixture))
+	}))
+	defer func() {
+		close(block)
+		srv.Close()
+	}()
+
+	now := time.Unix(1800000000, 0)
+	s := New(Options{URL: srv.URL, Client: srv.Client(), Now: func() time.Time { return now }, Timeout: 2 * time.Second})
+	if id, episode, ok, err := s.Lookup(context.Background(), ep(1000, 1, 5, 5), Kitsu); err != nil || !ok || id != 101 || episode != 5 {
+		t.Fatalf("initial Lookup: %d:%d ok=%v err=%v", id, episode, ok, err)
+	}
+
+	// Expire TTL and verify Lookup immediately serves stale data without blocking
+	// on the slow background refresh.
+	now = now.Add(25 * time.Hour)
+	start := time.Now()
+	id, episode, ok, err := s.Lookup(context.Background(), ep(1000, 1, 5, 5), Kitsu)
+	elapsed := time.Since(start)
+	if err != nil || !ok || id != 101 || episode != 5 {
+		t.Fatalf("stale Lookup: %d:%d ok=%v err=%v", id, episode, ok, err)
+	}
+	if elapsed > 200*time.Millisecond {
+		t.Fatalf("stale Lookup blocked for %v while refreshing", elapsed)
 	}
 }

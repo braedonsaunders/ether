@@ -151,22 +151,23 @@ func (s *Service) Preference(ctx context.Context, user int64, show core.RatingKe
 // defaults, change some series' episode set: an episode group, or hidden
 // specials. Showing specials first or last only reorders them.
 func (s *Service) Customized(ctx context.Context, u *core.User) (bool, error) {
-	if !s.groupsConfigured() {
-		return false, nil
-	}
 	uid := userID(u)
+	query := `SELECT EXISTS (SELECT 1 FROM episodeorder_preferences WHERE user_id IN (0,?) AND (group_id<>'' OR specials='hidden'))`
+	if !s.groupsConfigured() {
+		query = `SELECT EXISTS (SELECT 1 FROM episodeorder_preferences WHERE user_id IN (0,?) AND specials='hidden')`
+	}
 	if reqmemo.Active(ctx) {
 		s.mu.Lock()
 		gen := s.generation
 		s.mu.Unlock()
-		return reqmemo.Do(ctx, fmt.Sprintf("episodeorder:custom:%p:%d:%d", s, gen, uid), func() (bool, error) {
+		return reqmemo.Do(ctx, fmt.Sprintf("episodeorder:custom:%p:%d:%d:%t", s, gen, uid, s.groupsConfigured()), func() (bool, error) {
 			var custom bool
-			err := s.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM episodeorder_preferences WHERE user_id IN (0,?) AND (group_id<>'' OR specials='hidden'))`, uid).Scan(&custom)
+			err := s.db.QueryRowContext(ctx, query, uid).Scan(&custom)
 			return custom, err
 		})
 	}
 	var custom bool
-	err := s.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM episodeorder_preferences WHERE user_id IN (0,?) AND (group_id<>'' OR specials='hidden'))`, uid).Scan(&custom)
+	err := s.db.QueryRowContext(ctx, query, uid).Scan(&custom)
 	return custom, err
 }
 
@@ -385,12 +386,16 @@ func (s *Service) layout(ctx context.Context, u *core.User, k core.RatingKey) (*
 	return l, err
 }
 func (s *Service) layoutWithPref(ctx context.Context, u *core.User, k core.RatingKey) (*layout, Preference, error) {
-	if k.Allocated() || !s.groupsConfigured() {
+	if k.Allocated() {
 		return nil, Preference{Specials: "last"}, nil
 	}
 	show := showKey(k)
 	if show == 0 || show.Allocated() {
 		return nil, Preference{}, nil
+	}
+	if !s.groupsConfigured() {
+		p, e := s.Preference(ctx, userID(u), show)
+		return nil, p, e
 	}
 	cacheKey := fmt.Sprintf("%d:%d", userID(u), show)
 	s.mu.Lock()
@@ -501,8 +506,19 @@ func (s *Service) layoutWithPref(ctx context.Context, u *core.User, k core.Ratin
 	}
 	s.mu.Lock()
 	if s.generation == generation {
-		if len(s.cache) > 64 {
-			s.cache = map[string]cachedLayout{}
+		if len(s.cache) >= 64 {
+			if _, exists := s.cache[cacheKey]; !exists {
+				var victim string
+				var earliest time.Time
+				for ck, cv := range s.cache {
+					if victim == "" || cv.expires.Before(earliest) {
+						victim, earliest = ck, cv.expires
+					}
+				}
+				if victim != "" {
+					delete(s.cache, victim)
+				}
+			}
 		}
 		s.cache[cacheKey] = cachedLayout{out, time.Now().Add(time.Minute)}
 	}

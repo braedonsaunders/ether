@@ -56,6 +56,9 @@ func (s Service) FlushOne(ctx context.Context, user int64) error {
 	if rating.Kind() == core.KindEpisode {
 		verified, err = s.Auth.IsOrdinaryTV(ctx, rating.TMDB())
 		if err != nil {
+			if permanentClientError(err) {
+				return s.dropUnsupported(ctx, user, lease, key, at, "not_found")
+			}
 			return s.exportFailure(ctx, user, lease, err)
 		}
 	}
@@ -99,7 +102,7 @@ func (s Service) FlushOne(ctx context.Context, user int64) error {
 		return err
 	}
 	err = s.Auth.PushHistory(ctx, grant.Access, rating, time.Unix(at, 0), verified)
-	if errors.Is(err, ErrIdentityNotFound) {
+	if errors.Is(err, ErrIdentityNotFound) || permanentClientError(err) {
 		return s.dropUnsupported(ctx, user, lease, key, at, "not_found")
 	}
 	if err != nil {
@@ -107,6 +110,21 @@ func (s Service) FlushOne(ctx context.Context, user int64) error {
 	}
 	_, err = s.Tokens.DB.ExecContext(ctx, `DELETE FROM simkl_outbox WHERE user_id=? AND rating_key=? AND watched_at=? AND EXISTS(SELECT 1 FROM simkl_tokens WHERE user_id=? AND lease_id=? AND lease_until>?)`, user, key, at, user, lease, time.Now().UnixMilli())
 	return err
+}
+
+// permanentClientError reports non-retryable 4xx responses (excluding auth
+// failures 401/403 and rate limits 429) so a single rejected item cannot block
+// the rest of the viewer's outbox indefinitely.
+func permanentClientError(err error) bool {
+	var api *APIError
+	if errors.As(err, &api) {
+		return api.Status >= 400 && api.Status < 500 && api.Status != 401 && api.Status != 403 && api.Status != 429
+	}
+	var h *HTTPError
+	if errors.As(err, &h) {
+		return h.Status >= 400 && h.Status < 500 && h.Status != 401 && h.Status != 403 && h.Status != 429
+	}
+	return false
 }
 func (s Service) dropUnsupported(ctx context.Context, user int64, lease string, key, at int64, warning string) error {
 	tx, err := s.Tokens.DB.BeginTx(ctx, nil)

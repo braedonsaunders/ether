@@ -80,7 +80,7 @@ func (s Service) FlushOne(ctx context.Context, user int64) error {
 		return err
 	}
 	err = s.Client.PushHistory(ctx, grant.APIKey, rating, time.Unix(at, 0))
-	if errors.Is(err, ErrUnsupported) {
+	if errors.Is(err, ErrUnsupported) || permanentClientError(err) {
 		return s.dropUnsupported(ctx, user, lease, key, at, "not_found")
 	}
 	if err != nil {
@@ -88,6 +88,14 @@ func (s Service) FlushOne(ctx context.Context, user int64) error {
 	}
 	_, err = s.Tokens.DB.ExecContext(ctx, `DELETE FROM mdblist_outbox WHERE user_id=? AND rating_key=? AND watched_at=? AND EXISTS(SELECT 1 FROM mdblist_accounts WHERE user_id=? AND lease_id=? AND lease_until>?)`, user, key, at, user, lease, time.Now().UnixMilli())
 	return err
+}
+
+func permanentClientError(err error) bool {
+	var h *HTTPError
+	if errors.As(err, &h) {
+		return h.Status >= 400 && h.Status < 500 && h.Status != 401 && h.Status != 403 && h.Status != 429
+	}
+	return false
 }
 
 func (s Service) dropUnsupported(ctx context.Context, user int64, lease string, key, at int64, warning string) error {

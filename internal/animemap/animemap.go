@@ -1178,7 +1178,11 @@ func (s *Service) load(ctx context.Context) (*index, error) {
 			return nil, ErrUnavailable
 		}
 		if wait := s.loading; wait != nil {
+			stale := s.idx
 			s.mu.Unlock()
+			if stale != nil {
+				return stale, nil
+			}
 			select {
 			case <-wait:
 				continue
@@ -1188,33 +1192,49 @@ func (s *Service) load(ctx context.Context) (*index, error) {
 		}
 		done := make(chan struct{})
 		s.loading = done
+		stale := s.idx
 		s.mu.Unlock()
 
-		idx, err := s.fetch()
-		savedAt := s.opts.Now()
-		if err == nil && s.opts.CacheDir != "" {
-			if werr := s.writeDiskCache(idx, savedAt); werr != nil {
-				s.opts.Logger.Warn("anime id mapping cache write failed", "err", werr)
-			}
+		if stale != nil {
+			// Serve the stale index immediately and refresh in the background so
+			// live searches do not block on dataset downloads.
+			go s.refresh(done)
+			return stale, nil
 		}
 
-		s.mu.Lock()
-		s.loading = nil
-		close(done)
+		idx, err := s.refresh(done)
 		if err != nil {
-			s.failedAt = savedAt
-			stale := s.idx
-			s.mu.Unlock()
-			s.opts.Logger.Warn("anime id mapping unavailable", "err", err)
-			if stale != nil {
-				return stale, nil
-			}
-			return nil, ErrUnavailable
+			return nil, err
 		}
-		s.idx, s.loadedAt, s.failedAt = idx, savedAt, time.Time{}
-		s.mu.Unlock()
 		return idx, nil
 	}
+}
+
+func (s *Service) refresh(done chan struct{}) (*index, error) {
+	idx, err := s.fetch()
+	savedAt := s.opts.Now()
+	if err == nil && s.opts.CacheDir != "" {
+		if werr := s.writeDiskCache(idx, savedAt); werr != nil {
+			s.opts.Logger.Warn("anime id mapping cache write failed", "err", werr)
+		}
+	}
+
+	s.mu.Lock()
+	s.loading = nil
+	close(done)
+	if err != nil {
+		s.failedAt = savedAt
+		stale := s.idx
+		s.mu.Unlock()
+		s.opts.Logger.Warn("anime id mapping unavailable", "err", err)
+		if stale != nil {
+			return stale, nil
+		}
+		return nil, ErrUnavailable
+	}
+	s.idx, s.loadedAt, s.failedAt = idx, savedAt, time.Time{}
+	s.mu.Unlock()
+	return idx, nil
 }
 
 // fetch downloads and parses the configured datasets concurrently. It runs on
