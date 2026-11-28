@@ -500,3 +500,50 @@ func TestMediaPoolBatchedReservationAndPoolFullWarn(t *testing.T) {
 		})
 	}
 }
+
+// Unused shared batch headroom goes back to the pool once the batch window
+// ends, even when no further segment write arrives to release it.
+func TestSharedSegmentBatchReleasedAfterWindow(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	dir := t.TempDir()
+	seg, err := segcache.OpenShared(dir, 1000, db, "a", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { seg.Close() })
+	files, err := blobcache.Open(filepath.Join(dir, "plugin-files"), blobcache.Options{
+		Unified: true, Shared: true, SweepPeriod: -1,
+		PoolCapacity: seg.MediaFileCapacity, MakeFileRoom: seg.MakeFileRoom, CheckVolume: seg.CheckVolume,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { seg.SetFilePool(nil); files.Close() })
+	seg.SetFilePool(files)
+	seg.SetDiskUsage(func() (int64, int64, error) { return 10000, 5000, nil })
+	if err := seg.Put("burst", 0, make([]byte, 20)); err != nil {
+		t.Fatal(err)
+	}
+	reserved := func() int64 {
+		var n sql.NullInt64
+		if err := db.QueryRowContext(ctx, `SELECT SUM(bytes) FROM segcache_writes`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n.Int64
+	}
+	if reserved() == 0 {
+		t.Fatal("expected a batched reservation after the first segment")
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for reserved() != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("batch headroom still reserved: %d bytes", reserved())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}

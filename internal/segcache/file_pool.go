@@ -48,8 +48,16 @@ func (c *Cache) SetFilePool(files FilePool) {
 	}
 }
 
-func (c *Cache) releaseBatch() {
+func (c *Cache) releaseBatch() { c.releaseBatchIf("") }
+
+// releaseBatchIf releases the current batch, or only the batch with the given
+// lease when one is named (an expiry timer must not end a newer batch).
+func (c *Cache) releaseBatchIf(lease string) {
 	c.mu.Lock()
+	if lease != "" && c.batchID != lease {
+		c.mu.Unlock()
+		return
+	}
 	id, unused := c.batchID, c.batchBytes
 	c.batchID, c.batchBytes, c.batchAt = "", 0, time.Time{}
 	c.mu.Unlock()
@@ -375,6 +383,12 @@ func (c *Cache) reserveSegment(files FilePool, size int64) (string, error) {
 		c.batchBytes = extra
 		c.batchAt = at
 		c.mu.Unlock()
+		if extra > 0 {
+			// Hand unused batch headroom back to the pool as soon as the batch
+			// stops being usable instead of holding it until the row expires.
+			id := lease
+			time.AfterFunc(headroomRefreshEvery, func() { c.releaseBatchIf(id) })
+		}
 		return nil
 	})
 	return lease, err
