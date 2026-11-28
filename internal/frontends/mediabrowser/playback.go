@@ -1282,12 +1282,15 @@ func (i *instance) playbackRoutes() error {
 	for _, entry := range []struct {
 		path    string
 		stopped bool
-	}{{"/Sessions/Playing", false}, {"/Sessions/Playing/Progress", false}, {"/Sessions/Playing/Ping", false}, {"/Sessions/Playing/Stopped", true}} {
+	}{{"/Sessions/Playing", false}, {"/Sessions/Playing/Progress", false}, {"/Sessions/Playing/Stopped", true}} {
 		stop := entry.stopped
 		started := entry.path == "/Sessions/Playing"
 		if err := i.router.Handle("POST", entry.path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { i.timeline(w, r, stop, started) })); err != nil {
 			return err
 		}
+	}
+	if err := i.router.Handle("POST", "/Sessions/Playing/Ping", http.HandlerFunc(i.playingPing)); err != nil {
+		return err
 	}
 	for _, path := range []string{"/Users/{userId}/PlayingItems/{itemId}", "/PlayingItems/{itemId}"} {
 		itemPath := path
@@ -1339,6 +1342,41 @@ type timelineRequest struct {
 	PlaySessionId, LiveStreamId, ItemId, MediaSourceId string
 	PositionTicks, RunTimeTicks                        json.Number
 	IsPaused                                           bool
+}
+
+func (i *instance) playingPing(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if i.host.Sessions == nil {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var id string
+	switch values := route.Query(r.URL.Query(), "PlaySessionId"); len(values) {
+	case 1:
+		id = values[0]
+	case 0:
+	default:
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	if id == "" && r.Body != nil && r.ContentLength != 0 {
+		var body struct{ PlaySessionId string }
+		if err := decode(r, &body); err != nil && !errors.Is(err, io.EOF) {
+			http.Error(w, "Bad Request", http.StatusBadRequest)
+			return
+		}
+		id = body.PlaySessionId
+	}
+	if id != "" {
+		access := frontend.SessionAccess{Viewer: v, Device: device(r), Protocol: i.protocol}
+		// The playback manager owns the timeout. A late ping is harmless.
+		_ = i.host.Sessions.KeepAlive(r.Context(), access, id)
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (i *instance) timeline(w http.ResponseWriter, r *http.Request, stopped, started bool) {
