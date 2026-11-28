@@ -261,7 +261,8 @@ func (i *instance) programmeIcon(r *http.Request, l login, p frontend.LiveProgra
 }
 
 func (i *instance) epg(w http.ResponseWriter, r *http.Request, l login, action string) {
-	c, ok := i.findChannel(r, l, r.URL.Query().Get("stream_id"))
+	streamID := r.URL.Query().Get("stream_id")
+	c, ok := i.findChannel(r, l, streamID)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -297,7 +298,7 @@ func (i *instance) epg(w http.ResponseWriter, r *http.Request, l login, action s
 		if ended, _ := frontend.ArchiveFlags(c.ArchiveDays, p.Start, p.End, now); ended {
 			hasArchive = 1
 		}
-		row := map[string]any{"id": p.ID, "epg_id": strconv.FormatInt(int64(l.channels[c.ID]), 10), "channel_id": c.ID, "title": base64.StdEncoding.EncodeToString([]byte(p.Title)), "description": base64.StdEncoding.EncodeToString([]byte(p.Summary)), "lang": "", "start": p.Start.UTC().Format("2006-01-02 15:04:05"), "end": p.End.UTC().Format("2006-01-02 15:04:05"), "start_timestamp": strconv.FormatInt(p.Start.Unix(), 10), "stop_timestamp": strconv.FormatInt(p.End.Unix(), 10), "now_playing": playing, "has_archive": hasArchive}
+		row := map[string]any{"id": p.ID, "epg_id": streamID, "channel_id": c.ID, "title": base64.StdEncoding.EncodeToString([]byte(p.Title)), "description": base64.StdEncoding.EncodeToString([]byte(p.Summary)), "lang": "", "start": p.Start.UTC().Format("2006-01-02 15:04:05"), "end": p.End.UTC().Format("2006-01-02 15:04:05"), "start_timestamp": strconv.FormatInt(p.Start.Unix(), 10), "stop_timestamp": strconv.FormatInt(p.End.Unix(), 10), "now_playing": playing, "has_archive": hasArchive}
 		if icon := i.programmeIcon(r, l, p); icon != "" {
 			row["icon"] = icon
 		}

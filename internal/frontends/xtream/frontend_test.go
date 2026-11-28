@@ -101,6 +101,14 @@ func TestStartupSequenceAndRevocation(t *testing.T) {
 		if w.Code != 200 || !strings.Contains(w.Body.String(), base64.StdEncoding.EncodeToString([]byte("Now & next"))) {
 			t.Fatalf("epg %s", w.Body.String())
 		}
+		var epg struct {
+			Listings []struct {
+				EPGID string `json:"epg_id"`
+			} `json:"epg_listings"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &epg); err != nil || len(epg.Listings) == 0 || epg.Listings[0].EPGID != id {
+			t.Fatalf("expected epg_id %s: %s", id, w.Body.String())
+		}
 		if strings.Contains(w.Body.String(), "Hidden") {
 			t.Fatal("guide leak")
 		}
