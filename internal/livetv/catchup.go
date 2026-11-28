@@ -32,6 +32,7 @@ type catchUpSession struct {
 	input        *catchUpInput
 	inputClaimed bool
 	inputClosed  bool
+	inputPaused  bool
 	info         CatchUpInfo
 	hls          core.HLSSession
 }
@@ -389,11 +390,11 @@ func (c *catchUpSession) openRange(s *Service, ss *session) core.ArchiveRangeOpe
 	return func(ctx context.Context, offset time.Duration) (core.ArchiveRangeInput, error) {
 		c.inputMu.Lock()
 		defer c.inputMu.Unlock()
-		if c.inputClosed || ctx.Err() != nil {
+		if c.inputClosed || c.inputPaused || ctx.Err() != nil {
 			return core.ArchiveRangeInput{}, core.ErrNotAvailable
 		}
 		input := c.input
-		if c.inputClaimed || offset != 0 {
+		if input == nil || c.inputClaimed || offset != 0 {
 			if input != nil {
 				input.release(s)
 				c.input = nil
@@ -442,6 +443,10 @@ func (c *catchUpSession) releaseInput(s *Service) {
 	c.inputMu.Lock()
 	defer c.inputMu.Unlock()
 	c.inputClosed = true
+	c.releaseInputLocked(s)
+}
+
+func (c *catchUpSession) releaseInputLocked(s *Service) {
 	if c.input != nil {
 		c.input.release(s)
 		c.input = nil
@@ -500,10 +505,18 @@ func (s *Service) SeekCatchUp(ctx context.Context, u *core.User, id string, offs
 	ss.mu.Unlock()
 	// Release the current provider connection before opening a new range;
 	// even single-connection providers must support seeking.
-	current.releaseInput(s)
+	current.inputMu.Lock()
+	current.inputPaused = true
+	current.releaseInputLocked(s)
+	current.inputMu.Unlock()
 	info.Origin = offset
 	next, err := s.openCatchUp(ctx, ss, info)
 	if err != nil {
+		// Keep the old playlist usable if the new range could not open.
+		// A concurrent Stop still prevents reopening through inputClosed.
+		current.inputMu.Lock()
+		current.inputPaused = false
+		current.inputMu.Unlock()
 		return CatchUpInfo{}, err
 	}
 	ss.mu.Lock()
