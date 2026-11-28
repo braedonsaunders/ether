@@ -27,7 +27,6 @@ import (
 	"github.com/braedonsaunders/ether/internal/reqmemo"
 	"github.com/braedonsaunders/ether/internal/schedule"
 	"github.com/braedonsaunders/ether/internal/store"
-	"github.com/braedonsaunders/ether/internal/trakt"
 )
 
 const Redacted = "••••"
@@ -720,7 +719,8 @@ func (s *Service) syncViewer(ctx context.Context, u *core.User, result *SyncResu
 	}
 	if cfg.Trakt && s.o.Trakt != nil {
 		ts, e := s.o.Trakt.Watchlist(ctx, u.ID, 1000)
-		if errors.Is(e, trakt.ErrNotConnected) {
+		var unlinked interface{ NotConnected() bool }
+		if errors.As(e, &unlinked) && unlinked.NotConnected() {
 			e = nil
 		} else if e == nil {
 			e = s.replace(ctx, u, "trakt", ts)

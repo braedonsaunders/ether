@@ -120,7 +120,15 @@ var ErrRevoked = errors.New("trakt: authorization revoked; reconnect required")
 
 // ErrNotConnected is returned by authenticated calls for users who have not
 // linked Trakt.
-var ErrNotConnected = errors.New("trakt: user not connected")
+var ErrNotConnected error = notConnectedError{}
+
+type notConnectedError struct{}
+
+func (notConnectedError) Error() string { return "trakt: user not connected" }
+
+// NotConnected lets callers recognize the unlinked state without importing
+// this package (watchlist would form an import cycle through state).
+func (notConnectedError) NotConnected() bool { return true }
 
 type refreshKey struct {
 	userID int64
