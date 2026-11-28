@@ -1065,6 +1065,40 @@ Plex viewers access shared libraries through their own Plex accounts. Refreshing
 Plex sharing removes revoked viewers' access. Stream links stop working when
 the viewer is inactive or the session ends.
 
+## Single sign-on (OIDC)
+
+Household members can sign in to the console and the viewer portal with an
+OpenID Connect provider such as Pocket ID, Authelia, Authentik or Keycloak.
+The provider only proves who someone is: it never creates viewers, and only
+the owner's linked account opens the console.
+
+1. At your provider, create an OIDC client. Ether asks for the `openid`,
+   `profile` and `email` scopes and uses the authorization code flow with
+   PKCE, so a public client (no secret) works. Register the redirect URI
+   `https://<address>/ether/api/oidc/callback` for each address people open
+   Ether at, for example both the console and the viewer portal hostnames.
+2. Open **Integrations › Single sign-on**, enter the issuer URL exactly as the
+   provider's `/.well-known/openid-configuration` reports it, the client ID
+   and, for a confidential client, the client secret. **Button name** sets the
+   label, for example "Pocket ID". **Test connection** checks the issuer; only a
+   real sign-in proves the client ID and secret.
+3. Each person signs in another way once, opens **Sign-in methods** at
+   `/ether/me` and chooses **Link … account**. A viewer who joined with an
+   invite link can link the account instead of choosing a password.
+
+After that, **Sign in with …** appears on the console sign-in page and on
+`/ether/me`. A linked account that isn't the owner's is refused on the
+console. To sign in a TV or phone app, sign in at `/ether/me` with single
+sign-on and approve the app's Quick Connect code there; Jellyfin and Emby
+password sign-in still needs an Ether password.
+
+Ether matches people by the provider's issuer and subject, never by e-mail or
+username, so renaming someone at the provider keeps their link, and changing
+the issuer URL means everyone links again. **Disconnect** under **Sign-in
+methods** removes a link. Pending sign-ins are kept in memory for ten minutes
+on the node that started them; in a cluster, the provider must return people
+to the same node.
+
 ## Plex account watch sync
 
 Ether can keep a viewer's watched marks and ratings in step with that

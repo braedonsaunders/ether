@@ -163,6 +163,8 @@ type Deps struct {
 	Lifecycle        ViewerLifecycle
 	AuthenticatePlex func(context.Context, string) (*core.User, error)
 	LinkPlex         func(context.Context, int64, string) error
+	// OIDC runs single sign-on flows. Nil leaves single sign-on off.
+	OIDC OIDCSignIn
 
 	// Extensions are owner-authenticated API subtrees keyed by relative path.
 	Extensions map[string]http.Handler
@@ -498,6 +500,17 @@ func (h *Handler) routes() *route.Mux {
 	mux.HandleFunc("POST /api/me/pin", h.limitIdentityAuth(h.handlePortalPIN))
 	mux.HandleFunc("GET /api/me/pin/{handle}", h.limitIdentityPoll(h.handlePortalPINPoll))
 	mux.HandleFunc("POST /api/me/quickconnect", h.handleApproveQuickConnect)
+	// Single sign-on. Starts and polls mirror the Plex PIN routes; only the
+	// browser holding the handle collects the result. The callback needs
+	// no limiter: it acts only on an unguessable pending state.
+	mux.HandleFunc("GET /api/oidc/callback", h.handleOIDCCallback)
+	mux.HandleFunc("POST /api/me/oidc", h.limitIdentityStart("oidc", h.handleOIDCPortalStart))
+	mux.HandleFunc("GET /api/me/oidc/{handle}", h.limitIdentityPoll(h.handleOIDCPortalPoll))
+	mux.HandleFunc("POST /api/me/link/oidc", h.limitIdentityStart("oidc", h.handleOIDCLinkStart))
+	mux.HandleFunc("GET /api/me/link/oidc/{handle}", h.limitIdentityPoll(h.handleOIDCLinkPoll))
+	mux.HandleFunc("POST /api/me/identities/unlink", h.handleMeUnlinkIdentity)
+	mux.HandleFunc("POST /api/auth/oidc", h.limitAuth(h.handleOIDCOwnerStart))
+	mux.HandleFunc("GET /api/auth/oidc/{handle}", h.limitAuth(h.handleOIDCOwnerPoll))
 	// Public sign-in: yields a console session only to the browser that
 	// started the PIN, and only if the account owns the server.
 	mux.HandleFunc("POST /api/auth/pin", h.limitAuth(h.handleSignInStart))
@@ -563,6 +576,7 @@ func (h *Handler) routes() *route.Mux {
 	api("GET /api/llm/providers", h.handleLLMProviders)
 	api("POST /api/llm/models", h.handleLLMModels)
 	api("POST /api/test/trakt", h.handleTestTrakt)
+	api("POST /api/test/oidc", h.handleTestOIDC)
 	api("POST /api/test/introdb", h.handleTestIntroDB)
 	api("POST /api/test/skipdb", h.handleTestSkipDB)
 	api("POST /api/outbound/check", h.handleOutboundCheck)

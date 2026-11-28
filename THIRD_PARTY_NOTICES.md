@@ -70,6 +70,9 @@ SOFTWARE.
 | `github.com/ulikunitz/xz` | 7z header LZMA decoding, `internal/archive` | BSD-3-Clause |
 | `github.com/mnightingale/rapidyenc` | Pure-Go SIMD Usenet yEnc article decoding, `internal/usenet` | MIT (© Michael Nightingale) |
 | `golang.org/x/crypto` (`argon2`) | Local password hashing, `internal/identity` | BSD-3-Clause |
+| `github.com/coreos/go-oidc/v3` | OpenID Connect discovery and ID token verification for single sign-on, `internal/oidcsignin` | Apache-2.0 (© CoreOS, Inc.) |
+| `github.com/go-jose/go-jose/v4` | JSON Web Signature verification via go-oidc; signs test ID tokens in `internal/oidcsignin` | Apache-2.0 (© Square, Inc. and go-jose contributors) |
+| `golang.org/x/oauth2` | Authorization code exchange with PKCE for single sign-on, `internal/oidcsignin` | BSD-3-Clause |
 | `golang.org/x/text` | Legacy subtitle code pages, `internal/subtitles`; language names, `internal/collections` | BSD-3-Clause |
 | `golang.org/x/image` | Collection poster rendering (scaling, WebP decoding, OpenType text), `internal/artwork` | BSD-3-Clause |
 | `github.com/srwiley/oksvg` and `github.com/srwiley/rasterx` | Bounded pure-Go SVG rasterization, `internal/artwork` | BSD-3-Clause |

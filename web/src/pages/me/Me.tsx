@@ -126,6 +126,7 @@ export default function Me() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [pinURL, setPinURL] = useState("");
+  const [oidcName, setOIDCName] = useState<string | null>(null);
   const [inviteSecret, setInviteSecret] = useState("");
   const [inviteUnavailable, setInviteUnavailable] = useState(false);
   const cancelled = useRef(false);
@@ -155,9 +156,12 @@ export default function Me() {
   useEffect(() => {
     let stop = false;
     fetch("/ether/api/bootstrap")
-      .then((res) => (res.ok ? (res.json() as Promise<{ signInMethods?: string[] }>) : null))
+      .then((res) =>
+        res.ok ? (res.json() as Promise<{ signInMethods?: string[]; oidcName?: string }>) : null,
+      )
       .then((boot) => {
         if (stop) return;
+        setOIDCName(boot?.signInMethods?.includes("oidc") ? boot.oidcName?.trim() || "SSO" : null);
         const offered = (boot?.signInMethods ?? []).filter(
           (item): item is Method => item === "local" || item === "plex",
         );
@@ -247,14 +251,15 @@ export default function Me() {
     }
   }
 
-  async function plexSignIn() {
+  async function externalSignIn(kind: "plex" | "oidc") {
     setError("");
     setBusy(true);
-    const popup = window.open("", "plex-viewer-sign-in", "width=560,height=720");
+    const popup = window.open("", `${kind}-viewer-sign-in`, "width=560,height=720");
+    const route = kind === "plex" ? "/pin" : "/oidc";
     try {
-      const pin = await request<{ handle: string; authUrl: string }>("/pin", "", {});
+      const pin = await request<{ handle: string; authUrl: string }>(route, "", {});
       if (cancelled.current) return;
-      setPinURL(pin.authUrl);
+      if (kind === "plex") setPinURL(pin.authUrl);
       if (popup) {
         popup.opener = null;
         popup.location.href = pin.authUrl;
@@ -264,7 +269,7 @@ export default function Me() {
         await new Promise((resolve) => setTimeout(resolve, 2000));
         if (cancelled.current) return;
         const result = await request<{ done: boolean; token?: string }>(
-          `/pin/${encodeURIComponent(pin.handle)}`,
+          `${route}/${encodeURIComponent(pin.handle)}`,
           "",
         );
         if (result.done && result.token) {
@@ -274,8 +279,16 @@ export default function Me() {
         }
       }
       if (!cancelled.current) setError(t("Sign-in timed out. Try again."));
-    } catch {
-      if (!cancelled.current) setError(t("Sign-in failed. Try again."));
+    } catch (err) {
+      if (cancelled.current) return;
+      setError(
+        err instanceof PortalError && err.code === "not_linked"
+          ? t(
+              "That {provider} account isn't linked yet. Sign in another way, then link it under Sign-in methods at /ether/me.",
+              { provider: oidcName ?? "" },
+            )
+          : t("Sign-in failed. Try again."),
+      );
     } finally {
       popup?.close();
       if (!cancelled.current) {
@@ -383,7 +396,7 @@ export default function Me() {
           ) : settingUp && viewer ? (
             methods === null ? (
               <p role="status">{t("Loading…")}</p>
-            ) : !localOn && !plexOn ? (
+            ) : !localOn && !plexOn && !oidcName ? (
               <p className="text-sm text-fg-muted">
                 {t("No sign-in method is available. Contact the server owner.")}
               </p>
@@ -393,6 +406,7 @@ export default function Me() {
                 viewer={viewer}
                 localOn={localOn}
                 plexOn={plexOn}
+                oidcName={oidcName}
                 onDone={(text) => {
                   setViewer({ ...viewer, needsSignInSetup: false });
                   setMessage(text);
@@ -455,7 +469,7 @@ export default function Me() {
                       type="button"
                       className="w-full"
                       disabled={busy}
-                      onClick={() => void plexSignIn()}
+                      onClick={() => void externalSignIn("plex")}
                     >
                       {t("Sign in with Plex")}
                     </Button>
@@ -467,6 +481,17 @@ export default function Me() {
                       </p>
                     ) : null}
                   </div>
+                ) : null}
+                {oidcName ? (
+                  <Button
+                    type="button"
+                    variant={localOn || plexOn ? "outline" : undefined}
+                    className="w-full"
+                    disabled={busy}
+                    onClick={() => void externalSignIn("oidc")}
+                  >
+                    {t("Sign in with {provider}", { provider: oidcName })}
+                  </Button>
                 ) : null}
               </div>
             )
@@ -584,7 +609,7 @@ export default function Me() {
           <>
             <ConnectApps base="/me" token={token} />
             <PortalTrakt token={token} />
-            <SignInMethods base="/me" token={token} />
+            <SignInMethods base="/me" token={token} oidcName={oidcName} />
           </>
         ) : null}
       </div>
@@ -602,12 +627,15 @@ function FirstPassword({
   viewer,
   localOn,
   plexOn,
+  oidcName,
   onDone,
 }: {
   token: string;
   viewer: Viewer;
   localOn: boolean;
   plexOn: boolean;
+  /** The single sign-on provider's name, or null when it is off. */
+  oidcName: string | null;
   onDone: (message: string) => void;
 }) {
   const [username, setUsername] = useState(() => suggestUsername(viewer));
@@ -653,14 +681,14 @@ function FirstPassword({
     }
   }
 
-  async function linkPlex() {
+  async function link(kind: "plex" | "oidc") {
     setBusy(true);
     setError("");
     const popup = window.open("", "_blank", "width=560,height=720");
     try {
-      const pin = await request<{ handle: string; authUrl: string }>("/link/plex", token, {});
+      const pin = await request<{ handle: string; authUrl: string }>(`/link/${kind}`, token, {});
       if (cancelled.current) return;
-      setPinURL(pin.authUrl);
+      if (kind === "plex") setPinURL(pin.authUrl);
       if (popup) {
         popup.opener = null;
         popup.location.href = pin.authUrl;
@@ -670,17 +698,32 @@ function FirstPassword({
         await new Promise((resolve) => setTimeout(resolve, 2000));
         if (cancelled.current) return;
         const result = await request<{ done: boolean }>(
-          `/link/plex/${encodeURIComponent(pin.handle)}`,
+          `/link/${kind}/${encodeURIComponent(pin.handle)}`,
           token,
         );
         if (result.done) {
-          onDone(t("All set. Next time, choose Sign in with Plex."));
+          onDone(
+            kind === "plex"
+              ? t("All set. Next time, choose Sign in with Plex.")
+              : t("All set. Next time, choose Sign in with {provider}.", {
+                  provider: oidcName ?? "",
+                }),
+          );
           return;
         }
       }
       if (!cancelled.current) setError(t("Sign-in timed out. Try again."));
-    } catch {
-      if (!cancelled.current) setError(t("The Plex account could not be linked."));
+    } catch (err) {
+      if (cancelled.current) return;
+      setError(
+        kind === "plex"
+          ? t("The Plex account could not be linked.")
+          : err instanceof PortalError && err.code === "identity_conflict"
+            ? t("That {provider} account already signs in as someone else.", {
+                provider: oidcName ?? "",
+              })
+            : t("The {provider} account could not be linked.", { provider: oidcName ?? "" }),
+      );
     } finally {
       popup?.close();
       if (!cancelled.current) {
@@ -760,7 +803,7 @@ function FirstPassword({
             variant={localOn ? "outline" : undefined}
             className="w-full"
             disabled={busy}
-            onClick={() => void linkPlex()}
+            onClick={() => void link("plex")}
           >
             {t("Use my Plex account instead")}
           </Button>
@@ -771,6 +814,22 @@ function FirstPassword({
               </a>
             </p>
           ) : null}
+        </div>
+      ) : null}
+      {oidcName ? (
+        <div className="space-y-3">
+          {localOn || plexOn ? (
+            <p className="text-center text-xs uppercase tracking-wide text-fg-muted">{t("or")}</p>
+          ) : null}
+          <Button
+            type="button"
+            variant={localOn || plexOn ? "outline" : undefined}
+            className="w-full"
+            disabled={busy}
+            onClick={() => void link("oidc")}
+          >
+            {t("Use my {provider} account instead", { provider: oidcName })}
+          </Button>
         </div>
       ) : null}
     </div>

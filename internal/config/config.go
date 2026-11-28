@@ -52,6 +52,7 @@ type Config struct {
 	Transcode     Transcode     `json:"transcode"`
 	Trakt         Trakt         `json:"trakt"`
 	Simkl         Simkl         `json:"simkl"`
+	OIDC          OIDC          `json:"oidc"`
 	MDBList       MDBList       `json:"mdblist"`
 	PlexServers   PlexServers   `json:"plexServers"`
 	OpenSubtitles OpenSubtitles `json:"openSubtitles"`
@@ -836,6 +837,24 @@ type PlexServers struct {
 type Simkl struct {
 	Enabled      bool   `json:"enabled"`
 	ClientID     string `json:"clientId"`
+	ClientSecret string `json:"clientSecret"`
+}
+
+// OIDC lets household members sign in to the console and viewer portal
+// through an OpenID Connect provider (Pocket ID, Authelia, Authentik,
+// Keycloak and the like). A person signs in this way only after linking the
+// provider account to their viewer from the viewer portal; the provider never
+// creates viewers or grants ownership on its own.
+type OIDC struct {
+	Enabled bool `json:"enabled"`
+	// DisplayName labels the sign-in button ("Sign in with Pocket ID").
+	// Empty shows "single sign-on".
+	DisplayName string `json:"displayName,omitempty"`
+	// Issuer is the provider's issuer URL, exactly as its discovery
+	// document reports it.
+	Issuer   string `json:"issuer"`
+	ClientID string `json:"clientId"`
+	// ClientSecret is empty for a public client (PKCE only).
 	ClientSecret string `json:"clientSecret"`
 }
 

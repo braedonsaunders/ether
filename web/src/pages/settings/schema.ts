@@ -687,6 +687,39 @@ export const TRAKT: FieldGroup[] = localized(() => [
   },
 ]);
 
+export const OIDC: FieldGroup[] = localized(() => [
+  {
+    title: t("Single sign-on"),
+    description: t(
+      "Create an OpenID Connect client at your provider. Register the redirect URI https://<each address you open Ether at>/ether/api/oidc/callback.",
+    ),
+    fields: [
+      {
+        key: "displayName",
+        label: t("Button name"),
+        kind: "text",
+        placeholder: "Pocket ID",
+        help: t("Shown as “Sign in with …”."),
+      },
+      {
+        key: "issuer",
+        label: t("Issuer URL"),
+        kind: "text",
+        wide: true,
+        placeholder: "https://auth.example.com",
+        help: t("The provider's issuer, exactly as its discovery document reports it."),
+      },
+      { key: "clientId", label: t("Client ID"), kind: "text", wide: true },
+      {
+        key: "clientSecret",
+        label: t("Client secret"),
+        kind: "secret",
+        help: t("Leave empty for a public client."),
+      },
+    ],
+  },
+]);
+
 export const OPENSUBTITLES: FieldGroup[] = localized(() => [
   {
     title: "OpenSubtitles",

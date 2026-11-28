@@ -175,7 +175,7 @@ func secretIn(m map[string]any, parent, k string) bool {
 // its secrets are sent. A v2 credential is bound to them, so pointing a
 // provider at another host (or another provider kind) by editing the stored
 // document leaves its sealed password unusable.
-var destinationFields = []string{"baseUrl", "definition", "endpoint", "host", "kind", "port", "protocol", "provider", "server", "tls", "url"}
+var destinationFields = []string{"baseUrl", "definition", "endpoint", "host", "issuer", "kind", "port", "protocol", "provider", "server", "tls", "url"}
 
 // credentialFormatKey is the top-level member a v2 document carries. A
 // document with it was written entirely in v2, so a legacy (v1) value in

@@ -82,6 +82,7 @@ func RedactConfig(cfg config.Config) config.Config {
 	out.Catalog.TVDBKey = redact(out.Catalog.TVDBKey)
 	out.Trakt.ClientSecret = redact(out.Trakt.ClientSecret)
 	out.Simkl.ClientSecret = redact(out.Simkl.ClientSecret)
+	out.OIDC.ClientSecret = redact(out.OIDC.ClientSecret)
 	out.OpenSubtitles = redactOpenSubtitles(out.OpenSubtitles)
 	out.SubDL.APIKey = redact(out.SubDL.APIKey)
 	out.SubSource.APIKey = redact(out.SubSource.APIKey)
@@ -285,6 +286,7 @@ func UnredactConfig(next, prev config.Config) (config.Config, []FieldError) {
 	out.Catalog.TVDBKey = errs.restore("catalog.tvdbKey", next.Catalog.TVDBKey, prev.Catalog.TVDBKey, true)
 	out.Trakt = errs.unredactTrakt(next.Trakt, prev.Trakt)
 	out.Simkl.ClientSecret = errs.restore("simkl.clientSecret", next.Simkl.ClientSecret, prev.Simkl.ClientSecret, strings.TrimSpace(next.Simkl.ClientID) == strings.TrimSpace(prev.Simkl.ClientID))
+	out.OIDC = errs.unredactOIDC(next.OIDC, prev.OIDC)
 	out.OpenSubtitles = errs.unredactOpenSubtitles(next.OpenSubtitles, prev.OpenSubtitles)
 	out.SubDL.APIKey = errs.restore("subdl.apiKey", next.SubDL.APIKey, prev.SubDL.APIKey, true)
 	out.SubSource.APIKey = errs.restore("subsource.apiKey", next.SubSource.APIKey, prev.SubSource.APIKey, true)
@@ -337,6 +339,20 @@ func (e *placeholderErrors) unredactTrakt(next, prev config.Trakt) config.Trakt 
 	bound := strings.TrimSpace(next.ClientID) == strings.TrimSpace(prev.ClientID)
 	next.ClientSecret = e.restore("trakt.clientSecret", next.ClientSecret, prev.ClientSecret, bound)
 	return next
+}
+
+// unredactOIDC keeps the stored client secret only while it still goes to the
+// same provider and client.
+func (e *placeholderErrors) unredactOIDC(next, prev config.OIDC) config.OIDC {
+	bound := strings.TrimSpace(next.Issuer) == strings.TrimSpace(prev.Issuer) &&
+		strings.TrimSpace(next.ClientID) == strings.TrimSpace(prev.ClientID)
+	next.ClientSecret = e.restore("oidc.clientSecret", next.ClientSecret, prev.ClientSecret, bound)
+	return next
+}
+
+func redactOIDC(o config.OIDC) config.OIDC {
+	o.ClientSecret = redact(o.ClientSecret)
+	return o
 }
 
 func (e *placeholderErrors) unredactOpenSubtitles(next, prev config.OpenSubtitles) config.OpenSubtitles {

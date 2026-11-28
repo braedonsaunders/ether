@@ -69,30 +69,46 @@ func (h *Handler) localLogin(w http.ResponseWriter, r *http.Request, surface str
 		writeError(w, 401, "unauthorized", "invalid credentials")
 		return
 	}
+	token, refused := h.issueBrowserLogin(r, viewerID, &identityID, surface)
+	if refused != "" {
+		h.emitLoginFailed(body.Username, "password", refused, "Ether browser", "Web", ip.String())
+		writeError(w, 401, "unauthorized", "invalid credentials")
+		return
+	}
+	if surface == "owner" {
+		h.ownerCredentialChanged(r)
+	}
+	_ = h.deps.IdentityLimiter.ResetIdentity(r.Context(), body.Username, ip)
+	h.emitLoginSucceeded(viewerID, body.Username, "password", "Ether browser", "Web", ip.String())
+	writeJSON(w, 200, map[string]any{"token": token})
+}
+
+// issueBrowserLogin issues a browser grant for an identity that has already
+// been verified. The owner surface admits only an active owner. A refusal
+// returns the reason recorded with the failed sign-in event.
+func (h *Handler) issueBrowserLogin(r *http.Request, viewerID int64, identityID *int64, surface string) (token, refused string) {
 	issue := h.deps.IdentityGrants.IssueLogin
 	if surface == "owner" {
 		issue = h.deps.IdentityGrants.IssueOwnerLogin
 	}
-	token, err := issue(r.Context(), viewerID, &identityID, surface, core.Device{Client: "Ether browser"})
+	token, err := issue(r.Context(), viewerID, identityID, surface, core.Device{Client: "Ether browser"})
 	if err != nil {
-		h.emitLoginFailed(body.Username, "password", "grant_refused", "Ether browser", "Web", ip.String())
-		writeError(w, 401, "unauthorized", "invalid credentials")
-		return
+		// The identity was verified for an active viewer, so an owner-only
+		// refusal means the viewer does not own this server.
+		if surface == "owner" && errors.Is(err, core.ErrUnauthorized) {
+			return "", "not_owner"
+		}
+		return "", "grant_refused"
 	}
 	if surface == "owner" {
 		u, e := h.deps.IdentityGrants.Resolve(r.Context(), surface, token)
 		if e != nil || !u.IsOwner {
 			sum := sha256.Sum256([]byte(token))
 			_ = h.deps.IdentityGrants.RevokeGrant(r.Context(), viewerID, hex.EncodeToString(sum[:]))
-			h.emitLoginFailed(body.Username, "password", "not_owner", "Ether browser", "Web", ip.String())
-			writeError(w, 401, "unauthorized", "invalid credentials")
-			return
+			return "", "not_owner"
 		}
-		h.ownerCredentialChanged(r)
 	}
-	_ = h.deps.IdentityLimiter.ResetIdentity(r.Context(), body.Username, ip)
-	h.emitLoginSucceeded(viewerID, body.Username, "password", "Ether browser", "Web", ip.String())
-	writeJSON(w, 200, map[string]any{"token": token})
+	return token, ""
 }
 
 func (h *Handler) emitLoginSucceeded(viewerID int64, username, method, client, platform, remoteIP string) {
@@ -188,6 +204,14 @@ func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 	}
 	localOn, plexOn := h.portalSignInMethods(h.deps.Config.Read().Plex.Claimed)
 	needsSetup := !plexOn || u.PlexID == 0
+	if needsSetup && h.oidcEnabled() {
+		linked, err := h.deps.LocalIdentity.HasOIDC(r.Context(), u.ID)
+		if err != nil {
+			writeError(w, 503, "unavailable", "sign in unavailable")
+			return
+		}
+		needsSetup = !linked
+	}
 	username := u.Username
 	if needsSetup && localOn {
 		ready, err := h.deps.LocalIdentity.HasPassword(r.Context(), u.ID)
@@ -557,13 +581,19 @@ func (h *Handler) ownerIdentityManagement(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handler) limitIdentityAuth(next http.HandlerFunc) http.HandlerFunc {
+	return h.limitIdentityStart("plex-pin", next)
+}
+
+// limitIdentityStart rate limits starting an external sign-in, keyed by
+// sign-in kind and client address.
+func (h *Handler) limitIdentityStart(kind string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if h.deps.IdentityLimiter == nil {
 			writeError(w, 503, "unavailable", "sign in unavailable")
 			return
 		}
 		ip, _ := identity.ClientNet(r, h.proxyPrefixes()...)
-		ok, err := h.deps.IdentityLimiter.Allow(identity.WithRateLimitApp(r.Context(), "Ether viewer portal"), "plex-pin", ip)
+		ok, err := h.deps.IdentityLimiter.Allow(identity.WithRateLimitApp(r.Context(), "Ether viewer portal"), kind, ip)
 		if err != nil || !ok {
 			writeError(w, 429, "rate_limit", "try again later")
 			return
