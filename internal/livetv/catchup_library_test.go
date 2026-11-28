@@ -128,6 +128,21 @@ func TestCatchUpLibrarySort(t *testing.T) {
 	if err != nil || page.Total != 4 || len(page.Items) != 1 {
 		t.Fatalf("sorted total: %d of %d, %v", len(page.Items), page.Total, err)
 	}
+	// Update without advancing the guide epoch to distinguish a cached page
+	// read from a rescan. A different viewer must see the current rows.
+	if _, err := s.o.DB.ExecContext(t.Context(), "DELETE FROM livetv_programmes WHERE source_id=?", guideSource(ch)); err != nil {
+		t.Fatal(err)
+	}
+	check("cached page", titles(frontend.CatchUpQuery{Sort: frontend.CatchUpSortTitle, Offset: 1, Limit: 2}), "Bravo News", "charlie Report")
+	q := frontend.CatchUpQuery{Sort: frontend.CatchUpSortTitle}
+	page, err = h.CatchUpItems(t.Context(), &core.User{ID: 2}, q)
+	if err != nil || len(page.Items) != 0 {
+		t.Fatalf("other viewer read cached data: %+v, %v", page, err)
+	}
+	if _, err := s.o.DB.ExecContext(t.Context(), "UPDATE livetv_channel_epoch SET generation=generation+1 WHERE id=1"); err != nil {
+		t.Fatal(err)
+	}
+	check("after guide change", titles(q))
 }
 
 func TestCatchUpLibrarySearch(t *testing.T) {
@@ -166,5 +181,15 @@ func TestCatchUpLibrarySearch(t *testing.T) {
 	}
 	if page, err := h.CatchUpItems(t.Context(), &core.User{ID: 2}, frontend.CatchUpQuery{Search: "world"}); err != nil || len(page.Items) != 0 {
 		t.Fatalf("restricted viewer finds airings: %d, %v", len(page.Items), err)
+	}
+	// The title and episode title are readable. A nonmatching row must be
+	// skipped before its remaining fields are decoded as a Programme.
+	if _, err := s.o.DB.ExecContext(t.Context(), "UPDATE livetv_programmes SET data=? WHERE start_ms=?",
+		`{"item":{"title":"Paid Programming","durationMs":"invalid"}}`, now.Add(-2*time.Hour).UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	page, err := h.CatchUpItems(t.Context(), owner, frontend.CatchUpQuery{Search: "world-news now"})
+	if err != nil || len(page.Items) != 1 || page.Items[0].Programme.Item.Title != "World-News Now" {
+		t.Fatalf("search decoded a nonmatching row: %+v, %v", page, err)
 	}
 }
