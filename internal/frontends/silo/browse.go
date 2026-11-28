@@ -61,6 +61,8 @@ func titleDTO(t frontend.Title, state frontend.WatchStatus) map[string]any {
 
 const liveChannelFileBit int64 = 1 << 30
 
+const liveCardCap = 4096
+
 type liveChannelCardMeta struct {
 	title    string
 	overview string
@@ -92,8 +94,16 @@ func (i *instance) rememberLiveCard(channelGUID string, meta liveChannelCardMeta
 	}
 	i.liveMu.Lock()
 	defer i.liveMu.Unlock()
-	if i.liveCards == nil || len(i.liveCards) > 4096 {
+	if i.liveCards == nil {
 		i.liveCards = map[string]liveChannelCardMeta{}
+	}
+	// At the cap, drop one entry rather than the whole map: wiping it made every
+	// card already on screen lose its metadata at once.
+	if _, ok := i.liveCards[channelGUID]; !ok && len(i.liveCards) >= liveCardCap {
+		for k := range i.liveCards {
+			delete(i.liveCards, k)
+			break
+		}
 	}
 	i.liveCards[channelGUID] = meta
 }
