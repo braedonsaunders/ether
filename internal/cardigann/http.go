@@ -1,9 +1,11 @@
 package cardigann
 
 import (
+	"bufio"
 	"bytes"
 	"compress/flate"
 	"compress/gzip"
+	"compress/zlib"
 	"context"
 	"encoding/json"
 	"errors"
@@ -328,7 +330,20 @@ func (s *httpSession) roundTrip(ctx context.Context, req request) (*response, er
 				}
 				bodyReader = zr
 			case "deflate":
-				bodyReader = flate.NewReader(hresp.Body)
+				// HTTP "deflate" is zlib-wrapped (RFC 9110); some servers send
+				// raw DEFLATE, recognised by the missing zlib header.
+				br := bufio.NewReader(hresp.Body)
+				if h, _ := br.Peek(2); len(h) == 2 && h[0]&0x0f == 8 && (uint(h[0])<<8|uint(h[1]))%31 == 0 {
+					zr, zerr := zlib.NewReader(br)
+					if zerr != nil {
+						hresp.Body.Close()
+						releaseHost()
+						return nil, fmt.Errorf("%s: decode deflate response: %w", s.site, zerr)
+					}
+					bodyReader = zr
+				} else {
+					bodyReader = flate.NewReader(br)
+				}
 			}
 		}
 		data, err := io.ReadAll(io.LimitReader(bodyReader, maxResponseBytes+1))
