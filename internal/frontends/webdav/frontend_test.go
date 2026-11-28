@@ -351,3 +351,32 @@ func TestRegisteredRoutesMatchMountedRouter(t *testing.T) {
 		t.Fatalf("inventory=%v routes=%v", got, routes)
 	}
 }
+
+func TestResolveCachesNamesByViewerAndFreshness(t *testing.T) {
+	fresh := frontend.PageFreshness{Catalog: 1}
+	var scans int
+	experience := frontendtest.Experience{
+		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "movies", Type: "movie"}}, nil
+		},
+		LibraryItemsFunc: func(_ context.Context, v *frontend.Viewer, _ frontend.Device, _ string, _ frontend.ItemQuery) (frontend.Page, error) {
+			scans++
+			key := frontend.RatingKey(100*v.ID + int64(fresh.Catalog))
+			return frontend.Page{Items: []frontend.Title{{Key: key, Type: "movie", Title: "Film"}}, Total: 1}, nil
+		},
+	}
+	i := &instance{host: frontend.Host{Experience: experience, PageFreshness: func() frontend.PageFreshness { return fresh }}}
+	req := httptest.NewRequest(http.MethodHead, "/Movies/Film/Film.mkv", nil)
+	check := func(viewer int64, want frontend.RatingKey, wantScans int) {
+		t.Helper()
+		node, err := i.resolve(req, &frontend.Viewer{ID: viewer}, frontend.Device{ID: "device"})
+		if err != nil || node.title.Key != want || scans != wantScans {
+			t.Fatalf("viewer=%d key=%v scans=%d err=%v, want key=%v scans=%d", viewer, node.title.Key, scans, err, want, wantScans)
+		}
+	}
+	check(1, 101, 1)
+	check(1, 101, 1)
+	check(2, 201, 2)
+	fresh.Catalog++
+	check(1, 102, 3)
+}

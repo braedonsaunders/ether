@@ -14,6 +14,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/clientnet"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/libpath"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/lru"
 )
 
 var errNotFound = errors.New("webdav: path not found")
@@ -171,6 +172,66 @@ func unique(nodes []resource) []resource {
 	return out
 }
 
+type pathIndexKey struct {
+	viewer int64
+	device string
+	fresh  frontend.PageFreshness
+	parent frontend.RatingKey
+	kind   string
+}
+
+func (i *instance) resolveChild(r *http.Request, viewer *frontend.Viewer, device frontend.Device, parent resource, name string) (resource, error) {
+	cacheable := i.host.PageFreshness != nil && parent.kind != "root" && parent.kind != "movie"
+	var key pathIndexKey
+	if cacheable {
+		key = pathIndexKey{viewer: viewer.ID, device: device.ID, fresh: i.host.PageFreshness(), parent: parent.title.Key, kind: parent.kind}
+		i.pathMu.Lock()
+		if i.paths == nil {
+			i.paths = lru.New(lru.Options[pathIndexKey, map[string]resource]{
+				MaxEntries: 64,
+				MaxCost:    32 << 20,
+				Cost: func(_ pathIndexKey, names map[string]resource) int64 {
+					var cost int64
+					for name := range names {
+						cost += 256 + int64(len(name))
+					}
+					return cost
+				},
+			})
+		}
+		index, ok := i.paths.Get(key)
+		i.pathMu.Unlock()
+		if ok {
+			if node, found := index[name]; found {
+				return node, nil
+			}
+			return resource{}, errNotFound
+		}
+	}
+	children, err := i.children(r, viewer, device, parent)
+	if err != nil {
+		return resource{}, err
+	}
+	if cacheable {
+		// Retain only routing facts. Each playback request still goes through
+		// the broker's authorization and planning.
+		index := make(map[string]resource, len(children))
+		for _, child := range children {
+			child.title = frontend.Title{Key: child.title.Key}
+			index[child.name] = child
+		}
+		i.pathMu.Lock()
+		i.paths.Add(key, index)
+		i.pathMu.Unlock()
+	}
+	for _, child := range children {
+		if child.name == name {
+			return child, nil
+		}
+	}
+	return resource{}, errNotFound
+}
+
 func (i *instance) resolve(r *http.Request, viewer *frontend.Viewer, device frontend.Device) (resource, error) {
 	var settings frontend.Settings
 	if i.host.Config != nil {
@@ -188,19 +249,10 @@ func (i *instance) resolve(r *http.Request, viewer *frontend.Viewer, device fron
 		if part == "" || part == "." || part == ".." || !node.dir {
 			return resource{}, errNotFound
 		}
-		children, err := i.children(r, viewer, device, node)
+		var err error
+		node, err = i.resolveChild(r, viewer, device, node, part)
 		if err != nil {
 			return resource{}, err
-		}
-		found := false
-		for _, child := range children {
-			if child.name == part {
-				node, found = child, true
-				break
-			}
-		}
-		if !found {
-			return resource{}, errNotFound
 		}
 	}
 	return node, nil
