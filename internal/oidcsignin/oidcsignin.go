@@ -21,6 +21,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -66,6 +67,9 @@ type Settings struct {
 	Issuer       string
 	ClientID     string
 	ClientSecret string
+	// Groups also asks for the "groups" scope, for providers that only
+	// send group membership when it is requested.
+	Groups bool
 }
 
 func (s Settings) normalized() Settings {
@@ -73,6 +77,7 @@ func (s Settings) normalized() Settings {
 		Issuer:       strings.TrimSpace(s.Issuer),
 		ClientID:     strings.TrimSpace(s.ClientID),
 		ClientSecret: strings.TrimSpace(s.ClientSecret),
+		Groups:       s.Groups,
 	}
 }
 
@@ -90,6 +95,13 @@ type Identity struct {
 	Subject string
 	// Display is a readable name for sign-in method lists.
 	Display string
+	// Profile claims, from the ID token or the userinfo endpoint. They help
+	// the caller match or create a viewer; they never identify the person.
+	Email         string
+	EmailVerified bool
+	Username      string
+	Name          string
+	Groups        []string
 }
 
 // SubjectFor joins an issuer and a subject claim into an identity subject.
@@ -205,8 +217,55 @@ func oauthConfig(p *oidc.Provider, s Settings, redirectURL string) *oauth2.Confi
 		ClientSecret: s.ClientSecret,
 		Endpoint:     p.Endpoint(),
 		RedirectURL:  redirectURL,
-		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+		Scopes:       scopes(s),
 	}
+}
+
+func scopes(s Settings) []string {
+	out := []string{oidc.ScopeOpenID, "profile", "email"}
+	if s.Groups {
+		out = append(out, "groups")
+	}
+	return out
+}
+
+// profileClaims are the claims Ether reads besides the subject.
+// email_verified is a JSON boolean, though some providers send "true".
+type profileClaims struct {
+	PreferredUsername string          `json:"preferred_username"`
+	Email             string          `json:"email"`
+	EmailVerified     json.RawMessage `json:"email_verified"`
+	Name              string          `json:"name"`
+	Groups            []string        `json:"groups"`
+}
+
+// merge fills claims missing from c with those from o.
+func (c *profileClaims) merge(o profileClaims) {
+	if c.PreferredUsername == "" {
+		c.PreferredUsername = o.PreferredUsername
+	}
+	if c.Email == "" {
+		c.Email, c.EmailVerified = o.Email, o.EmailVerified
+	}
+	if c.Name == "" {
+		c.Name = o.Name
+	}
+	if len(c.Groups) == 0 {
+		c.Groups = o.Groups
+	}
+}
+
+func verifiedFlag(raw json.RawMessage) bool {
+	v := strings.Trim(strings.TrimSpace(string(raw)), `"`)
+	return strings.EqualFold(v, "true")
+}
+
+func clip(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) > n {
+		s = s[:n]
+	}
+	return s
 }
 
 func random() string {
@@ -336,12 +395,18 @@ func (c *Client) complete(ctx context.Context, f *flow, code, providerError stri
 	if strings.TrimSpace(idt.Subject) == "" {
 		return Identity{}, fmt.Errorf("%w: no subject", ErrRejected)
 	}
-	var claims struct {
-		PreferredUsername string `json:"preferred_username"`
-		Email             string `json:"email"`
-		Name              string `json:"name"`
-	}
+	var claims profileClaims
 	_ = idt.Claims(&claims)
+	// Some providers keep profile claims out of the ID token. Userinfo
+	// answers count only for the same subject.
+	if claims.Email == "" || claims.PreferredUsername == "" || (f.settings.Groups && len(claims.Groups) == 0) {
+		if info, err := p.UserInfo(c.ctx(ctx), oauth2.StaticTokenSource(tok)); err == nil && info.Subject == idt.Subject {
+			var more profileClaims
+			if info.Claims(&more) == nil {
+				claims.merge(more)
+			}
+		}
+	}
 	display := idt.Subject
 	for _, v := range []string{claims.PreferredUsername, claims.Email, claims.Name} {
 		if v = strings.TrimSpace(v); v != "" {
@@ -349,10 +414,21 @@ func (c *Client) complete(ctx context.Context, f *flow, code, providerError stri
 			break
 		}
 	}
-	if len(display) > 128 {
-		display = display[:128]
+	groups := make([]string, 0, len(claims.Groups))
+	for _, g := range claims.Groups {
+		if g = clip(g, 256); g != "" && len(groups) < 256 {
+			groups = append(groups, g)
+		}
 	}
-	return Identity{Subject: SubjectFor(idt.Issuer, idt.Subject), Display: display}, nil
+	return Identity{
+		Subject:       SubjectFor(idt.Issuer, idt.Subject),
+		Display:       clip(display, 128),
+		Email:         clip(claims.Email, 320),
+		EmailVerified: verifiedFlag(claims.EmailVerified),
+		Username:      clip(claims.PreferredUsername, 128),
+		Name:          clip(claims.Name, 128),
+		Groups:        groups,
+	}, nil
 }
 
 // Take returns the result of the flow started with handle once its callback

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/config"
@@ -28,7 +29,8 @@ type OIDCSignIn interface {
 const oidcCallbackPath = "/ether/api/oidc/callback"
 
 func oidcSettings(c config.OIDC) oidcsignin.Settings {
-	return oidcsignin.Settings{Issuer: c.Issuer, ClientID: c.ClientID, ClientSecret: c.ClientSecret}
+	return oidcsignin.Settings{Issuer: c.Issuer, ClientID: c.ClientID, ClientSecret: c.ClientSecret,
+		Groups: strings.TrimSpace(c.RequiredGroup) != ""}
 }
 
 // oidcEnabled reports whether single sign-on is switched on, configured and
@@ -204,6 +206,9 @@ func (h *Handler) oidcSignInPoll(w http.ResponseWriter, r *http.Request, purpose
 	}
 	ip, _ := identity.ClientNet(r, h.proxyPrefixes()...)
 	viewerID, identityID, err := h.deps.LocalIdentity.OIDCViewer(r.Context(), who.Subject)
+	if err != nil && purpose == oidcsignin.PurposePortal {
+		viewerID, identityID, err = h.oidcAutoViewer(r.Context(), who, ip)
+	}
 	if err != nil {
 		h.emitLoginFailed(who.Display, "oidc", "not_linked", "Ether browser", "Web", ip.String())
 		writeError(w, http.StatusForbidden, "not_linked", "That account isn't linked to anyone here. Sign in another way and link it from your account page first.")
@@ -223,6 +228,53 @@ func (h *Handler) oidcSignInPoll(w http.ResponseWriter, r *http.Request, purpose
 	h.resetOIDCLimit(r, ip)
 	h.emitLoginSucceeded(viewerID, who.Display, "oidc", "Ether browser", "Web", ip.String())
 	writeJSON(w, http.StatusOK, map[string]any{"done": true, "token": token})
+}
+
+// oidcAutoViewer applies the owner's automatic options to a provider account
+// that is not linked yet: link it to a matching viewer, or create one. Neither
+// can reach the owner, and both need the required group when one is set.
+func (h *Handler) oidcAutoViewer(ctx context.Context, who oidcsignin.Identity, ip netip.Addr) (int64, int64, error) {
+	c := h.deps.Config.Get().OIDC
+	if group := strings.TrimSpace(c.RequiredGroup); group != "" && !slices.Contains(who.Groups, group) {
+		return 0, 0, identity.ErrNoMatch
+	}
+	issuer, _, _ := strings.Cut(who.Subject, "|")
+	match := identity.OIDCMatch{Issuer: issuer}
+	if c.AutoLinkEmail == config.OIDCAutoLinkAny || (c.AutoLinkEmail == config.OIDCAutoLinkVerified && who.EmailVerified) {
+		match.Email = who.Email
+	}
+	if c.AutoLinkUsername {
+		match.Username = who.Username
+	}
+	if match.Email != "" || match.Username != "" {
+		if id, err := h.deps.LocalIdentity.MatchOIDCViewer(ctx, match); err == nil {
+			if err = h.deps.LocalIdentity.LinkOIDC(ctx, id, who.Subject, who.Display); err != nil {
+				return 0, 0, err
+			}
+			h.log.Info("oidc: linked a first sign-in to an existing viewer", "viewer", id, "by_email", match.Email != "", "by_username", match.Username != "", "remote", ip.String())
+			return h.deps.LocalIdentity.OIDCViewer(ctx, who.Subject)
+		}
+	}
+	if !c.AutoProvision {
+		return 0, 0, identity.ErrNoMatch
+	}
+	email := ""
+	if who.EmailVerified {
+		// An unverified address is not stored: a later e-mail match must not
+		// trust it.
+		email = who.Email
+	}
+	id, err := h.deps.LocalIdentity.ProvisionOIDCViewer(ctx, who.Subject, who.Display, who.Username, who.Name, email)
+	if err != nil {
+		return 0, 0, err
+	}
+	if h.deps.RefreshViewers != nil {
+		if err = h.deps.RefreshViewers(ctx); err != nil {
+			return 0, 0, err
+		}
+	}
+	h.log.Info("oidc: created a viewer for a first sign-in", "viewer", id, "remote", ip.String())
+	return h.deps.LocalIdentity.OIDCViewer(ctx, who.Subject)
 }
 
 // handleOIDCLinkPoll links the provider account once the signed-in viewer

@@ -563,6 +563,10 @@ export interface EtherConfig {
     issuer: string;
     clientId: string;
     clientSecret: string;
+    autoLinkEmail?: "" | "verified" | "any";
+    autoLinkUsername?: boolean;
+    autoProvision?: boolean;
+    requiredGroup?: string;
   };
   mdblist?: { enabled: boolean };
   plexServers?: { enabled: boolean };

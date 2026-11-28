@@ -704,6 +704,12 @@ func ValidateConfig(cfg config.Config) []FieldError {
 	if cfg.OIDC.Enabled && strings.TrimSpace(cfg.OIDC.ClientID) == "" {
 		v.add("oidc.clientId", "is required when single sign-on is enabled")
 	}
+	if cfg.OIDC.AutoLinkEmail != "" {
+		v.oneOf("oidc.autoLinkEmail", cfg.OIDC.AutoLinkEmail, config.OIDCAutoLinkVerified, config.OIDCAutoLinkAny)
+	}
+	if len(cfg.OIDC.RequiredGroup) > 256 {
+		v.add("oidc.requiredGroup", "must be at most 256 characters")
+	}
 	if len(cfg.OIDC.DisplayName) > 64 {
 		v.add("oidc.displayName", "must be at most 64 characters")
 	}

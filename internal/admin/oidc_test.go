@@ -2,6 +2,7 @@ package admin_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"strings"
@@ -83,11 +84,15 @@ func (s *stubOIDC) Take(handle string, purpose oidcsignin.Purpose, viewerID int6
 	return f.who, true, nil
 }
 func (s *stubOIDC) finish(handle, subject, display string) {
+	s.finishAs(handle, oidcsignin.Identity{Subject: subject, Display: display})
+}
+
+func (s *stubOIDC) finishAs(handle string, who oidcsignin.Identity) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	f := s.flows[handle]
 	f.done = true
-	f.who = oidcsignin.Identity{Subject: subject, Display: display}
+	f.who = who
 }
 
 type oidcHarness struct {
@@ -96,6 +101,7 @@ type oidcHarness struct {
 	stub  *stubOIDC
 	cfg   *config.Store
 	local *identity.Local
+	db    *sql.DB
 }
 
 func newOIDCHarness(t *testing.T) *oidcHarness {
@@ -115,7 +121,7 @@ func newOIDCHarness(t *testing.T) *oidcHarness {
 	})
 	stub := &stubOIDC{flows: map[string]*stubFlow{}}
 	h := admin.NewHandler(admin.Deps{Config: cfg, LocalIdentity: local, IdentityGrants: grants, IdentityLimiter: limiter, PollLimiter: poll, RefreshViewers: users.RefreshViewers, OIDC: stub, LocalOwnerConfigured: func(ctx context.Context) bool { x, err := users.Owner(ctx); return err == nil && x.PlexID == 0 }})
-	x := &oidcHarness{t: t, h: h, stub: stub, cfg: cfg, local: local}
+	x := &oidcHarness{t: t, h: h, stub: stub, cfg: cfg, local: local, db: db}
 	if res := serve(h, req("POST", "/ether/api/setup/local", `{"username":"alice","password":"secret-pass1"}`)); res.Code != 200 {
 		t.Fatalf("setup: %d %s", res.Code, res.Body)
 	}
@@ -417,5 +423,149 @@ func TestOIDCCallbackRequiresTheStartingBrowser(t *testing.T) {
 	// The stub vouches for subject "callback", which nobody linked.
 	if code, out := x.call("GET", "/ether/api/me/oidc/"+started.Handle, "", ""); code != 403 || fmt.Sprint(out["error"]) == "" {
 		t.Fatalf("poll after callback = %d %v", code, out)
+	}
+}
+
+// portalAs runs a portal sign-in for a provider account with profile claims.
+func (x *oidcHarness) portalAs(who oidcsignin.Identity) (int, map[string]any) {
+	x.t.Helper()
+	code, out := x.call("POST", "/ether/api/me/oidc", "", "")
+	if code != 200 {
+		x.t.Fatalf("start: %d %v", code, out)
+	}
+	handle := out["handle"].(string)
+	x.stub.finishAs(handle, who)
+	return x.call("GET", "/ether/api/me/oidc/"+handle, "", "")
+}
+
+func (x *oidcHarness) setOIDC(fn func(*config.OIDC)) {
+	x.t.Helper()
+	if err := x.cfg.Update(func(c *config.Config) error { fn(&c.OIDC); return nil }); err != nil {
+		x.t.Fatal(err)
+	}
+}
+
+func (x *oidcHarness) me(token string) string {
+	x.t.Helper()
+	code, me := x.call("GET", "/ether/api/me", token, "")
+	if code != 200 {
+		x.t.Fatalf("me = %d %v", code, me)
+	}
+	return fmt.Sprint(me["username"])
+}
+
+const iss = "https://auth.example.test"
+
+func TestOIDCAutoLinkByEmail(t *testing.T) {
+	x := newOIDCHarness(t)
+	if _, err := x.db.Exec(`UPDATE auth_users SET email='Bob@Example.test' WHERE username='bob'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := x.db.Exec(`UPDATE auth_users SET email='alice@example.test' WHERE username='alice'`); err != nil {
+		t.Fatal(err)
+	}
+	unverified := oidcsignin.Identity{Subject: iss + "|b1", Display: "bob", Email: "bob@example.test"}
+	verified := unverified
+	verified.EmailVerified = true
+
+	// Off by default.
+	if code, _ := x.portalAs(verified); code != 403 {
+		t.Fatalf("auto-link while off = %d", code)
+	}
+	x.setOIDC(func(c *config.OIDC) { c.AutoLinkEmail = config.OIDCAutoLinkVerified })
+	if code, _ := x.portalAs(unverified); code != 403 {
+		t.Fatalf("unverified e-mail in verified mode = %d", code)
+	}
+	code, out := x.portalAs(verified)
+	if code != 200 || x.me(out["token"].(string)) != "bob" {
+		t.Fatalf("verified e-mail = %d %v", code, out)
+	}
+	// Now linked: the next sign-in needs no match.
+	x.setOIDC(func(c *config.OIDC) { c.AutoLinkEmail = "" })
+	if code, _ := x.portalAs(unverified); code != 200 {
+		t.Fatalf("linked sign-in = %d", code)
+	}
+	// A second provider account with the same e-mail cannot take Bob over.
+	x.setOIDC(func(c *config.OIDC) { c.AutoLinkEmail = config.OIDCAutoLinkAny })
+	if code, _ := x.portalAs(oidcsignin.Identity{Subject: iss + "|b2", Email: "bob@example.test"}); code != 403 {
+		t.Fatalf("second account took over a linked viewer = %d", code)
+	}
+	// The owner is never matched, even by an unverified e-mail in "any" mode.
+	if code, _ := x.portalAs(oidcsignin.Identity{Subject: iss + "|a1", Email: "alice@example.test"}); code != 403 {
+		t.Fatalf("owner auto-linked = %d", code)
+	}
+	// Auto-linking never runs from the console.
+	code, out = x.call("POST", "/ether/api/auth/oidc", "", "")
+	x.stub.finishAs(out["handle"].(string), oidcsignin.Identity{Subject: iss + "|a1", Email: "alice@example.test", EmailVerified: true})
+	if code, _ := x.call("GET", "/ether/api/auth/oidc/"+out["handle"].(string), "", ""); code != 403 {
+		t.Fatalf("console auto-link = %d", code)
+	}
+}
+
+func TestOIDCAutoLinkByUsernameAndGroup(t *testing.T) {
+	x := newOIDCHarness(t)
+	x.setOIDC(func(c *config.OIDC) { c.AutoLinkUsername = true; c.RequiredGroup = "ether" })
+	bob := oidcsignin.Identity{Subject: iss + "|b1", Username: "BOB"}
+	if code, _ := x.portalAs(bob); code != 403 {
+		t.Fatalf("auto-link outside the required group = %d", code)
+	}
+	bob.Groups = []string{"family", "ether"}
+	code, out := x.portalAs(bob)
+	if code != 200 || x.me(out["token"].(string)) != "bob" {
+		t.Fatalf("username auto-link = %d %v", code, out)
+	}
+	if code, _ := x.portalAs(oidcsignin.Identity{Subject: iss + "|a1", Username: "alice", Groups: []string{"ether"}}); code != 403 {
+		t.Fatalf("owner auto-linked by username = %d", code)
+	}
+}
+
+func TestOIDCAutoProvision(t *testing.T) {
+	x := newOIDCHarness(t)
+	carol := oidcsignin.Identity{Subject: iss + "|c1", Display: "carol", Username: "Carol", Name: "Carol C", Email: "carol@example.test"}
+	if code, _ := x.portalAs(carol); code != 403 {
+		t.Fatalf("provisioned while off = %d", code)
+	}
+	x.setOIDC(func(c *config.OIDC) { c.AutoProvision = true; c.AutoLinkUsername = true })
+	code, out := x.portalAs(carol)
+	if code != 200 || x.me(out["token"].(string)) != "carol" {
+		t.Fatalf("provision = %d %v", code, out)
+	}
+	// The same account signs in to the same viewer again.
+	code, out = x.portalAs(carol)
+	if code != 200 || x.me(out["token"].(string)) != "carol" {
+		t.Fatalf("second sign-in = %d %v", code, out)
+	}
+	// A different account named like an existing viewer it can't take over
+	// (Bob matches by username, so it links; Alice is the owner, so a new
+	// viewer is created instead with a unique name).
+	code, out = x.portalAs(oidcsignin.Identity{Subject: iss + "|a2", Username: "alice"})
+	if code != 200 {
+		t.Fatalf("provision beside the owner = %d %v", code, out)
+	}
+	if name := x.me(out["token"].(string)); name != "alice2" {
+		t.Fatalf("provisioned name = %q, want alice2", name)
+	}
+	if code, _ := x.call("GET", "/ether/api/config", out["token"].(string), ""); code != 401 {
+		t.Fatalf("provisioned viewer reached the console = %d", code)
+	}
+	var stored string
+	if err := x.db.QueryRow(`SELECT email FROM auth_users WHERE username='carol'`).Scan(&stored); err != nil || stored != "" {
+		t.Fatalf("unverified e-mail stored: %q %v", stored, err)
+	}
+	// Created viewers don't need first-run sign-in setup.
+	_, me := x.call("GET", "/ether/api/me", out["token"].(string), "")
+	if me["needsSignInSetup"] != false {
+		t.Fatalf("needsSignInSetup = %v", me["needsSignInSetup"])
+	}
+}
+
+func TestOIDCAutoLinkEmailValidation(t *testing.T) {
+	errs := admin.ValidateConfig(config.Config{OIDC: config.OIDC{AutoLinkEmail: "sometimes"}})
+	found := false
+	for _, e := range errs {
+		found = found || e.Field == "oidc.autoLinkEmail"
+	}
+	if !found {
+		t.Fatalf("invalid autoLinkEmail accepted: %v", errs)
 	}
 }

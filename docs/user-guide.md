@@ -1069,8 +1069,8 @@ the viewer is inactive or the session ends.
 
 Household members can sign in to the console and the viewer portal with an
 OpenID Connect provider such as Pocket ID, Authelia, Authentik or Keycloak.
-The provider only proves who someone is: it never creates viewers, and only
-the owner's linked account opens the console.
+By default the provider only proves who someone is: people link their
+account themselves, and only the owner's linked account opens the console.
 
 1. At your provider, create an OIDC client. Ether asks for the `openid`,
    `profile` and `email` scopes and uses the authorization code flow with
@@ -1085,6 +1085,27 @@ the owner's linked account opens the console.
 3. Each person signs in another way once, opens **Sign-in methods** at
    `/ether/me` and chooses **Link … account**. A viewer who joined with an
    invite link can link the account instead of choosing a password.
+
+Under **New accounts** you can let the viewer portal handle an account that
+isn't linked yet:
+
+- **Link by e-mail** links it to the one viewer with the same stored e-mail
+  (for example a viewer imported from Plex). **Verified e-mail only** needs
+  the provider to mark the address verified; **Any e-mail** trusts it as is.
+- **Link by username** links it to the one viewer whose sign-in name or
+  username equals the provider's `preferred_username`.
+- **Create a viewer for new accounts** creates a viewer, named after the
+  provider username, when nothing matches.
+- **Required group** limits all of these to members of one provider group.
+  Ether then asks for the `groups` scope, and the provider must send a
+  `groups` claim.
+
+Use e-mail or username linking only when people can't change their own
+e-mail or username at the provider (in Pocket ID, turn off letting users edit
+their account), or someone could rename themselves to match another viewer.
+None of this ever applies to the owner, links a viewer that already has an
+account from the same provider, or runs from the console sign-in page; a
+match must name exactly one viewer.
 
 After that, **Sign in with …** appears on the console sign-in page and on
 `/ether/me`. A linked account that isn't the owner's is refused on the

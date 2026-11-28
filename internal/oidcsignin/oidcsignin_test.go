@@ -288,3 +288,40 @@ func TestStartNeedsSettingsAndAReachableIssuer(t *testing.T) {
 		t.Fatal("check passed against a stopped provider")
 	}
 }
+
+func TestProfileClaims(t *testing.T) {
+	for name, verified := range map[string]any{"bool": true, "string": "true", "false": false} {
+		t.Run(name, func(t *testing.T) {
+			p := newFakeProvider(t)
+			p.claims = func(c map[string]any) {
+				c["email_verified"] = verified
+				c["name"] = "Alex Example"
+				c["groups"] = []string{"ether", "admins"}
+			}
+			c := New(p.srv.Client())
+			s := p.settings()
+			s.Groups = true
+			st, err := c.Start(context.Background(), s, redirect, PurposePortal, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			u, _ := url.Parse(st.AuthURL)
+			if scope := u.Query().Get("scope"); scope != "openid profile email groups" {
+				t.Fatalf("scope = %q", scope)
+			}
+			state, code := p.approve(t, st.AuthURL)
+			if err := c.Callback(context.Background(), state, st.Binding, code, ""); err != nil {
+				t.Fatal(err)
+			}
+			id, _, err := c.Take(st.Handle, PurposePortal, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := name != "false"
+			if id.Email != "alex@example.test" || id.EmailVerified != want || id.Username != "alex" ||
+				id.Name != "Alex Example" || len(id.Groups) != 2 || id.Groups[0] != "ether" {
+				t.Fatalf("identity = %+v", id)
+			}
+		})
+	}
+}

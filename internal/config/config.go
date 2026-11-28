@@ -842,9 +842,10 @@ type Simkl struct {
 
 // OIDC lets household members sign in to the console and viewer portal
 // through an OpenID Connect provider (Pocket ID, Authelia, Authentik,
-// Keycloak and the like). A person signs in this way only after linking the
-// provider account to their viewer from the viewer portal; the provider never
-// creates viewers or grants ownership on its own.
+// Keycloak and the like). By default a person signs in this way only after
+// linking the provider account to their viewer from the viewer portal. The
+// automatic options below act only on viewer portal sign-in and never reach
+// the owner: ownership needs a link the owner made while signed in.
 type OIDC struct {
 	Enabled bool `json:"enabled"`
 	// DisplayName labels the sign-in button ("Sign in with Pocket ID").
@@ -856,7 +857,27 @@ type OIDC struct {
 	ClientID string `json:"clientId"`
 	// ClientSecret is empty for a public client (PKCE only).
 	ClientSecret string `json:"clientSecret"`
+	// AutoLinkEmail links a first-time account to the one viewer with the
+	// same stored e-mail: "" (off), "verified" (only when the provider marks
+	// the e-mail verified) or "any".
+	AutoLinkEmail string `json:"autoLinkEmail,omitempty"`
+	// AutoLinkUsername links a first-time account to the one viewer whose
+	// sign-in name or username equals the provider's preferred_username.
+	AutoLinkUsername bool `json:"autoLinkUsername,omitempty"`
+	// AutoProvision creates a viewer for an account that is neither linked
+	// nor matched.
+	AutoProvision bool `json:"autoProvision,omitempty"`
+	// RequiredGroup, when set, limits automatic linking and creation to
+	// members of this provider group (the "groups" claim). Linked accounts
+	// sign in either way.
+	RequiredGroup string `json:"requiredGroup,omitempty"`
 }
+
+// OIDC automatic e-mail linking modes.
+const (
+	OIDCAutoLinkVerified = "verified"
+	OIDCAutoLinkAny      = "any"
+)
 
 // MDBList syncs watch history per viewer. Unlike Trakt/Simkl there is no app
 // registration: each viewer pastes a personal API key from MDBList

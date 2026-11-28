@@ -718,6 +718,52 @@ export const OIDC: FieldGroup[] = localized(() => [
       },
     ],
   },
+  {
+    title: t("New accounts"),
+    description: t(
+      "What happens when someone signs in at /ether/me with an account that isn't linked yet. These never apply to the owner, who links their account by hand.",
+    ),
+    fields: [
+      {
+        key: "autoLinkEmail",
+        label: t("Link by e-mail"),
+        kind: "select",
+        options: [
+          { value: "", label: t("Off") },
+          { value: "verified", label: t("Verified e-mail only") },
+          { value: "any", label: t("Any e-mail") },
+        ],
+        help: t(
+          "Links the account to the one viewer with the same e-mail. Any e-mail trusts addresses the provider hasn't verified; use it only if people can't change their own e-mail there.",
+        ),
+      },
+      {
+        key: "autoLinkUsername",
+        label: t("Link by username"),
+        kind: "bool",
+        help: t(
+          "Links the account to the one viewer whose sign-in name matches the provider's username. Use it only if people can't change their own username there.",
+        ),
+      },
+      {
+        key: "autoProvision",
+        label: t("Create a viewer for new accounts"),
+        kind: "bool",
+        help: t(
+          "Anyone who can sign in at the provider gets a viewer, unless a group is required.",
+        ),
+      },
+      {
+        key: "requiredGroup",
+        label: t("Required group"),
+        kind: "text",
+        placeholder: "ether",
+        help: t(
+          "Optional. Only members of this provider group are linked or created automatically. Ether asks for the groups scope when this is set.",
+        ),
+      },
+    ],
+  },
 ]);
 
 export const OPENSUBTITLES: FieldGroup[] = localized(() => [

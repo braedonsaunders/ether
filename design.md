@@ -56,8 +56,14 @@ credential and no other route reads it. A separate random handle goes only to
 the starting page's script; the callback returns nothing to its tab, and the
 starting page collects the result once with its handle. A state is consumed
 by its first callback. Identities are keyed by issuer and subject, never by
-e-mail or username, and resolve only to an existing active viewer linked from
-a signed-in portal session. Console sessions additionally require an owner,
+e-mail or username. By default they resolve only to an active viewer linked
+from a signed-in portal session. The owner may opt in to linking a first
+viewer portal sign-in by stored e-mail (optionally only a provider-verified
+one) or by username, and to creating viewers, optionally limited to one
+provider group. These automatic steps never match the owner, never take over
+a viewer already linked at the same provider, need exactly one match, and
+never run from the console; an unverified e-mail is not stored on a created
+viewer. Console sessions additionally require an owner,
 checked when the grant is issued. The client secret is sealed at rest and is
 restored on save or test only while the issuer and client ID are unchanged.
 

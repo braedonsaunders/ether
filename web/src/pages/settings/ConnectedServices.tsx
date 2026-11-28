@@ -435,6 +435,11 @@ function mergeSection(
           issuer: textField(section, "issuer", prev.issuer),
           clientId: textField(section, "clientId", prev.clientId),
           clientSecret: textField(section, "clientSecret", prev.clientSecret),
+          autoLinkEmail: textField(section, "autoLinkEmail", prev.autoLinkEmail ?? "") as
+            "" | "verified" | "any",
+          autoLinkUsername: boolField(section, "autoLinkUsername", prev.autoLinkUsername ?? false),
+          autoProvision: boolField(section, "autoProvision", prev.autoProvision ?? false),
+          requiredGroup: textField(section, "requiredGroup", prev.requiredGroup ?? ""),
         },
       };
     }
