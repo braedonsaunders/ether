@@ -9,13 +9,15 @@ import (
 
 // RememberedReleaseAllowed rechecks identity at use time, without searching or
 // probing. A previous successful open is not evidence that a namesake belongs
-// to this title. Pins remain the owner's explicit identity decision.
+// to this title. Strict pins remain the owner's explicit identity decision; a
+// preferred pin is rechecked like any remembered source, since normal ranking
+// can replace it.
 func (s *Service) RememberedReleaseAllowed(ctx context.Context, t *core.Title, rel core.Release) bool {
 	if t == nil {
 		return false
 	}
 	pin, pinned := s.PinFor(t.Key)
-	if pinned && pin.Release.ID == rel.ID {
+	if pinned && !pin.Fallback && pin.Release.ID == rel.ID {
 		return true
 	}
 	if s.rejectedFor(t.Key, rel) {

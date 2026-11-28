@@ -60,13 +60,25 @@ func (m *Manager) ReplaceLostOriginal(ctx context.Context, id, revision string, 
 			m.dropGeneration(winner)
 		}
 	}()
+	gate := m.preferenceGate(s, append(slices.Clone(tried), old.releaseID()))
+	var resolved *core.Resolution
+	if pref, _ := m.preferredRelease(s); len(alternates) == 0 && pref != "" && pref == old.releaseID() {
+		// A preference that plays has no cached alternates. Resolve again
+		// without it, inside this deadline and under the checks below.
+		u := m.effectiveResolveUser(search, s.user)
+		req := core.ResolveRequest{Title: s.title, Client: s.caps, User: &u, Exclude: append(slices.Clone(tried), pref), Prefer: s.preferenceSelector()}
+		if res, err := m.deps.Resolver.Resolve(core.WithIndexerPurpose(search, core.IndexerPurposePlayback), req); err == nil && res != nil && res.Release.ID != "" {
+			resolved = res
+			alternates = append([]core.Release{res.Release}, res.Alternates...)
+		}
+	}
 	for _, alt := range alternates {
 		if search.Err() != nil {
 			break
 		}
 		if alt.Protocol != core.ProtocolTorrent || alt.OpensOnDemand() || alt.ID == "" || alt.ID == old.releaseID() ||
 			slices.Contains(tried, alt.ID) || !strings.EqualFold(alt.Info.Edition, old.res.Release.Info.Edition) ||
-			!m.ownerPinAllows(s, alt.ID) || m.titleReleaseRejected(search, s.ident.key, alt) ||
+			!m.ownerPinAllows(s, alt.ID) || gate.blocks(alt.ID) || m.titleReleaseRejected(search, s.ident.key, alt) ||
 			m.releaseNamesakeRejected(search, s, alt) || !releaseMatchesTitle(alt, s.title) {
 			continue
 		}
@@ -74,9 +86,15 @@ func (m *Manager) ReplaceLostOriginal(ctx context.Context, id, revision string, 
 			break
 		}
 		attempts++
-		payload, err := m.deps.FetchNZB(search, alt)
-		if err != nil {
-			continue
+		var payload []byte
+		if resolved != nil && alt.ID == resolved.Release.ID {
+			payload = resolved.NZB // already fetched by that resolve
+		}
+		if len(payload) == 0 {
+			var err error
+			if payload, err = m.deps.FetchNZB(search, alt); err != nil {
+				continue
+			}
 		}
 		res := &core.Resolution{Title: s.ident.key, Release: alt, NZB: payload, ResolvedAt: m.now()}
 		g, err := m.openGeneration(search, s, res, func(int64) core.MediaInfo { return core.MediaInfo{Estimated: true} })

@@ -375,7 +375,9 @@ func (s *Service) SearchReleases(ctx context.Context, t *core.Title, opts Search
 	pin, note := s.pinForResolve(req)
 	out.PinNote = note
 	if pin != nil {
-		pinID = pin.Release.ID
+		if !pin.Fallback || s.preferenceEligible(t.Key, pin.Release) {
+			pinID = pin.Release.ID
+		}
 		results = withRelease(results, pin.Release)
 	}
 	var trace Trace
@@ -672,7 +674,9 @@ func (s *Service) SeasonReleases(ctx context.Context, season *core.Title, episod
 		}
 		pinID := ""
 		if pin, _ := s.pinForResolve(req); pin != nil {
-			pinID = pin.Release.ID
+			if !pin.Fallback || s.preferenceEligible(ep.Key, pin.Release) {
+				pinID = pin.Release.ID
+			}
 			results = withRelease(results, pin.Release)
 		}
 		var trace Trace
@@ -869,7 +873,14 @@ func (s *Service) CheckRelease(ctx context.Context, releaseID string, titleKey c
 		switch {
 		case healthy && herr == nil:
 			res.Healthy = true
-			s.markVerifiedKeys(ctx, s.allVerificationKeys(rel, extraKeys...))
+			keys := s.allVerificationKeys(rel, extraKeys...)
+			s.markVerifiedKeys(ctx, keys)
+			// A pass also ends the failure memory a resolve left, so the
+			// next Play (or a restart) does not suppress the release again.
+			s.forgetFailedGrabs(ctx, keys)
+			if urlKey, nzbHash, contentID := s.usenetVerdictKeys(rel, nzb); urlKey != "" || nzbHash != "" || contentID != "" {
+				s.usenetVerdicts.Delete(urlKey, nzbHash, contentID)
+			}
 		case herr == nil:
 			res.Reason, definitive = "health: unhealthy", true
 		default:

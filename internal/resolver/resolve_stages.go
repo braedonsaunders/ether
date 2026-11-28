@@ -79,14 +79,16 @@ func (s *Service) resolvePreferred(ctx context.Context, req core.ResolveRequest,
 	}
 	out.attempted = true
 	var inconclusive *unverifiedPool
-	if pin != nil {
+	strictPin := pin != nil && !pin.Fallback
+	if strictPin {
 		// The owner has already selected this source. Keep an NZB whose
 		// sampling merely timed out, without relaxing confirmed failures or
 		// the health behaviour of explicit viewer choices and automatic picks.
+		// A preferred pin does not need this: normal ranking can play instead.
 		ctx, inconclusive = withUnverifiedPool(ctx)
 	}
 	winner, nzb, err := s.validateCandidates(ctx, []candidate{candidates[index]}, trace, race)
-	if pin != nil && winner < 0 {
+	if strictPin && winner < 0 {
 		if res := s.lastResort(ctx, inconclusive, req.Title.Key, []candidate{candidates[index]}, trace); res != nil {
 			note(PinHealthy, unverifiedReason, "used unverified")
 			out.resolution = res

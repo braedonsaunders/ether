@@ -190,6 +190,19 @@ func (g *generation) timeMapSnapshot() TimeMap {
 	return tm
 }
 
+// resetTriedForNewPlayLocked starts a new play's recovery chain after a pause
+// or stop. A preferred release the session tried, or fell back from, stays
+// tried, so the running session never returns to it. Callers hold s.mu.
+func (s *session) resetTriedForNewPlayLocked() {
+	if s.preference != "" && slices.Contains(s.tried, s.preference) {
+		s.preferenceFailed = true
+	}
+	s.tried = nil
+	if s.preferenceFailed && s.preference != "" {
+		s.tried = []string{s.preference}
+	}
+}
+
 func (g *generation) releaseID() string {
 	if g.res == nil {
 		return ""
@@ -283,6 +296,8 @@ type session struct {
 	virtualGen         *generation // generation whose layout virtual mirrors
 	gens               int
 	tried              []string
+	preference         string // owner's preferred release when the session opened
+	preferenceFailed   bool   // the session tried the preference and fell back; survives unpause
 	alternates         []core.Release
 	altVersionSelector string // slot selector carried by alternates when a slot pick fails over
 	altQualityFallback string // fallback note carried by alternates when a stepped-down pick fails over

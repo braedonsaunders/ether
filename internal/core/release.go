@@ -442,7 +442,10 @@ type Resolution struct {
 	NZB             []byte    `json:"-"`
 	Alternates      []Release `json:"alternates"` // next candidates, best first
 	FailedReleases  []string  `json:"-"`          // concrete release IDs rejected during this resolve
-	ResolvedAt      time.Time `json:"resolvedAt"`
+	// PreferenceFailed is the owner's preferred release (a pin with fallback)
+	// that this resolve tried and could not use before ranking took over.
+	PreferenceFailed string    `json:"-"`
+	ResolvedAt       time.Time `json:"resolvedAt"`
 }
 
 // MatchesVersion compares concrete picks and resolver-validated logical slots.

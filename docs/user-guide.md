@@ -821,10 +821,23 @@ log says what changed.
   Below the search are the releases you pinned. An applicable owner pin selects
   the release for ordinary playback, even when a quality profile would rank it
   lower. Ether still checks that the source is usable and can serve the requested
-  title or episode. If the pinned release fails its health check, Auto playback
-  stops and the pin shows the reason. Choose **Play Version** to play a different
-  release once, or remove the pin to restore automatic selection. Offline downloads
-  use their own profile.
+  title or episode. Each pin has a mode, chosen when you save it and shown in the
+  list:
+
+  - **Strict** (the default): if the pinned release fails its health check or
+    can't be used, Auto playback stops and the pin shows the reason.
+  - **Prefer, with fallback**: Auto tries the pinned release first. If it can't
+    be used, Ether plays the next best release as if there were no pin. The
+    list shows the last reason the preferred release could not be used. A
+    session that fell back stays on its fallback; once Ether's short memory of
+    the failure expires, the next play tries the pinned release again. Version
+    menus mark the pinned release only while it is the one Auto would play. Only
+    a strict pin sends the "pin unhealthy" event, so flows that remove dead pins
+    and pin alerts leave a preference in place.
+
+  Choose **Play Version** to play a different release once, or remove the pin to
+  restore automatic selection. A viewer's own remembered version choice comes
+  before either mode. Offline downloads use their own profile.
 - **Blocklist** lists releases Ether will not pick: ones that failed health
   checks or broke during playback, and ones you blocked. Filter by title or
   source; unblocking a release has it checked again the next time it is a

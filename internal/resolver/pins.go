@@ -12,6 +12,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/releaseparse"
+	"github.com/braedonsaunders/ether/internal/store"
 )
 
 // Owner pins
@@ -27,6 +28,19 @@ import (
 //
 // An explicit viewer version choice overrides a pin. The logical Auto slot
 // still honours it. Offline downloads retain their own profile and ignore pins.
+//
+// A pin with Fallback is the owner's preferred release. It applies to the same
+// requests and, when used, gets the same gates and exemptions as a strict pin,
+// except those that exist only because nothing else may play: an inconclusive
+// sampling timeout and the remembered-source identity exemption stay strict.
+// When the preferred release is missing, rejected or unhealthy, the request
+// continues with normal ranking. An explicit version pick bypasses it, even a
+// pick of the same release. No outcome is a latch: the next ordinary Auto tries
+// the preference again once the existing failure memory has expired.
+
+func init() {
+	store.Register("resolver", 12, `ALTER TABLE resolver_pins ADD COLUMN fallback INTEGER NOT NULL DEFAULT 0;`)
+}
 
 // PinStatus is the outcome of the last time a pin was tried or checked.
 type PinStatus string
@@ -48,6 +62,9 @@ type Pin struct {
 	LastStatus    PinStatus      `json:"lastStatus,omitempty"`
 	LastReason    string         `json:"lastReason,omitempty"`
 	LastCheckedAt time.Time      `json:"lastCheckedAt"`
+	// Fallback makes the pin a preference: normal ranking takes over when the
+	// release cannot be used. False (strict) for every older pin.
+	Fallback bool `json:"fallback"`
 }
 
 func pinnableKey(k core.RatingKey) bool {
@@ -56,8 +73,14 @@ func pinnableKey(k core.RatingKey) bool {
 
 // Pin pins rel to a movie or episode, replacing any earlier pin. The full
 // release is stored, so the pin works after the release drops out of
-// cached search results.
+// cached search results. The pin is strict; see PinWithFallback.
 func (s *Service) Pin(ctx context.Context, key core.RatingKey, titleName string, rel core.Release, note string) (Pin, error) {
+	return s.PinWithFallback(ctx, key, titleName, rel, note, false)
+}
+
+// PinWithFallback is Pin with the mode: fallback stores a preferred release
+// that normal ranking replaces when it cannot be used.
+func (s *Service) PinWithFallback(ctx context.Context, key core.RatingKey, titleName string, rel core.Release, note string, fallback bool) (Pin, error) {
 	if !pinnableKey(key) {
 		return Pin{}, ErrNotPinnable
 	}
@@ -73,19 +96,19 @@ func (s *Service) Pin(ctx context.Context, key core.RatingKey, titleName string,
 		s.con.mu.Unlock()
 	}
 	note = strings.TrimSpace(note)
-	p := Pin{TitleKey: key, TitleName: titleName, Release: rel, Note: note, PinnedAt: s.now()}
+	p := Pin{TitleKey: key, TitleName: titleName, Release: rel, Note: note, PinnedAt: s.now(), Fallback: fallback}
 	if s.db != nil {
 		raw, err := json.Marshal(rel)
 		if err != nil {
 			return Pin{}, err
 		}
 		_, err = s.db.ExecContext(ctx,
-			`INSERT INTO resolver_pins(rating_key, release_id, release_json, title_name, note, pinned_at, last_status, last_reason, last_checked_at)
-			 VALUES (?,?,?,?,?,?,'','',0)
+			`INSERT INTO resolver_pins(rating_key, release_id, release_json, title_name, note, pinned_at, last_status, last_reason, last_checked_at, fallback)
+			 VALUES (?,?,?,?,?,?,'','',0,?)
 			 ON CONFLICT(rating_key) DO UPDATE SET release_id=excluded.release_id, release_json=excluded.release_json,
 			   title_name=excluded.title_name, note=excluded.note, pinned_at=excluded.pinned_at,
-			   last_status='', last_reason='', last_checked_at=0`,
-			int64(key), rel.ID, string(raw), titleName, note, p.PinnedAt.Unix())
+			   last_status='', last_reason='', last_checked_at=0, fallback=excluded.fallback`,
+			int64(key), rel.ID, string(raw), titleName, note, p.PinnedAt.Unix(), store.BoolInt(fallback))
 		if err != nil {
 			return Pin{}, err
 		}
@@ -154,17 +177,18 @@ func (s *Service) PinFor(key core.RatingKey) (Pin, bool) {
 }
 
 // pinColumns are the resolver_pins columns scanPin reads.
-const pinColumns = `rating_key, release_json, title_name, note, pinned_at, last_status, last_reason, last_checked_at`
+const pinColumns = `rating_key, release_json, title_name, note, pinned_at, last_status, last_reason, last_checked_at, fallback`
 
 // scanPin reads one resolver_pins row (pinColumns).
 func scanPin(row interface{ Scan(...any) error }) (Pin, error) {
-	var key, pinnedAt, checkedAt int64
+	var key, pinnedAt, checkedAt, fallback int64
 	var raw, status string
 	var p Pin
-	if err := row.Scan(&key, &raw, &p.TitleName, &p.Note, &pinnedAt, &status, &p.LastReason, &checkedAt); err != nil {
+	if err := row.Scan(&key, &raw, &p.TitleName, &p.Note, &pinnedAt, &status, &p.LastReason, &checkedAt, &fallback); err != nil {
 		return p, err
 	}
 	p.TitleKey = core.RatingKey(key)
+	p.Fallback = fallback != 0
 	if err := json.Unmarshal([]byte(raw), &p.Release); err != nil || p.Release.ID == "" {
 		return p, fmt.Errorf("resolver pin %d unreadable: %v", key, err)
 	}
@@ -272,6 +296,10 @@ func (s *Service) notePinsBlocked(ctx context.Context, releaseID, reason string)
 	}
 }
 
+// skipPreferenceKey carries, on a resolve's context, the preferred release
+// that resolve already tried and could not use; ranking leaves it out.
+type skipPreferenceKey struct{}
+
 // pinForResolve returns the title's pin when it applies to req, else nil
 // and, when there is a pin, why it does not apply.
 func (s *Service) pinForResolve(req core.ResolveRequest) (*Pin, string) {
@@ -285,6 +313,10 @@ func (s *Service) pinForResolve(req core.ResolveRequest) (*Pin, string) {
 	switch {
 	case req.Prefer != "" && req.Prefer != p.Release.ID && !autoVersion(req.Prefer):
 		return nil, "skipped: viewer picked another version"
+	case p.Fallback && req.Prefer != "" && !autoVersion(req.Prefer):
+		// A strict pin keeps a same-release pick on its own path so nothing
+		// else can play; a preference has no such constraint to keep.
+		return nil, "skipped: viewer picked a version"
 	case req.Client.Download:
 		return nil, "skipped: downloads use their own profile"
 	}
@@ -292,17 +324,67 @@ func (s *Service) pinForResolve(req core.ResolveRequest) (*Pin, string) {
 }
 
 // PinnedReleaseID returns the authoritative playback source, if this request
-// uses an owner pin. Playback uses it to recheck warm/resume and failover paths
-// that can otherwise reuse a release without calling Resolve. An active viewer
-// remembered choice overrides the owner pin in the Auto slot.
+// uses a strict owner pin. Playback uses it to recheck warm/resume and failover
+// paths that can otherwise reuse a release without calling Resolve. An active
+// viewer remembered choice overrides the owner pin in the Auto slot. A
+// preferred pin (Fallback) is not authoritative; see PreferredRelease.
 func (s *Service) PinnedReleaseID(req core.ResolveRequest) string {
 	if s.viewerTitleChoiceForResolve(req, nil) != nil || s.viewerShowChoiceForResolve(req) != nil {
 		return ""
 	}
-	if pin, _ := s.pinForResolve(req); pin != nil {
+	if pin, _ := s.pinForResolve(req); pin != nil && !pin.Fallback {
 		return pin.Release.ID
 	}
 	return ""
+}
+
+// PreferredRelease returns the owner's preferred release (a pin with
+// Fallback) when it applies to this request, and whether it may be tried now:
+// not blocklisted, not inside the brief failed-health window and not rejected
+// for the title. Playback resolves an eligible preference before reusing warm
+// or remembered sources and before racing alternates; once it is excluded or
+// ineligible, ordinary choices are admitted. A viewer title choice keeps its
+// precedence. A viewer show choice does not hide the preference: Resolve uses
+// the preference whenever that choice matches no candidate, and a session the
+// show choice put elsewhere is not on its preference, so it never returns to it.
+func (s *Service) PreferredRelease(req core.ResolveRequest) (string, bool) {
+	if req.Title == nil || s.viewerTitleChoiceForResolve(req, nil) != nil {
+		return "", false
+	}
+	pin, _ := s.pinForResolve(req)
+	if pin == nil || !pin.Fallback {
+		return "", false
+	}
+	return pin.Release.ID, s.preferenceEligible(req.Title.Key, pin.Release)
+}
+
+// preferenceEligible reports whether a preferred release may be tried now.
+// These are the existing failure memories; a pin's last status is not one.
+func (s *Service) preferenceEligible(key core.RatingKey, rel core.Release) bool {
+	return !s.isBadRelease(rel) && !s.recentlyFailedRelease(rel) && !s.rejectedFor(key, rel)
+}
+
+// pinFlightKey separates in-flight resolves by the applicable pin: its release
+// and its mode. Two requests share a resolve only when they would try the same
+// pinned or preferred release in the same way. A viewer show choice that
+// matches no candidate leaves the pin in charge, so it keeps the pin here, as
+// does a viewer title choice the request excludes.
+func (s *Service) pinFlightKey(req core.ResolveRequest) string {
+	exclude := make(map[string]bool, len(req.Exclude))
+	for _, id := range req.Exclude {
+		exclude[id] = true
+	}
+	if s.viewerTitleChoiceForResolve(req, exclude) != nil {
+		return ""
+	}
+	pin, _ := s.pinForResolve(req)
+	switch {
+	case pin == nil:
+		return ""
+	case pin.Fallback:
+		return "prefer:" + pin.Release.ID
+	}
+	return pin.Release.ID
 }
 
 func autoVersion(prefer string) bool {
@@ -361,10 +443,11 @@ func pinFirst(cands []candidate, pinID string) []candidate {
 	return cands
 }
 
-// candidateReason is a candidate's trace reason, for pin status notes.
+// candidateReason is a candidate's trace reason, for pin status notes. The
+// latest entry wins: the pin attempt traces after any earlier look.
 func candidateReason(tr *Trace, id string) string {
-	for _, c := range tr.Candidates {
-		if c.ReleaseID == id {
+	for i := len(tr.Candidates) - 1; i >= 0; i-- {
+		if c := tr.Candidates[i]; c.ReleaseID == id {
 			if c.Reason != "" {
 				return c.Reason
 			}
@@ -417,8 +500,8 @@ func rekeyPins(ctx context.Context, tx *sql.Tx, r core.TitleKeyRange, name strin
 		if err != nil {
 			return nil, err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO resolver_pins(rating_key,release_id,release_json,title_name,note,pinned_at)
-			VALUES(?,?,?,?,?,?) ON CONFLICT(rating_key) DO NOTHING`, int64(dest), p.Release.ID, string(data), name, p.Note, p.PinnedAt.Unix()); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO resolver_pins(rating_key,release_id,release_json,title_name,note,pinned_at,fallback)
+			VALUES(?,?,?,?,?,?,?) ON CONFLICT(rating_key) DO NOTHING`, int64(dest), p.Release.ID, string(data), name, p.Note, p.PinnedAt.Unix(), store.BoolInt(p.Fallback)); err != nil {
 			return nil, err
 		}
 		keys = append(keys, p.TitleKey, dest)

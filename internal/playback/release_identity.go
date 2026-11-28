@@ -245,6 +245,97 @@ func (m *Manager) ownerPinAllows(s *session, releaseID string) bool {
 	return true
 }
 
+// preferredRelease is the owner's preferred release (a pin with fallback)
+// that applies to this session, and whether it may be tried now. Unlike a
+// strict pin it never forbids another release; it only orders the first try.
+func (m *Manager) preferredRelease(s *session) (string, bool) {
+	if pins, ok := m.deps.Resolver.(interface {
+		PreferredRelease(core.ResolveRequest) (string, bool)
+	}); ok && s != nil && s.title != nil {
+		return pins.PreferredRelease(core.ResolveRequest{Title: s.title, Client: s.caps, User: &s.user, Prefer: s.preferenceSelector()})
+	}
+	return "", false
+}
+
+// preferenceSelector is the selector the owner's preference is looked up with:
+// an Auto start that opened its release by id (bound as Auto) is still Auto,
+// not an explicit pick of that release.
+func (s *session) preferenceSelector() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.binding == core.SourceBindingAuto {
+		return ""
+	}
+	return s.prefer
+}
+
+// notePreferenceLocked records the session's preference and, when the
+// session plays another release, that it fell back from it for good.
+// Callers hold s.mu.
+func (s *session) notePreferenceLocked(pref, playing string) {
+	if s.preference != pref {
+		s.preference, s.preferenceFailed = pref, false
+	}
+	if s.preference != "" && playing != "" && playing != s.preference {
+		s.preferenceFailed = true
+		if !slices.Contains(s.tried, s.preference) {
+			s.tried = append(s.tried, s.preference)
+		}
+	}
+}
+
+// untriedPreference is the eligible preferred release this session has not
+// tried yet, or "". While it is set, warm and remembered sources and cached
+// alternates give way so a Resolve tries the preference first. A preference
+// the session tried, or fell back from, stays tried for the whole session.
+func (m *Manager) untriedPreference(s *session, tried []string) string {
+	id, eligible := m.preferredRelease(s)
+	if id == "" || !eligible || slices.Contains(tried, id) {
+		return ""
+	}
+	s.mu.Lock()
+	done := slices.Contains(s.tried, id) || (s.preferenceFailed && s.preference == id)
+	s.mu.Unlock()
+	if done {
+		return ""
+	}
+	return id
+}
+
+// preferenceGate orders stored sources around the preferred release: while it
+// is untried only it may be used, and while it is inside its failure window it
+// is not reused from warm, resume or cached alternates.
+type preferenceGate struct{ untried, failed string }
+
+func (g preferenceGate) blocks(releaseID string) bool {
+	return (g.untried != "" && releaseID != g.untried) || (g.failed != "" && releaseID == g.failed)
+}
+
+func (m *Manager) preferenceGate(s *session, tried []string) preferenceGate {
+	if id, eligible := m.preferredRelease(s); id != "" && !eligible {
+		return preferenceGate{failed: id}
+	}
+	return preferenceGate{untried: m.untriedPreference(s, tried)}
+}
+
+// preferenceAllows reports whether releaseID may be used without first
+// trying an eligible, untried preferred release, and is not a preference
+// inside its failure window.
+func (m *Manager) preferenceAllows(s *session, releaseID string, tried []string) bool {
+	return !m.preferenceGate(s, tried).blocks(releaseID)
+}
+
+// ownerChoiceCovers reports whether releaseID plays under an owner pin's
+// exemptions: any release while a strict pin applies (nothing else can open),
+// or the preferred release itself when it is the one being used.
+func (m *Manager) ownerChoiceCovers(s *session, releaseID string) bool {
+	if !m.ownerPinAllows(s, "") {
+		return true
+	}
+	id, _ := m.preferredRelease(s)
+	return id != "" && id == releaseID
+}
+
 // Alternate file numbers are valid only for the canonical episode the resolver
 // explicitly attached them to. Plain targets retain the existing checks.
 func targetEpisodeNumbers(target *core.ReleaseTarget, season, episode int) (int, int, bool) {

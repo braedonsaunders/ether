@@ -84,6 +84,8 @@ export interface Pin {
   titleName: string;
   release: Release;
   note?: string;
+  // Preferred, with fallback: normal ranking takes over when it cannot play.
+  fallback?: boolean;
   pinnedAt: string;
   lastStatus?: PinStatus;
   lastReason?: string;
@@ -184,6 +186,7 @@ export interface ChildTitle {
   episode?: number;
   aired?: string;
   pinned?: boolean;
+  fallback?: boolean;
 }
 
 interface ConsoleProfiles {
@@ -403,10 +406,10 @@ export const releaseConsole = {
   forget: (key: string) => post<{ ok: boolean }>("/forget", { key }),
   pins: async (signal?: AbortSignal) =>
     (await apiFetch<{ pins: Pin[] | null }>(`${base}/pins`, { signal })).pins ?? [],
-  pin: (key: string, releaseId: string, note: string) =>
-    post<Pin>("/pins", { key, releaseId, note }),
-  pinBatch: async (pins: { key: string; releaseId: string }[], note: string) =>
-    (await post<{ pins: Pin[] | null }>("/pins/batch", { pins, note })).pins ?? [],
+  pin: (key: string, releaseId: string, note: string, fallback = false) =>
+    post<Pin>("/pins", { key, releaseId, note, fallback }),
+  pinBatch: async (pins: { key: string; releaseId: string }[], note: string, fallback = false) =>
+    (await post<{ pins: Pin[] | null }>("/pins/batch", { pins, note, fallback })).pins ?? [],
   unpin: (key: string) => del(`/pins/${encodeURIComponent(key)}`),
   blocklist: async (
     params: { key?: string; source?: string; q?: string; limit?: number; offset?: number },
