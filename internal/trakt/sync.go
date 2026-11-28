@@ -1019,14 +1019,20 @@ type watchlistItem struct {
 }
 
 // Watchlist returns the user's Trakt watchlist as catalogue titles.
+// Returns ErrNotConnected when Trakt is disabled or the user has not linked it
+// (rather than nil, nil) so sync callers never mistake a missing or unreadable
+// connection for an empty remote watchlist.
 //
 // Cached like PullHistory.
 func (c *Client) Watchlist(ctx context.Context, userID int64, limit int) ([]core.Title, error) {
 	if limit <= 0 {
 		limit = 20
 	}
-	if !c.Connected(ctx, userID) {
-		return nil, nil
+	if !c.Enabled() {
+		return nil, ErrNotConnected
+	}
+	if _, err := c.tokensForLink(ctx, userID, nil); err != nil {
+		return nil, err
 	}
 	return cachedCall(c, ctx, cacheKey("watchlist", userID, limit), func(ctx context.Context) ([]core.Title, error) {
 		return c.watchlist(ctx, userID, limit)

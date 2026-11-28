@@ -624,6 +624,16 @@ func (c *Client) refreshFrom(ctx context.Context, stale Tokens) (Tokens, error) 
 		return Tokens{}, err
 	}
 	if status == http.StatusBadRequest || status == http.StatusUnauthorized {
+		// Only invalid_grant (or an empty error body) means this viewer's
+		// refresh token was revoked; client-level errors like invalid_client
+		// must not disconnect every viewer.
+		var oauthErr struct {
+			Error string `json:"error"`
+		}
+		_ = json.Unmarshal(b, &oauthErr)
+		if oauthErr.Error != "" && oauthErr.Error != "invalid_grant" {
+			return Tokens{}, fmt.Errorf("trakt refresh (%s): %w", oauthErr.Error, traktStatus(status))
+		}
 		res, err := c.db.ExecContext(ctx, `DELETE FROM trakt_tokens WHERE user_id=? AND link_id=? AND access_token=?`, userID, t.linkID, t.storedAccess)
 		if err != nil {
 			return Tokens{}, err
