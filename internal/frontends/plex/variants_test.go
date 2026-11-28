@@ -16,6 +16,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -1030,5 +1031,54 @@ func TestNonWebClientsSeeThePlayingVersionDuringPlayback(t *testing.T) {
 	}
 	if n := count(); n != 3 {
 		t.Fatalf("during playback: %d media, want the full version list", n)
+	}
+}
+
+type watchVariantBase = frontend.Editions
+
+type watchVariantEditions struct {
+	watchVariantBase
+	refill func() <-chan struct{}
+	list   func() []core.ReleaseVariant
+}
+
+func (f watchVariantEditions) RefillSearchCache(*core.Title) <-chan struct{} { return f.refill() }
+func (f watchVariantEditions) Variants(context.Context, core.ResolveRequest, int) ([]core.ReleaseVariant, error) {
+	return f.list(), nil
+}
+
+func TestVariantWatchUsesOriginalClientIdentity(t *testing.T) {
+	saved := variantWatchSchedule
+	variantWatchSchedule = []time.Duration{0, 0}
+	t.Cleanup(func() { variantWatchSchedule = saved })
+	pr := &Request{User: &ownerUser, ClientID: "client", Product: "Plex Web", detailRefillRequested: true}
+	done := make(chan struct{})
+	polls, refills := 0, 0
+	f := newFixture(func(d *testServerDeps) {
+		d.Host.Editions = watchVariantEditions{
+			refill: func() <-chan struct{} {
+				refills++
+				return nil
+			},
+			list: func() []core.ReleaseVariant {
+				polls++
+				if polls == 1 {
+					pr.Product = "Tautulli"
+					return nil
+				}
+				close(done)
+				return make([]core.ReleaseVariant, 2)
+			},
+		}
+	})
+	defer f.srv.Close()
+	f.srv.watchVariants(pr, &fightClub)
+	select {
+	case <-done:
+		if refills != 2 {
+			t.Fatalf("refills=%d, want 2 for the original client", refills)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("variant watch did not finish")
 	}
 }

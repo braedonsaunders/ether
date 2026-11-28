@@ -292,6 +292,7 @@ type upstreamTap struct {
 	refs           map[*inputGrant]struct{}
 	readers        int
 	idle           *time.Timer
+	idleGeneration uint64
 	ctx            context.Context
 	cancel         context.CancelFunc
 	body           io.Closer
@@ -514,8 +515,13 @@ func (r *tapRegistry) forget(t *upstreamTap) {
 // already in the ring stay readable: a reader drains its reserve before it
 // sees the error.
 func (t *upstreamTap) close(err error) {
+	t.closeWithIdleCheck(err, 0)
+}
+
+func (t *upstreamTap) closeWithIdleCheck(err error, idleGeneration uint64) {
 	t.mu.Lock()
-	if t.closed {
+	// Test for readers and claim the close under the same lock as attach.
+	if t.closed || (idleGeneration != 0 && (t.readers != 0 || t.idleGeneration != idleGeneration)) {
 		t.mu.Unlock()
 		return
 	}
@@ -979,6 +985,7 @@ func (t *upstreamTap) attach() {
 	t.readers++
 	if t.idle != nil {
 		t.idle.Stop()
+		t.idle = nil
 	}
 	t.mu.Unlock()
 }
@@ -987,18 +994,11 @@ func (t *upstreamTap) detach() {
 	t.mu.Lock()
 	t.readers--
 	if t.readers == 0 && !t.closed && !t.finite {
-		if t.idle == nil {
-			t.idle = time.AfterFunc(tapIdle, func() {
-				t.mu.Lock()
-				idle := t.readers == 0
-				t.mu.Unlock()
-				if idle {
-					t.close(nil)
-				}
-			})
-		} else {
-			t.idle.Reset(tapIdle)
-		}
+		t.idleGeneration++
+		generation := t.idleGeneration
+		t.idle = time.AfterFunc(tapIdle, func() {
+			t.closeWithIdleCheck(nil, generation)
+		})
 	}
 	t.mu.Unlock()
 }

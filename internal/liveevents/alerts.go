@@ -350,22 +350,13 @@ func (e *AlertEngine) detectTransitions(ev core.LiveEvent, now time.Time) []stri
 			close:      isClose,
 			lastSeenAt: now,
 		}
+		// A cold snapshot establishes state; only witnessed transitions alert.
 		if isTerminalEventState(state) {
-			// Already finished before we ever observed it: never fire stale alerts.
 			snap.settledAt = now
-		} else if state == core.LiveEventStateIn {
-			// Discovered already live inside an active alert window.
-			evStart := parseEventTime(ev.Start)
-			if evStart.IsZero() || now.Sub(evStart) <= 4*time.Hour {
-				kinds = append(kinds, core.LiveEventAlertStarted)
-				if isClose {
-					kinds = append(kinds, core.LiveEventAlertClose)
-				}
-			}
 		}
 		e.events[ev.ID] = snap
 		e.pruneLocked(now)
-		return kinds
+		return nil
 	}
 
 	prevState := prev.state

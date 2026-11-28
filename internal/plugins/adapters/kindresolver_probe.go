@@ -83,12 +83,12 @@ func sourceProbeIdentity(pluginID string, src core.PlayableSource, defaultMIME s
 		keys = append(keys, k)
 	}
 	if h := strings.ToLower(strings.TrimSpace(src.SHA256)); len(h) == 64 {
-		add("sha256:" + h)
+		add("sha256:" + pluginID + ":" + h)
 	}
 
 	pattern := inferSourcePattern(src)
 	if blob := strings.TrimSpace(src.BlobRef); blob != "" && pattern != kindstream.PatternContainer && pattern != kindstream.PatternFile {
-		add("blob:" + blob)
+		add("blob:" + pluginID + ":" + blob)
 		return nil, keys
 	}
 

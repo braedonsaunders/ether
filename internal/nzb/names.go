@@ -81,20 +81,35 @@ var otherExts = map[string]bool{
 func IsVideoExt(ext string) bool { return videoExts[strings.ToLower(ext)] }
 
 var (
-	rePartRAR  = regexp.MustCompile(`(?i)^(.*)\.part(\d{1,4})\.rar$`)
-	reOldRAR   = regexp.MustCompile(`(?i)^(.*)\.([r-y])(\d{2})$`)
-	reOldRAR3  = regexp.MustCompile(`(?i)^(.*)\.r(\d{3})$`)
-	rePlainRAR = regexp.MustCompile(`(?i)^(.*)\.rar$`)
-	re7zVol    = regexp.MustCompile(`(?i)^(.*)\.7z\.(\d{1,4})$`)
-	re7z       = regexp.MustCompile(`(?i)^(.*)\.7z$`)
-	reZipVol   = regexp.MustCompile(`(?i)^(.*)\.zip\.(\d{1,4})$`)
-	reZSplit   = regexp.MustCompile(`(?i)^(.*)\.z(\d{2,4})$`)
-	reZip      = regexp.MustCompile(`(?i)^(.*)\.zip$`)
-	reSplit    = regexp.MustCompile(`(?i)^(.*)\.(\d{3,4})$`)
-	rePar2     = regexp.MustCompile(`(?i)^(.*?)(\.vol\d+[+-]\d+)?\.par2$`)
-	reSample   = regexp.MustCompile(`(?i)(^|[^a-z0-9])(sample|proof)([^a-z0-9]|$)`)
-	reExtra    = regexp.MustCompile(`(?i)(^|[^a-z0-9])(trailer|featurette|extras?|behind[ ._-]the[ ._-]scenes|deleted[ ._-]scenes?|bonus|interview|making[ ._-]of)([^a-z0-9]|$)`)
+	rePartRAR     = regexp.MustCompile(`(?i)^(.*)\.part(\d{1,4})\.rar$`)
+	reOldRAR      = regexp.MustCompile(`(?i)^(.*)\.([r-y])(\d{2})$`)
+	reOldRAR3     = regexp.MustCompile(`(?i)^(.*)\.r(\d{3})$`)
+	rePlainRAR    = regexp.MustCompile(`(?i)^(.*)\.rar$`)
+	re7zVol       = regexp.MustCompile(`(?i)^(.*)\.7z\.(\d{1,4})$`)
+	re7z          = regexp.MustCompile(`(?i)^(.*)\.7z$`)
+	reZipVol      = regexp.MustCompile(`(?i)^(.*)\.zip\.(\d{1,4})$`)
+	reZSplit      = regexp.MustCompile(`(?i)^(.*)\.z(\d{2,4})$`)
+	reZip         = regexp.MustCompile(`(?i)^(.*)\.zip$`)
+	reSplit       = regexp.MustCompile(`(?i)^(.*)\.(\d{3,4})$`)
+	rePar2        = regexp.MustCompile(`(?i)^(.*?)(\.vol\d+[+-]\d+)?\.par2$`)
+	reSample      = regexp.MustCompile(`(?i)(^|[^a-z0-9])(sample|proof)([^a-z0-9]|$)`)
+	reExtra       = regexp.MustCompile(`(?i)(^|[^a-z0-9])(trailer|featurette|extras?|behind[ ._-]the[ ._-]scenes|deleted[ ._-]scenes?|bonus|interview|making[ ._-]of)([^a-z0-9]|$)`)
+	reTitleAnchor = regexp.MustCompile(`(?i)[a-z0-9][ ._(\[-]+(?:(?:19|20)\d{2}|s\d{1,4}(?:[ ._-]?(?:e|ep|episode)\d{1,4})?|\d{1,2}x\d{2,3})(?:[^a-z0-9]|$)`)
 )
+
+// sampleExtraText returns directory components and the tokens of each path
+// component after a year or season/episode marker, so leading title words are
+// not mistaken for sample or extra tags.
+func sampleExtraText(name string) string {
+	norm := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(name), `\`, "/"))
+	parts := strings.Split(norm, "/")
+	for i, p := range parts {
+		if loc := reTitleAnchor.FindStringIndex(p); loc != nil {
+			parts[i] = p[loc[1]:]
+		}
+	}
+	return strings.Join(parts, "/")
+}
 
 // Classify interprets a file name (a base name or a path inside an archive).
 func Classify(name string) FileInfo {
@@ -104,10 +119,11 @@ func Classify(name string) FileInfo {
 	}
 	info := FileInfo{Volume: -1}
 	lower := strings.ToLower(base)
-	// Sample/extra detection looks at the whole path: "Sample/x.mkv".
-	full := strings.ToLower(name)
-	info.Sample = reSample.MatchString(full)
-	info.Extra = !info.Sample && reExtra.MatchString(full)
+	// Sample/extra detection looks at directory components and tokens after
+	// the release year or season/episode marker: "Sample/x.mkv", "Movie.2024.Sample.mkv".
+	tagText := sampleExtraText(name)
+	info.Sample = reSample.MatchString(tagText)
+	info.Extra = !info.Sample && reExtra.MatchString(tagText)
 
 	switch {
 	case rePar2.MatchString(lower):

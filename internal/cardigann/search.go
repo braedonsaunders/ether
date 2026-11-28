@@ -734,6 +734,11 @@ func (r *Runner) loginNeeded(resp *response, respType string) (needed, hard bool
 	if resp.status == http.StatusUnauthorized || resp.status == http.StatusForbidden {
 		return true, true
 	}
+	// Non-2xx error pages (e.g. 429 rate limit or 5xx maintenance) lack the
+	// logged-in selector but do not indicate an expired session.
+	if resp.status/100 != 2 {
+		return false, false
+	}
 	t := r.def.Login.Test
 	if t == nil || t.Selector == "" || respType == "json" || respType == "xml" {
 		return false, false

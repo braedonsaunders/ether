@@ -1201,7 +1201,7 @@ func (b *builder) genTrakt() []*candRow {
 		var items []candItem
 		for _, t := range wl {
 			ws := b.statuses[t.Key]
-			if ws.ViewCount > 0 || !contentrating.Allowed(t.ContentRating, b.user.MaxContentRating) {
+			if ws.ViewCount > 0 || !titleAllowedByRating(&t, b.user.MaxContentRating) {
 				continue
 			}
 			items = append(items, candItem{t: t, base: rankScore(len(items), len(wl)), qual: quality(&t), reason: "On your Trakt watchlist"})
@@ -1526,6 +1526,14 @@ func (b *builder) showcaseWindows() (map[string][]core.Title, bool) {
 	if !ok {
 		return nil, false
 	}
+	shared := b.sharedViewerUnrestricted()
+	epoch, epochOK := b.policyEpoch()
+	now := time.Now()
+	if shared && epochOK {
+		if windows, hit := b.e.sharedShowcaseGet(epoch, now); hit {
+			return windows, true
+		}
+	}
 	var genres []string
 	for _, cluster := range showcaseClusters {
 		genres = append(genres, cluster...)
@@ -1540,6 +1548,9 @@ func (b *builder) showcaseWindows() (map[string][]core.Title, bool) {
 	})
 	if err != nil {
 		b.e.log.Debug("personalize: batch showcase windows failed", "err", err)
+	}
+	if supported && err == nil && shared && epochOK {
+		b.e.sharedShowcasePut(epoch, now, windows)
 	}
 	return windows, supported && err == nil
 }

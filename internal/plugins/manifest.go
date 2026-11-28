@@ -340,7 +340,18 @@ func isAnyKindCap(c Capability) bool {
 }
 
 func unsafePath(p string) bool {
-	return p != "" && (strings.HasPrefix(p, "/") || strings.Contains(p, ".."))
+	if p == "" {
+		return false
+	}
+	if strings.HasPrefix(p, "/") || strings.ContainsAny(p, "\\\x00") {
+		return true
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if seg == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 // validateSidecar checks the ether.sidecar block. It is additive and only

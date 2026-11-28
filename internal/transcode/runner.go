@@ -211,6 +211,11 @@ func (p *execProcess) Stop() {
 func (p *execProcess) Pause() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	select {
+	case <-p.done:
+		return nil
+	default:
+	}
 	if p.paused {
 		return nil
 	}
@@ -229,6 +234,12 @@ func (p *execProcess) Pause() error {
 func (p *execProcess) Resume() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	select {
+	case <-p.done:
+		p.paused = false
+		return nil
+	default:
+	}
 	if !p.paused {
 		return nil
 	}

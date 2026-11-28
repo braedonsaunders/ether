@@ -105,4 +105,11 @@ func TestCatchUpSeekAndProviderRefusal(t *testing.T) {
 	if !errors.As(err, &unavailable) || unavailable.Code != "catchup_unavailable" || requests.Load() != 4 {
 		t.Fatal("archive refusal was not mapped")
 	}
+	refuse.Store(false)
+	oldGeneration := tc.requests[1].OpenArchiveRange
+	resumed, err := oldGeneration(t.Context(), 0)
+	if err != nil || requests.Load() != 5 || startEpoch.Load() != req.Start.Add(10*time.Second).Unix() {
+		t.Fatalf("failed seek stranded the current generation: requests=%d, start=%d, err=%v", requests.Load(), startEpoch.Load(), err)
+	}
+	resumed.Release()
 }

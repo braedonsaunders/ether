@@ -10,7 +10,9 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -517,4 +519,37 @@ func TestSlotGrammarAndRepair(t *testing.T) {
 	if offairLayers[1].Text != "{words.offair}" || offairLayers[1].Align != "center" {
 		t.Fatalf("expected offair slate {words.offair} centred, got text=%#v align=%q", offairLayers[1].Text, offairLayers[1].Align)
 	}
+}
+
+func TestUpcomingWakeCoalescesEnsureBurst(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		var calls atomic.Int32
+		s := &Service{
+			ctx: ctx, upcomingWake: make(chan struct{}, 1),
+			o: Options{Upcoming: func(context.Context) []core.ClipRequest {
+				calls.Add(1)
+				return nil
+			}},
+		}
+		s.wg.Add(1)
+		go s.watchUpcoming()
+		defer func() {
+			cancel()
+			s.wg.Wait()
+		}()
+		synctest.Wait()
+		for range 5 {
+			s.Ensure(ctx, core.ClipRequest{})
+			synctest.Wait()
+		}
+		if n := calls.Load(); n != 1 {
+			t.Fatalf("upcoming scan ran %d times before the burst coalesced", n)
+		}
+		time.Sleep(time.Second)
+		synctest.Wait()
+		if n := calls.Load(); n != 2 {
+			t.Fatalf("upcoming scan ran %d times, want startup and one burst scan", n)
+		}
+	})
 }

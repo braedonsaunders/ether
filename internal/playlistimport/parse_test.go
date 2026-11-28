@@ -34,3 +34,20 @@ func TestParseCSVExport(t *testing.T) {
 		t.Fatal("unknown format read")
 	}
 }
+
+func TestParseM3UQuotesBeforeDisplayName(t *testing.T) {
+	_, tracks, err := Parse("m3u", `#EXTM3U
+#EXTINF:320 tvg-name="One, Two" album='Three, Four',Earth, Wind & Fire - September, live
+/music/a.flac
+`)
+	if err != nil || len(tracks) != 1 || tracks[0].Artist != "Earth, Wind & Fire" || tracks[0].Title != "September, live" || tracks[0].DurationSec != 320 {
+		t.Fatalf("tracks = %+v, err = %v", tracks, err)
+	}
+}
+
+func TestParseCSVPreservesNamedArtist(t *testing.T) {
+	_, tracks, err := Parse("csv", "Title,Artist Name\nSeptember,\"Earth, Wind & Fire\"\n")
+	if err != nil || len(tracks) != 1 || tracks[0].Artist != "Earth, Wind & Fire" {
+		t.Fatalf("tracks = %+v, err = %v", tracks, err)
+	}
+}

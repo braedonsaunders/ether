@@ -807,3 +807,60 @@ func TestMultiviewCleanupStoppedLiveRetiresIdleTileAndMediaRefreshesGroupTTL(t *
 		t.Fatalf("group expired despite active tile media fetches: %+v", s2.Multiview)
 	}
 }
+
+func TestNonGroupEpochPrunedWithoutActiveMultiview(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 11, 22, 18, 0, 0, 0, time.UTC)
+	live := newMultiviewFakeLive()
+	v := &core.Viewer{ID: 7, Username: "alice"}
+	b, _, _ := newMultiviewBroker(t, live, &now)
+
+	openSingle := func(devID string) {
+		t.Helper()
+		dev := core.Device{ID: devID, Product: "Vela"}
+		p, err := b.Plan(ctx, frontend.PlanRequest{
+			Viewer: v, Device: dev, Protocol: "vela", Channel: "ch-1",
+			Caps: core.ClientCaps{MaxHeight: 1080, HLSContainers: []string{"fmp4"}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := b.Open(ctx, frontend.OpenRequest{Viewer: v, Device: dev, Protocol: "vela", PlanID: p.ID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for i := 0; i < 8; i++ {
+		openSingle(fmt.Sprintf("ephemeral-%d", i))
+	}
+	b.mu.Lock()
+	idleCount := len(b.nonGroupEpoch)
+	b.mu.Unlock()
+	if idleCount != 0 {
+		t.Fatalf("nonGroupEpoch retained %d entries with no multiview groups, want 0", idleCount)
+	}
+
+	mvDev := core.Device{ID: "mv-dev", Product: "Vela"}
+	access := frontend.SessionAccess{Viewer: v, Device: mvDev, Protocol: "vela"}
+	group, err := b.CreateMultiviewGroup(ctx, access)
+	if err != nil {
+		t.Fatal(err)
+	}
+	openSingle(mvDev.ID)
+	b.mu.Lock()
+	activeCount := len(b.nonGroupEpoch)
+	b.mu.Unlock()
+	if activeCount != 1 {
+		t.Fatalf("nonGroupEpoch during active multiview = %d, want 1", activeCount)
+	}
+
+	if err := b.DeleteMultiviewGroup(ctx, access, group.GroupID); err != nil {
+		t.Fatal(err)
+	}
+	b.mu.Lock()
+	afterDelete := len(b.nonGroupEpoch)
+	b.mu.Unlock()
+	if afterDelete != 0 {
+		t.Fatalf("nonGroupEpoch after multiview group deletion = %d, want 0", afterDelete)
+	}
+}

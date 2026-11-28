@@ -363,7 +363,7 @@ func fetchPlaylistGuide(ctx context.Context, s *Service, src *Source, withChanne
 		if progress != nil {
 			progress.setChannels(len(cs))
 		}
-		s.o.Logger.Info("Live TV source read", "sourceId", src.ID, "source", src.Name, "step", "playlist", "bytes", len(src.Playlist), "channels", len(cs), "skippedVod", stats.SkippedVOD)
+		s.o.Logger.Info("Live TV source read", "sourceId", src.ID, "source", src.Name, "step", "playlist", "bytes", len(src.Playlist), "channels", len(cs), "skippedVod", stats.SkippedVOD, "skippedInvalid", stats.SkippedInvalid)
 	}
 	g, err := fetchSourceGuide(ctx, s, src, cs, withChannels && strings.TrimSpace(src.Playlist) != "", playlistGuides)
 	if err != nil {
@@ -456,7 +456,7 @@ func fetchSourceGuide(ctx context.Context, s *Service, src *Source, cs []Channel
 		if progress != nil {
 			progress.setProgrammes(len(g.Programmes))
 		}
-		s.o.Logger.Info("Live TV source read", "sourceId", src.ID, "source", src.Name, "step", "guide", "guideChannels", len(g.Channels), "nameCandidates", nameCandidateCount, "lateChannels", g.LateChannels, "programmes", len(g.Programmes))
+		s.o.Logger.Info("Live TV source read", "sourceId", src.ID, "source", src.Name, "step", "guide", "guideChannels", len(g.Channels), "nameCandidates", nameCandidateCount, "lateChannels", g.LateChannels, "skippedProgrammes", g.SkippedProgrammes, "programmes", len(g.Programmes))
 	}
 	return g, nil
 }

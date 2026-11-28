@@ -109,10 +109,10 @@ func enforcementPrecedence() string {
 }
 
 func titleRatingRank(contentRating, enforcementRating string) int {
-	if r := int(contentrating.LevelOf(contentRating)); r > 0 {
-		return r
+	if enforcementRating == contentrating.UncertifiedAdult {
+		return int(contentrating.Adult)
 	}
-	return int(contentrating.EnforceLevelOf(enforcementRating))
+	return max(int(contentrating.LevelOf(contentRating)), int(contentrating.EnforceLevelOf(enforcementRating)))
 }
 
 var (
@@ -199,7 +199,7 @@ func sqlMatchRatings(ratingExpr, rankExpr string, values []string) (string, []an
 const (
 	// ratingLevels versions content_rating_rank's numbering (contentrating
 	// levels); raising it re-ranks every row at startup without a sweep.
-	ratingLevels       = "2"
+	ratingLevels       = "3"
 	ratingModel        = "1"
 	ratingModelKey     = "content_rating_model"
 	ratingRankedKey    = "content_rating_ranked"
@@ -207,38 +207,38 @@ const (
 	ratingSweepPerTick = 300
 )
 
-// rankRatings recomputes content_rating_rank from content_rating for every
-// row, once per level numbering (ratingLevels). Labels are few (a few hundred distinct), so
-// it is one UPDATE with a CASE over them.
+// rankRatings recomputes content_rating_rank from content_rating and
+// enforcement_rating for every row, once per level numbering (ratingLevels).
 func (c *Catalog) rankRatings(ctx context.Context) error {
 	if c.getMeta(ctx, ratingRankedKey) == ratingLevels {
 		return nil
 	}
-	rows, err := c.db.QueryContext(ctx, `SELECT DISTINCT content_rating FROM catalog_titles WHERE content_rating<>''`)
+	rows, err := c.db.QueryContext(ctx, `SELECT DISTINCT content_rating, enforcement_rating FROM catalog_titles WHERE content_rating<>'' OR enforcement_rating<>''`)
 	if err != nil {
 		return err
 	}
-	var labels []string
+	type pair struct{ display, enf string }
+	var pairs []pair
 	for rows.Next() {
-		var v string
-		if err := rows.Scan(&v); err != nil {
+		var p pair
+		if err := rows.Scan(&p.display, &p.enf); err != nil {
 			rows.Close()
 			return err
 		}
-		labels = append(labels, v)
+		pairs = append(pairs, p)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	if len(labels) == 0 {
+	if len(pairs) == 0 {
 		return c.setMeta(ctx, ratingRankedKey, ratingLevels)
 	}
-	q := `UPDATE catalog_titles SET content_rating_rank=CASE content_rating`
-	args := make([]any, 0, 2*len(labels))
-	for _, v := range labels {
-		q += ` WHEN ? THEN ?`
-		args = append(args, v, int(contentrating.EnforceLevelOf(v)))
+	q := `UPDATE catalog_titles SET content_rating_rank=CASE`
+	args := make([]any, 0, 3*len(pairs))
+	for _, p := range pairs {
+		q += ` WHEN content_rating=? AND enforcement_rating=? THEN ?`
+		args = append(args, p.display, p.enf, titleRatingRank(p.display, p.enf))
 	}
 	q += ` ELSE 0 END`
 	if _, err := c.db.ExecContext(ctx, q, args...); err != nil {

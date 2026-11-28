@@ -71,6 +71,10 @@ func (s *Service) Handler() http.Handler {
 		return false
 	}
 	m.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		// The list names snapshots, nodes and the shared directory.
+		if !ownerReady(w, r) {
+			return
+		}
 		snaps, e := s.Snapshots(r.Context())
 		v, se := s.Settings(r.Context())
 		if e == nil {

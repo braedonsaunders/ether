@@ -260,7 +260,7 @@ func (h liveTVHost) catchUpGroupAirings(ctx context.Context, u *core.User, view 
 			for _, ch := range byGuide[[2]string{source, guide}] {
 				var p Programme
 				var ok bool
-				if p, ok, err = catchUpRow(ch, raw, now, ""); ok {
+				if p, ok, err = catchUpRow(ch, raw, now); ok {
 					found = append(found, p)
 				}
 				if err != nil {

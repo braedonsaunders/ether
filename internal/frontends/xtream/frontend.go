@@ -11,11 +11,13 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/lineup"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/listcache"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/lru"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/mediasafety"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/reqmemo"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
@@ -40,8 +42,10 @@ func (Frontend) Mount(_ context.Context, host frontend.Host) (frontend.Instance,
 }
 
 type instance struct {
-	host   frontend.Host
-	router *route.Router
+	host       frontend.Host
+	router     *route.Router
+	xmltvMu    sync.Mutex
+	xmltvCache *lru.Cache[xmltvGuideKey, []frontend.LiveProgramme]
 	// exports keeps encoded whole-library listings; nil encodes each one.
 	exports *listcache.Store
 	lineups *lineup.Store

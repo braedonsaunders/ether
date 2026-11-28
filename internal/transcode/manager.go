@@ -449,7 +449,8 @@ const staleDownloadAge = time.Hour
 // Ether itself creates under tempDir are touched; anything else in a
 // shared temp dir is kept:
 //
-//   - s-* session dirs, including everything nested in them: run-* DASH
+//   - s-*, http-* and continuous-* session/encoder dirs, including
+//     everything nested in them: run-* DASH
 //     run dirs, c-* chunk dirs, rung-* rendition dirs and dash chunk-*
 //     files. These are removed unconditionally (pre-existing behaviour).
 //     That is only sound assuming a single process owns tempDir:
@@ -466,7 +467,7 @@ func (m *Manager) cleanStale() {
 	}
 	for _, e := range entries {
 		switch {
-		case e.IsDir() && (strings.HasPrefix(e.Name(), "s-") || strings.HasPrefix(e.Name(), "http-")):
+		case e.IsDir() && (strings.HasPrefix(e.Name(), "s-") || strings.HasPrefix(e.Name(), "http-") || strings.HasPrefix(e.Name(), "continuous-")):
 			path := filepath.Join(m.tempDir, e.Name())
 			if _, protected := encoderCleanup.dirs.Load(path); !protected {
 				_ = os.RemoveAll(path)

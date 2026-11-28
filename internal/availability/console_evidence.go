@@ -39,7 +39,7 @@ func (s *Service) invalidateConsoleEvidence(ctx context.Context, id string) {
 	if !ok {
 		return
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT id FROM availability_releases WHERE id=? OR checked_id=?`, id, id)
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM availability_releases WHERE id=? UNION SELECT id FROM availability_releases WHERE checked_id=?`, id, id)
 	if err != nil {
 		return
 	}

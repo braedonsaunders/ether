@@ -348,7 +348,7 @@ func (p *realDebrid) acquire(ctx context.Context, req AcquireRequest) (_ *Acquir
 		return removed
 	}
 	defer func() {
-		if err != nil && added && !removed && pendingTorrent(err) == "" && !errors.Is(err, ErrBlockedHash) {
+		if err != nil && added && !removed && pendingTorrent(err) == "" && !errors.Is(err, ErrBlockedHash) && !errors.Is(err, ErrGone) {
 			p.pace.writeAnswer(ctx, key, learnedAnswer{verdict: answerPending, torrentID: id}, p.opts.Now())
 		}
 	}()
@@ -411,6 +411,11 @@ func (p *realDebrid) acquire(ctx context.Context, req AcquireRequest) (_ *Acquir
 	case "magnet_error", "error", "virus", "dead":
 		logProviderResponse(ctx, p.key, http.StatusOK, info.Status, "torrent ended in "+info.Status)
 		cleanup()
+		if !added {
+			// A previously remembered torrent died; mark ErrGone so the stale
+			// pending answer is cleared and a subsequent attempt can re-add.
+			return nil, fmt.Errorf("real-debrid: torrent %s: %w: %w", info.Status, ErrGone, core.ErrNotCached)
+		}
 		return nil, fmt.Errorf("real-debrid: torrent %s: %w", info.Status, core.ErrNotCached)
 	default: // queued, downloading, compressing, uploading: not cached
 		err := fmt.Errorf("real-debrid: torrent is %s: %w", info.Status, core.ErrNotCached)

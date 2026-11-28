@@ -237,6 +237,24 @@ func (b *builder) loadStatuses(items []core.Title) {
 	}
 }
 
+func titleAllowedByRating(t *core.Title, maxRating string) bool {
+	if maxRating == "" {
+		return true
+	}
+	if !contentrating.Allowed(t.ContentRating, maxRating) {
+		return false
+	}
+	if t.EnforcementRating != "" {
+		if t.EnforcementRating == contentrating.UncertifiedAdult {
+			return false
+		}
+		if contentrating.EnforceExceeds(t.EnforcementRating, maxRating) {
+			return false
+		}
+	}
+	return true
+}
+
 // fresh reports whether a title may be recommended for discovery: a film
 // or show, released, within the viewer's limits, never watched or started.
 func (b *builder) fresh(t *core.Title) bool {
@@ -246,7 +264,7 @@ func (b *builder) fresh(t *core.Title) bool {
 	if !t.Released.IsZero() && t.Released.After(b.now) {
 		return false
 	}
-	if !contentrating.Allowed(t.ContentRating, b.user.MaxContentRating) {
+	if !titleAllowedByRating(t, b.user.MaxContentRating) {
 		return false
 	}
 	if b.touched[tasteKey(t.Key)] {

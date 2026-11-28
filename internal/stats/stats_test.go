@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -236,4 +237,107 @@ func TestHistoricalImportDoesNotChangeActivePlaybackStats(t *testing.T) {
 	if len(plays) != 1 || plays[0].Completed || plays[0].WatchedMS != 30000 || plays[0].DurationMS != 3600000 {
 		t.Fatalf("historical import changed active play: %+v", plays)
 	}
+}
+
+func TestObserveStateUsesLivePlayIndex(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{
+			sql:  `EXPLAIN QUERY PLAN SELECT id,completed,(SELECT COUNT(*) FROM stats_plays WHERE user_id=? AND rating_key=? AND ended=0 AND channel_id='') FROM stats_plays WHERE user_id=? AND rating_key=? AND ended=0 AND channel_id='' LIMIT 1`,
+			args: []any{7, 99, 7, 99},
+		},
+		{
+			sql:  `EXPLAIN QUERY PLAN UPDATE stats_plays SET timeline=? WHERE id=(SELECT id FROM stats_plays WHERE user_id=? AND rating_key=? AND ended=0 AND channel_id='') AND (SELECT COUNT(*) FROM stats_plays WHERE user_id=? AND rating_key=? AND ended=0 AND channel_id='')=1`,
+			args: []any{1000, 7, 99, 7, 99},
+		},
+	} {
+		rows, err := db.QueryContext(ctx, q.sql, q.args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var details []string
+		for rows.Next() {
+			var id, parent, unused int
+			var detail string
+			if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+				rows.Close()
+				t.Fatal(err)
+			}
+			details = append(details, detail)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		plan := strings.Join(details, "\n")
+		if strings.Count(plan, "stats_plays_live") < 2 {
+			t.Fatalf("ObserveState query did not use stats_plays_live for both subqueries:\n%s", plan)
+		}
+	}
+}
+
+func TestSampleSkipsIdleProviderAndSnapshotWrites(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	db, err := store.Open(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	now := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
+	provider := usenet.ProviderStats{ID: "primary"}
+	indexers := []newznab.Remaining{{Indexer: "ix", HitsUsed: 1, HitsRemaining: 99}}
+	s := New(db, Options{
+		Now:       func() time.Time { return now },
+		Providers: func() []usenet.ProviderStats { return []usenet.ProviderStats{provider} },
+		Indexers:  func(context.Context) ([]newznab.Remaining, error) { return indexers, nil },
+	})
+	defer s.Close(ctx)
+
+	s.Sample(ctx)
+	var rows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM stats_provider_days`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Fatalf("idle provider created %d stats_provider_days rows, want 0", rows)
+	}
+
+	// Lock the database writer: a subsequent idle Sample with unchanged provider
+	// counters and unchanged snapshot payloads must not issue any SQLite writes.
+	writerDB, err := sql.Open("sqlite", filepath.Join(dir, "ether.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writerDB.Close()
+	conn, err := writerDB.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
+		t.Fatal(err)
+	}
+
+	now = now.Add(30 * time.Second)
+	shortCtx, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
+	defer cancel()
+	if err := s.SnapshotProviders(shortCtx, []usenet.ProviderStats{provider}); err != nil {
+		_, _ = conn.ExecContext(ctx, `ROLLBACK`)
+		t.Fatalf("unchanged SnapshotProviders attempted a database write: %v", err)
+	}
+	if err := s.snapshot(shortCtx, "indexers", indexers); err != nil {
+		_, _ = conn.ExecContext(ctx, `ROLLBACK`)
+		t.Fatalf("unchanged indexer snapshot attempted a database write: %v", err)
+	}
+	_, _ = conn.ExecContext(ctx, `ROLLBACK`)
 }

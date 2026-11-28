@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -38,7 +39,7 @@ func outputFixture(t *testing.T) (*bufferedSession, []byte) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &Runtime{o: Options{SurfacePolicy: testSessionPolicy, Delivery: testDeliveryPolicy(), OutputBuffer: b, MaxSegmentBytes: int64(len(data) * 2)}, outputScratch: make(chan struct{}, 1), executions: map[string]*execution{}}
+	r := &Runtime{o: Options{SurfacePolicy: testSessionPolicy, Delivery: testDeliveryPolicy(), OutputBuffer: b, MaxSegmentBytes: int64(len(data) * 2)}, outputScratch: make(chan struct{}, outputScratchSlots(int64(len(data)*2))), executions: map[string]*execution{}}
 	db := openFixtureDB(t)
 	ledger, err := placement.New(db, placement.Options{MaxSessions: 16, MaxLease: time.Minute, LockTimeout: fixtureSQLBudget()}, outputRetirementVerifier{})
 	if err != nil {
@@ -722,4 +723,98 @@ func initialResetPacket(pid uint16, cc byte) []byte {
 	p := bytes.Repeat([]byte{0xff}, 188)
 	p[0], p[1], p[2], p[3], p[4], p[5] = 0x47, byte(pid>>8)&31, byte(pid), 0x20|cc, 183, 0x80
 	return p
+}
+
+func TestConcurrentBufferedSessionsAndScratchReuse(t *testing.T) {
+	if got := outputScratchSlots(16 << 20); got != 4 {
+		t.Fatalf("outputScratchSlots(16 MiB) = %d, want 4", got)
+	}
+	if got := outputScratchSlots(64 << 20); got != 2 {
+		t.Fatalf("outputScratchSlots(64 MiB) = %d, want 2", got)
+	}
+	s1, data := outputFixture(t)
+	ctx := context.Background()
+	r := s1.r
+	r.o.EncoderSegmentWait = 150 * time.Millisecond
+	r.o.MaxSegmentBytes = 16 << 20
+	r.outputScratch = make(chan struct{}, outputScratchSlots(r.o.MaxSegmentBytes))
+	b, err := playbackbuffer.New(playbackbuffer.Limits{
+		Global:     playbackbuffer.Budget{Bytes: 64 << 20, Segments: 64, Inits: 1},
+		PerSession: playbackbuffer.Budget{Bytes: 32 << 20, Segments: 64, Inits: 1},
+		Sessions:   4,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.OpenSession("retained", playbackbuffer.State{Generation: 1, PublishedFloor: -1}); err != nil {
+		t.Fatal(err)
+	}
+	r.o.OutputBuffer = b
+
+	if err := r.o.Placement.SetPool(ctx, "cpu", config.RoleTranscode, 4); err != nil {
+		t.Fatal(err)
+	}
+	rec2, err := r.o.Placement.Reserve(ctx, placement.Request{
+		Session:    "retained-2",
+		Operation:  "operation-2",
+		Controller: s1.route.Fence.Controller,
+		Target:     s1.route.Fence.Target,
+		Role:       config.RoleTranscode,
+		Claims:     []placement.Claim{{Scope: "cpu", Units: 1}},
+		Lease:      time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	route2 := Route{Fence: rec2.Fence}
+	if err := r.putRoute(ctx, route2); err != nil {
+		t.Fatal(err)
+	}
+	s2 := r.newBufferedSession(route2, core.HLSRequest{Decision: core.Decision{Container: "mpegts"}}, &remotetranscode.Session{})
+	if s2 == nil {
+		t.Fatal("no second buffered session")
+	}
+	r.executions[route2.Fence.Session] = &execution{route: route2, output: s2}
+
+	s1InFlight := make(chan struct{})
+	releaseS1 := make(chan struct{})
+	s1Done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		w := httptest.NewRecorder()
+		s1.serveSegment(w, httptest.NewRequest("GET", "/segment", nil), 0, func(out http.ResponseWriter, req *http.Request) remotetranscode.RepresentationCompletion {
+			close(s1InFlight)
+			<-releaseS1
+			return outputResponse(data)(out, req)
+		})
+		s1Done <- w
+	}()
+
+	<-s1InFlight
+	w2 := httptest.NewRecorder()
+	s2.serveSegment(w2, httptest.NewRequest("GET", "/segment", nil), 0, outputResponse(data))
+	close(releaseS1)
+	w1 := <-s1Done
+
+	if w2.Code != http.StatusOK || !bytes.Equal(w2.Body.Bytes(), data) {
+		t.Fatalf("second concurrent buffered session blocked by first: status=%d len=%d", w2.Code, w2.Body.Len())
+	}
+	if w1.Code != http.StatusOK || !bytes.Equal(w1.Body.Bytes(), data) {
+		t.Fatalf("first buffered session failed: status=%d len=%d", w1.Code, w1.Body.Len())
+	}
+
+	// Capture buffers must grow to segment size and reuse pooled scratch rather
+	// than allocating MaxSegmentBytes (16 MiB) per segment request.
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	for seq := 1; seq <= 20; seq++ {
+		w := httptest.NewRecorder()
+		s2.serveSegment(w, httptest.NewRequest("GET", "/segment", nil), seq, outputResponse(data))
+		if w.Code != http.StatusOK {
+			t.Fatalf("seq %d: status=%d", seq, w.Code)
+		}
+	}
+	runtime.ReadMemStats(&after)
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 32<<20 {
+		t.Fatalf("20 small segment captures allocated %d MiB (want < 32 MiB with grow-on-demand pooling)", allocated>>20)
+	}
 }

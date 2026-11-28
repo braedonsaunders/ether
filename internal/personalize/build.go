@@ -393,14 +393,30 @@ func (e *Engine) refreshActive(ctx context.Context) {
 		e.log.Debug("personalize: last seen failed", "err", err)
 	}
 	var users []core.User
+	usersLoaded := false
 	if e.opts.Users != nil {
 		if us, err := e.opts.Users.Users(ctx); err == nil {
 			users = us
+			usersLoaded = true
 		}
 	}
 	e.mu.Lock()
-	for _, u := range users {
-		e.users[u.ID] = u
+	if usersLoaded {
+		active := make(map[int64]bool, len(users))
+		for _, u := range users {
+			e.users[u.ID] = u
+			active[u.ID] = true
+		}
+		for id := range e.users {
+			if !active[id] {
+				delete(e.users, id)
+				delete(e.models, id)
+			}
+		}
+	} else {
+		for _, u := range users {
+			e.users[u.ID] = u
+		}
 	}
 	type cand struct {
 		id   int64

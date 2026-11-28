@@ -408,23 +408,34 @@ func TestClassify(t *testing.T) {
 		}
 	}
 	for name, sample := range map[string]bool{
-		"movie-sample.mkv":         true,
-		"Sample/movie.mkv":         true,
-		"movie.proof.jpg":          true,
-		"Samplers.Unite.2024.mkv":  false,
-		"Movie.2024.1080p.mkv":     false,
-		"movie.2024.SAMPLE.mkv":    true,
-		"The.Sample.Size.2024.mkv": true, // an accepted false positive; size filters disambiguate
+		"movie-sample.mkv":             true,
+		"Sample/movie.mkv":             true,
+		"movie.proof.jpg":              true,
+		"Samplers.Unite.2024.mkv":      false,
+		"Movie.2024.1080p.mkv":         false,
+		"movie.2024.SAMPLE.mkv":        true,
+		"The.Sample.Size.2024.mkv":     false,
+		"Sample.Size.2020.mkv":         false,
+		"Proof.2005.1080p.BluRay.mkv":  false,
+		"Proof.of.Life.2000.1080p.mkv": false,
+		"Proof.2005.Sample.mkv":        true,
 	} {
 		if got := Classify(name).Sample; got != sample {
 			t.Errorf("Classify(%q).Sample = %v, want %v", name, got, sample)
 		}
 	}
 	for name, extra := range map[string]bool{
-		"Movie.Trailer.mkv":            true,
-		"Featurettes/Making.Of.mkv":    true,
-		"Movie.2024.Behind.The.Scenes": true,
-		"Movie.2024.1080p.mkv":         false,
+		"Movie.Trailer.mkv":                               true,
+		"Featurettes/Making.Of.mkv":                       true,
+		"Movie.2024.Behind.The.Scenes":                    true,
+		"Movie.2024.1080p.mkv":                            false,
+		"Interview.with.the.Vampire.S01E01.1080p.WEB.mkv": false,
+		"The.Interview.2014.1080p.BluRay.x264.mkv":        false,
+		"Extras.S01E01.720p.mkv":                          false,
+		"Bonus.Family.S01E01.mkv":                         false,
+		"The.Interview.2014.Featurette.mkv":               true,
+		"The.Interview.2014/Extras/Deleted.Scenes.mkv":    true,
+		"The.Interview.2014.1080p/The.Interview.2014.mkv": false,
 	} {
 		if got := Classify(name).Extra; got != extra {
 			t.Errorf("Classify(%q).Extra = %v, want %v", name, got, extra)

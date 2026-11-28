@@ -422,9 +422,13 @@ func (s *Server) endLocalSession(tid string, offset time.Duration) {
 // expirePlaybackActivities retains silent timeline entries while their owned
 // media session is serving requests. Work is bounded by active sessions.
 func (s *Server) expirePlaybackActivities(now time.Time, ttl time.Duration) []playEntry {
-	expired := s.sessions.expire(now, ttl)
-	out := expired[:0]
-	for _, e := range expired {
+	// Renew entries that media is still serving before expiring anything, and
+	// under the owner gate every stop takes. Removing them first and restoring
+	// them after let a stop land in between and the entry come back.
+	for _, e := range s.sessions.list() {
+		if e.state == "stopped" || now.Sub(e.updatedAt) <= ttl {
+			continue
+		}
 		last := e.updatedAt
 		for _, id := range s.transcodes.forClient(e.user.ID, e.client.ClientID, e.key) {
 			binding, ok := s.transcodes.get(id)
@@ -435,19 +439,24 @@ func (s *Server) expirePlaybackActivities(now time.Time, ttl time.Duration) []pl
 				last = hls.LastAccess()
 			}
 		}
-		if e.state != "stopped" && now.Sub(last) <= ttl {
+		if now.Sub(last) > ttl {
+			continue
+		}
+		unlockOwner, err := s.lockPlaybackOwner(s.ctx, e.user.ID, e.client.ClientID)
+		if err != nil {
+			continue
+		}
+		if s.sessions.has(e.id) {
 			s.sessions.update(e.id, func(current *playEntry) {
 				if current.updatedAt.After(e.updatedAt) {
 					return
 				}
-				*current = e
 				current.updatedAt = last
 			})
-			continue
 		}
-		out = append(out, e)
+		unlockOwner()
 	}
-	return out
+	return s.sessions.expire(now, ttl)
 }
 
 // endExpiredEntry ends playback for a now-playing entry the janitor expired

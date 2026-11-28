@@ -1107,8 +1107,8 @@ type Store struct {
 	legacyTVShowsLibraryName string
 
 	// Cluster mode (see shared.go). shared is nil on a standalone server,
-	// where config.json is the only source. writeMu sequences cluster-mode
-	// writers (Update, refresh) so mu is never held across database calls.
+	// where config.json is the only source. writeMu sequences writers
+	// (Update, refresh) so mu is never held across disk or database writes.
 	writeMu    sync.Mutex
 	shared     SharedBackend
 	sharedVer  int64
@@ -1512,24 +1512,30 @@ func (s *Store) update(fn func(*Config) error) error {
 	if s.Clustered() {
 		return s.updateClustered(fn)
 	}
-	s.mu.Lock()
+	s.writeMu.Lock()
+	if s.Clustered() {
+		s.writeMu.Unlock()
+		return s.updateClustered(fn)
+	}
+	s.mu.RLock()
 	next := clone(s.cfg)
+	s.mu.RUnlock()
 	if err := fn(&next); err != nil {
-		s.mu.Unlock()
+		s.writeMu.Unlock()
 		return err
 	}
 	DropFrontendServerNames(&next)
 	syncDerived(&next)
-	prev := s.cfg
-	s.cfg = next
-	if err := s.save(); err != nil {
-		s.cfg = prev
-		s.mu.Unlock()
+	if err := s.saveCfg(next); err != nil {
+		s.writeMu.Unlock()
 		return err
 	}
+	s.mu.Lock()
+	s.cfg = next
 	s.generation++
 	subs := append([]func(Config){}, s.subs...)
 	s.mu.Unlock()
+	s.writeMu.Unlock()
 	for _, f := range subs {
 		f(clone(next))
 	}
@@ -1543,7 +1549,11 @@ func (s *Store) Subscribe(fn func(Config)) {
 }
 
 func (s *Store) save() error {
-	b, err := json.MarshalIndent(s.cfg, "", "  ")
+	return s.saveCfg(s.cfg)
+}
+
+func (s *Store) saveCfg(cfg Config) error {
+	b, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}

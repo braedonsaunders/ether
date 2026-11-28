@@ -3,6 +3,7 @@ package liveevents
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -74,6 +75,7 @@ type fakeFeedPoller struct {
 	schedule      []core.LiveEvent
 	pollEvents    []core.LiveEvent
 	nextPollSec   int
+	pollErr       error
 }
 
 func (p *fakeFeedPoller) FetchSchedule(_ context.Context, _, _ string, _, _ time.Time) (FeedPollResult, error) {
@@ -88,7 +90,7 @@ func (p *fakeFeedPoller) PollEvents(_ context.Context, _, _ string, ids []string
 	defer p.mu.Unlock()
 	p.pollCalls++
 	p.lastPollIDs = append([]string(nil), ids...)
-	return FeedPollResult{Events: p.pollEvents, NextPollSec: p.nextPollSec}, nil
+	return FeedPollResult{Events: p.pollEvents, NextPollSec: p.nextPollSec}, p.pollErr
 }
 
 func TestAlertEngineTransitionsSpoilerFreeAndThreeChannelDelivery(t *testing.T) {
@@ -391,4 +393,76 @@ func TestSQLFavoriteEntitiesReaderReadsFavoritesItemsTable(t *testing.T) {
 	if len(got) != 2 || got[0].ViewerID != 1 || got[0].Key != "demo:main:team:wolves" || got[1].ViewerID != 2 || got[1].Key != "demo:main:team:hawks" {
 		t.Fatalf("ListEntityFavorites = %+v, want 2 entity favorites only", got)
 	}
+}
+
+func TestAlertEngineSeedsColdEventsSilently(t *testing.T) {
+	now := time.Date(2026, 11, 22, 18, 0, 0, 0, time.UTC)
+	hub := NewAlertHub()
+	sub := hub.SubscribeAlerts(10)
+	defer sub.Close()
+	favs := []EntityFavorite{{ViewerID: 10, Key: "demo:main:team:wolves"}}
+	engine := NewAlertEngine(AlertEngineOptions{InApp: hub, Now: func() time.Time { return now }})
+	alreadyLive := core.LiveEvent{
+		ID: "demo:main:live", Start: now.Add(-time.Hour).Format(time.RFC3339),
+		Status:      core.LiveEventStatus{State: core.LiveEventStateIn, Close: true},
+		Competitors: []core.LiveEventCompetitor{{EntityID: "wolves"}},
+	}
+	upcoming := alreadyLive.Clone()
+	upcoming.ID = "demo:main:upcoming"
+	upcoming.Status = core.LiveEventStatus{State: core.LiveEventStatePre}
+	if err := engine.ProcessEventsWithFavorites(t.Context(), []core.LiveEvent{alreadyLive, upcoming}, favs); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case alert := <-sub.C:
+		t.Fatalf("cold snapshot sent an alert: %+v", alert)
+	default:
+	}
+	upcoming.Status.State = core.LiveEventStateIn
+	alreadyLive.Status.State = core.LiveEventStatePost
+	if err := engine.ProcessEventsWithFavorites(t.Context(), []core.LiveEvent{upcoming, alreadyLive}, favs); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{core.LiveEventAlertStarted, core.LiveEventAlertFinal} {
+		select {
+		case alert := <-sub.C:
+			if alert.Kind != kind {
+				t.Fatalf("alert kind = %q, want %q", alert.Kind, kind)
+			}
+		default:
+			t.Fatalf("missing %s alert for observed transition", kind)
+		}
+	}
+}
+
+func TestAlertSchedulerBacksOffFailedPolls(t *testing.T) {
+	now := time.Date(2026, 11, 22, 18, 0, 0, 0, time.UTC)
+	ev := core.LiveEvent{
+		ID: "demo:main:g1", Start: now.Format(time.RFC3339),
+		Status:      core.LiveEventStatus{State: core.LiveEventStatePre},
+		Competitors: []core.LiveEventCompetitor{{EntityID: "wolves"}},
+	}
+	favs := &fakeFavoritesStore{favs: []EntityFavorite{{ViewerID: 10, Key: "demo:main:team:wolves"}}}
+	poller := &fakeFeedPoller{schedule: []core.LiveEvent{ev}, pollErr: errors.New("poll failed")}
+	sched := NewAlertScheduler(AlertSchedulerOptions{
+		Favorites: favs, Poller: poller, Now: func() time.Time { return now },
+	})
+	step := func(delay time.Duration, calls int) {
+		t.Helper()
+		next, awake, err := sched.Step(t.Context())
+		if err != nil || !awake || !next.Equal(now.Add(delay)) || poller.pollCalls != calls {
+			t.Fatalf("next = %v, awake = %v, calls = %d, err = %v; want +%v and %d calls", next, awake, poller.pollCalls, err, delay, calls)
+		}
+	}
+	step(15*time.Second, 1)
+	now = now.Add(15 * time.Second)
+	step(30*time.Second, 2)
+	now = now.Add(15 * time.Second)
+	step(15*time.Second, 2)
+	now = now.Add(15 * time.Second)
+	poller.pollErr, poller.nextPollSec = nil, 20
+	step(20*time.Second, 3)
+	now = now.Add(20 * time.Second)
+	poller.pollErr, poller.nextPollSec = errors.New("poll failed again"), 0
+	step(15*time.Second, 4)
 }

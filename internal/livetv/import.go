@@ -37,8 +37,9 @@ func validHTTP(raw string) bool {
 
 // m3uStats records what ParseM3U left out and any #EXTM3U guide URLs.
 type m3uStats struct {
-	SkippedVOD int
-	GuideURLs  []string
+	SkippedVOD     int
+	SkippedInvalid int
+	GuideURLs      []string
 }
 
 // parseM3UGuideURLs extracts HTTP(S) guide URLs from an #EXTM3U header's
@@ -137,7 +138,7 @@ func m3uChannelArchive(a ChannelArchive, stream string) *ChannelArchive {
 }
 
 // ParseM3U preserves only explicitly provided HTTP(S) streams. Executable,
-// file and media-tool pseudo protocols are rejected.
+// file and media-tool pseudo protocols are skipped.
 func ParseM3U(r io.Reader, sourceID string) ([]Channel, error) {
 	channels, _, err := parseM3U(r, sourceID)
 	return channels, err
@@ -163,7 +164,7 @@ func parseM3U(r io.Reader, sourceID string) ([]Channel, m3uStats, error) {
 		}
 		if !header {
 			if !strings.HasPrefix(line, "#EXTM3U") {
-				return nil, stats, fmt.Errorf("playlist must start with #EXTM3U")
+				continue
 			}
 			stats.GuideURLs = parseM3UGuideURLs(line)
 			attrs := map[string]string{}
@@ -175,12 +176,10 @@ func parseM3U(r io.Reader, sourceID string) ([]Channel, m3uStats, error) {
 			continue
 		}
 		if strings.HasPrefix(line, "#EXTINF:") {
-			pendingHeaders = nil
-			attrs := map[string]string{}
-			for _, m := range m3uAttr.FindAllStringSubmatch(line, -1) {
-				attrs[strings.ToLower(m[1])] = m[2]
-				playlistMediaHeader(&pendingHeaders, m[1], m[2])
+			if pending != nil {
+				stats.SkippedInvalid++
 			}
+			pendingHeaders = nil
 			// Commas inside quoted attributes are not the display-name separator.
 			quote := false
 			comma := -1
@@ -193,12 +192,27 @@ func parseM3U(r io.Reader, sourceID string) ([]Channel, m3uStats, error) {
 					break
 				}
 			}
+			metadata := line
+			if comma >= 0 {
+				metadata = line[:comma]
+			}
+			attrs := map[string]string{}
+			for _, m := range m3uAttr.FindAllStringSubmatch(metadata, -1) {
+				attrs[strings.ToLower(m[1])] = m[2]
+				playlistMediaHeader(&pendingHeaders, m[1], m[2])
+			}
 			name := attrs["tvg-name"]
 			if comma >= 0 && strings.TrimSpace(line[comma+1:]) != "" {
 				name = strings.TrimSpace(line[comma+1:])
 			}
 			pendingArchive = m3uArchiveAttrs(attrs, archiveDefaults)
 			pending = &Channel{Name: name, TvgName: attrs["tvg-name"], Number: attrs["tvg-chno"], Logo: attrs["tvg-logo"], GuideID: attrs["tvg-id"], ProviderGuideID: attrs["tvg-id"], Group: attrs["group-title"], SourceID: sourceID, Kind: "iptv", Enabled: true}
+			continue
+		}
+		if group, ok := strings.CutPrefix(line, "#EXTGRP:"); ok {
+			if pending != nil && pending.Group == "" {
+				pending.Group = strings.TrimSpace(group)
+			}
 			continue
 		}
 		if pending != nil && strings.HasPrefix(line, "#EXTVLCOPT:") {
@@ -210,11 +224,10 @@ func parseM3U(r io.Reader, sourceID string) ([]Channel, m3uStats, error) {
 		if strings.HasPrefix(line, "#") {
 			continue
 		}
-		if pending == nil {
-			return nil, stats, fmt.Errorf("stream has no #EXTINF entry")
-		}
-		if !validHTTP(line) {
-			return nil, stats, fmt.Errorf("channel %q needs an HTTP(S) stream", pending.Name)
+		if pending == nil || !validHTTP(line) {
+			stats.SkippedInvalid++
+			pending = nil
+			continue
 		}
 		if isVODStream(line) {
 			stats.SkippedVOD++
@@ -265,10 +278,10 @@ func parseM3U(r io.Reader, sourceID string) ([]Channel, m3uStats, error) {
 		return nil, stats, err
 	}
 	if pending != nil {
-		return nil, stats, fmt.Errorf("playlist ends before a stream URL")
+		stats.SkippedInvalid++
 	}
 	if !header {
-		return nil, stats, fmt.Errorf("empty playlist")
+		return nil, stats, fmt.Errorf("playlist needs an #EXTM3U header")
 	}
 	return out, stats, nil
 }
@@ -313,7 +326,8 @@ type XMLGuide struct {
 	// LateChannels counts <channel> elements that appeared after the first
 	// <programme>. A valid guide has none; they are skipped rather than
 	// buffered, so name candidates they declare are missed.
-	LateChannels int
+	LateChannels      int
+	SkippedProgrammes int
 }
 
 // mergeXMLGuide folds src into dst when a playlist advertises several XMLTV
@@ -349,11 +363,17 @@ func mergeXMLGuide(dst *XMLGuide, src XMLGuide) {
 	}
 	dst.Programmes = append(dst.Programmes, src.Programmes...)
 	dst.LateChannels += src.LateChannels
+	dst.SkippedProgrammes += src.SkippedProgrammes
 }
 
 func xmlTime(s string) (time.Time, error) {
-	for _, layout := range []string{"20060102150405 -0700", "200601021504 -0700", "20060102150405-0700", "200601021504-0700", "20060102150405", "200601021504"} {
-		if t, e := time.Parse(layout, strings.TrimSpace(s)); e == nil {
+	raw := strings.TrimSpace(s)
+	for _, layout := range []string{
+		"20060102150405 -0700", "200601021504 -0700", "20060102150405-0700", "200601021504-0700",
+		"20060102150405", "200601021504", time.RFC3339,
+		"20060102150405 -07:00", "200601021504 -07:00", "20060102150405-07:00", "200601021504-07:00",
+	} {
+		if t, e := time.Parse(layout, raw); e == nil {
 			return t.UTC(), nil
 		}
 	}
@@ -399,6 +419,8 @@ func parseXMLTV(r io.Reader, f guideFilter) (XMLGuide, bool, error) {
 	d := xml.NewDecoder(limited)
 	root := false
 	dropped := false
+	// Only the earliest valid start beyond the window can close an in-window programme.
+	firstAfter := make(map[string]time.Time)
 	// allow starts as the caller's set. Resolve replaces it with a copy plus
 	// its candidates; the caller's map is never mutated.
 	allow := f.IDs
@@ -466,7 +488,7 @@ func parseXMLTV(r io.Reader, f guideFilter) (XMLGuide, bool, error) {
 		}
 		switch el.Name.Local {
 		case "channel":
-			id := xmlAttr(el, "id")
+			id := strings.TrimSpace(xmlAttr(el, "id"))
 			if sawProgramme {
 				// Invalid per the DTD: only count it. Name matching has
 				// already run, and buffering would not help.
@@ -489,13 +511,13 @@ func parseXMLTV(r io.Reader, f guideFilter) (XMLGuide, bool, error) {
 				}
 				return g, dropped, err
 			}
-			name := c.ID
+			name := id
 			if len(c.Name) > 0 {
 				name = c.Name[0].Value
 			}
-			g.Channels[c.ID] = Channel{GuideID: c.ID, Name: name, Logo: c.Icon.Src}
+			g.Channels[id] = Channel{GuideID: id, Name: name, Logo: c.Icon.Src}
 			for _, n := range c.Name {
-				g.Names[c.ID] = append(g.Names[c.ID], strings.TrimSpace(n.Value))
+				g.Names[id] = append(g.Names[id], strings.TrimSpace(n.Value))
 			}
 		case "programme":
 			if !sawProgramme {
@@ -515,29 +537,36 @@ func parseXMLTV(r io.Reader, f guideFilter) (XMLGuide, bool, error) {
 				}
 				continue
 			}
-			if f.timed() {
-				start, err := xmlTime(xmlAttr(el, "start"))
-				if err != nil {
+			rawStart := xmlAttr(el, "start")
+			start, startErr := xmlTime(rawStart)
+			var end time.Time
+			var endErr error
+			stop := strings.TrimSpace(xmlAttr(el, "stop"))
+			if stop != "" {
+				end, endErr = xmlTime(stop)
+			}
+			badTime := startErr != nil || endErr != nil || (stop != "" && !end.After(start))
+			outside := false
+			if badTime {
+				g.SkippedProgrammes++
+			} else if f.timed() {
+				from := f.from(channel)
+				outside = !start.Before(f.Until) || (!end.IsZero() && !end.After(from)) || (end.IsZero() && start.Before(from.Add(-24*time.Hour)))
+				if !start.Before(f.Until) {
+					if first, ok := firstAfter[channel]; !ok || start.Before(first) {
+						firstAfter[channel] = start
+					}
+				}
+			}
+			if badTime || outside {
+				dropped = true
+				if err := d.Skip(); err != nil {
+					if lim := limitCause(err); lim != nil {
+						return g, dropped, lim
+					}
 					return g, dropped, err
 				}
-				stop := strings.TrimSpace(xmlAttr(el, "stop"))
-				var end time.Time
-				if stop != "" {
-					if end, err = xmlTime(stop); err != nil {
-						return g, dropped, err
-					}
-				}
-				from := f.from(channel)
-				if !start.Before(f.Until) || (!end.IsZero() && !end.After(from)) || (end.IsZero() && start.Before(from.Add(-24*time.Hour))) {
-					dropped = true
-					if err := d.Skip(); err != nil {
-						if lim := limitCause(err); lim != nil {
-							return g, dropped, lim
-						}
-						return g, dropped, err
-					}
-					continue
-				}
+				continue
 			}
 			var p xmlProgramme
 			if err := d.DecodeElement(&p, &el); err != nil {
@@ -545,22 +574,6 @@ func parseXMLTV(r io.Reader, f guideFilter) (XMLGuide, bool, error) {
 					return g, dropped, lim
 				}
 				return g, dropped, err
-			}
-			if strings.TrimSpace(p.Channel) == "" {
-				continue
-			}
-			start, err := xmlTime(p.Start)
-			if err != nil {
-				return g, dropped, err
-			}
-			var end time.Time
-			if strings.TrimSpace(p.Stop) != "" {
-				if end, err = xmlTime(p.Stop); err != nil {
-					return g, dropped, err
-				}
-				if !end.After(start) {
-					continue
-				}
 			}
 			item := Item{Thumb: strings.TrimSpace(p.Icon.Src)}
 			date := strings.TrimSpace(p.Date)
@@ -595,7 +608,7 @@ func parseXMLTV(r io.Reader, f guideFilter) (XMLGuide, bool, error) {
 			if len(p.Rating) > 0 {
 				item.Rating = p.Rating[0].Value
 			}
-			g.Programmes = append(g.Programmes, Programme{ID: stableID(p.Channel, p.Start), ChannelID: p.Channel, Start: start, End: end, Item: item})
+			g.Programmes = append(g.Programmes, Programme{ID: stableID(channel, rawStart), ChannelID: channel, Start: start, End: end, Item: item})
 		}
 	}
 	if err := limited.overflow(); err != nil {
@@ -606,7 +619,7 @@ func parseXMLTV(r io.Reader, f guideFilter) (XMLGuide, bool, error) {
 	}
 	// A guide with no programmes still prunes its channels at EOF.
 	resolve()
-	g.Programmes = inferMissingStops(g.Programmes)
+	g.Programmes = inferMissingStops(g.Programmes, firstAfter)
 	if f.timed() {
 		kept := g.Programmes[:0]
 		for _, p := range g.Programmes {
@@ -747,7 +760,7 @@ func dedupeProgrammes(ps []Programme) []Programme {
 // inferMissingStops ends each programme without a stop time at the start
 // of the next later programme on its channel; one with no successor has no
 // knowable end and is dropped.
-func inferMissingStops(ps []Programme) []Programme {
+func inferMissingStops(ps []Programme, firstAfter map[string]time.Time) []Programme {
 	open := false
 	for _, p := range ps {
 		if p.End.IsZero() {
@@ -761,6 +774,11 @@ func inferMissingStops(ps []Programme) []Programme {
 	starts := map[string][]time.Time{}
 	for _, p := range ps {
 		starts[p.ChannelID] = append(starts[p.ChannelID], p.Start)
+	}
+	for id, ts := range starts {
+		if first, ok := firstAfter[id]; ok {
+			starts[id] = append(ts, first)
+		}
 	}
 	for _, ts := range starts {
 		sort.Slice(ts, func(i, j int) bool { return ts[i].Before(ts[j]) })

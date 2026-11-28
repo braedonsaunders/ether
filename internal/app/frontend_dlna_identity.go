@@ -14,7 +14,7 @@ import (
 // Every surface requires its own explicit viewer selection; there is no owner fallback.
 func (a *App) lanViewer(ctx context.Context, req *http.Request, settings frontend.Settings) (*core.Viewer, error) {
 	_, lan := identity.ClientNet(req, identity.ProxyPrefixes(a.cfg.Read().Server.TrustedProxyCIDRs)...)
-	if !lan {
+	if !lan || forwardedFromOutside(req) {
 		return nil, core.ErrUnauthorized
 	}
 	value, ok := settings["viewerId"].(float64)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -216,13 +217,15 @@ func TestSystemEventsViewerAndAuthDomains(t *testing.T) {
 }
 
 type fakeCluster struct {
-	mu     sync.Mutex
-	self   cluster.Node
-	nodes  []cluster.Node
-	all    []cluster.Node
-	epoch  int64
-	leader bool
-	onLead []func(bool)
+	mu      sync.Mutex
+	self    cluster.Node
+	nodes   []cluster.Node
+	all     []cluster.Node
+	epoch   int64
+	leader  bool
+	onLead  []func(bool)
+	subs    map[string][]func([]byte)
+	onNodes func()
 }
 
 func (f *fakeCluster) Mode() string { return cluster.ModePostgres }
@@ -249,8 +252,30 @@ func (f *fakeCluster) OnLeaderChange(fn func(bool)) func() {
 }
 func (f *fakeCluster) RunAsLeader(context.Context, string, func(context.Context)) {}
 func (f *fakeCluster) Publish(context.Context, string, []byte) error              { return nil }
-func (f *fakeCluster) Subscribe(string, func([]byte)) func()                      { return func() {} }
+func (f *fakeCluster) Subscribe(topic string, fn func([]byte)) func() {
+	f.mu.Lock()
+	if f.subs == nil {
+		f.subs = make(map[string][]func([]byte))
+	}
+	f.subs[topic] = append(f.subs[topic], fn)
+	f.mu.Unlock()
+	return func() {}
+}
+func (f *fakeCluster) emit(topic string) {
+	f.mu.Lock()
+	fns := append([]func([]byte){}, f.subs[topic]...)
+	f.mu.Unlock()
+	for _, fn := range fns {
+		fn(nil)
+	}
+}
 func (f *fakeCluster) Nodes(context.Context) ([]cluster.Node, error) {
+	f.mu.Lock()
+	hook := f.onNodes
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := make([]cluster.Node, len(f.nodes))
@@ -369,5 +394,62 @@ func TestSystemEventsClusterSystemAndFlowsDomains(t *testing.T) {
 	}
 	if got := len(rec.OfType(events.EventSystemDiskLow)); got != 1 {
 		t.Fatalf("expected hysteresis disk.low count 1, got %d", got)
+	}
+}
+
+func TestObserveClusterMembershipCoalescesBursts(t *testing.T) {
+	a, rec := newSystemEventsTestApp(t)
+	fc := &fakeCluster{
+		self:  cluster.Node{ID: "node-a", Name: "media-1", Version: "0.3.17", Leader: true, Live: true},
+		nodes: []cluster.Node{{ID: "node-a", Name: "media-1", Version: "0.3.17", Leader: true, Live: true}},
+		all:   []cluster.Node{{ID: "node-a", Name: "media-1", Version: "0.3.17", Leader: true, Live: true}},
+		epoch: 1,
+	}
+	a.cluster = fc
+	a.wireSystemEvents()
+	a.seedClusterMembership(context.Background())
+
+	nodeB := cluster.Node{ID: "node-b", Name: "media-2", Version: "0.3.17", Live: true}
+	var inFlight, maxInFlight, totalCalls int32
+	entered := make(chan struct{})
+	var enteredOnce sync.Once
+	release := make(chan struct{})
+
+	fc.mu.Lock()
+	fc.nodes = []cluster.Node{fc.self, nodeB}
+	fc.all = []cluster.Node{fc.self, nodeB}
+	fc.onNodes = func() {
+		cur := atomic.AddInt32(&inFlight, 1)
+		atomic.AddInt32(&totalCalls, 1)
+		for {
+			prev := atomic.LoadInt32(&maxInFlight)
+			if cur <= prev || atomic.CompareAndSwapInt32(&maxInFlight, prev, cur) {
+				break
+			}
+		}
+		enteredOnce.Do(func() { close(entered) })
+		<-release
+		atomic.AddInt32(&inFlight, -1)
+	}
+	fc.mu.Unlock()
+
+	for i := 0; i < 20; i++ {
+		fc.emit(cluster.TopicMembers)
+	}
+	<-entered
+	time.Sleep(40 * time.Millisecond)
+	close(release)
+
+	rec.WaitFor(t, events.EventClusterNodeJoined, 2*time.Second)
+	time.Sleep(30 * time.Millisecond)
+
+	if got := atomic.LoadInt32(&maxInFlight); got > 1 {
+		t.Fatalf("TopicMembers burst ran %d concurrent Nodes() queries, want 1", got)
+	}
+	if got := atomic.LoadInt32(&totalCalls); got > 2 {
+		t.Fatalf("TopicMembers burst ran %d Nodes() queries for 20 messages, want <= 2", got)
+	}
+	if got := len(rec.OfType(events.EventClusterNodeJoined)); got != 1 {
+		t.Fatalf("EventClusterNodeJoined emitted %d times, want 1", got)
 	}
 }

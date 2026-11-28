@@ -642,6 +642,7 @@ func (s *Service) recordKnownState(ctx context.Context, providerID, hash, torren
 	now := s.now()
 	key := knownKey(providerID, hash)
 	s.knownMu.Lock()
+	s.sweepKnownLocked(now)
 	s.known[key] = knownState{cached: cached, checkUncertain: checkUncertain, until: now.Add(ttl)}
 	s.knownMu.Unlock()
 	if s.db == nil {
@@ -865,14 +866,15 @@ const hintTTL = 30 * time.Minute
 func (s *Service) ApplyHints(ctx context.Context, rels []core.Release) {
 	cachedOnly := s.Config().CachedOnly
 	for _, e := range s.active() {
+		kind := e.kind()
 		var hashes []string
 		hints := map[string]bool{}
 		for _, r := range rels {
 			if r.Protocol != core.ProtocolTorrent || r.InfoHash == "" {
 				continue
 			}
-			cached := slices.Contains(r.DebridCached, e.cfg.Kind)
-			if !cached && (!cachedOnly || !slices.Contains(r.DebridUncached, e.cfg.Kind)) {
+			cached := slices.Contains(r.DebridCached, kind)
+			if !cached && (!cachedOnly || !slices.Contains(r.DebridUncached, kind)) {
 				continue
 			}
 			hash := strings.ToLower(r.InfoHash)
@@ -899,6 +901,7 @@ func (s *Service) ApplyHints(ctx context.Context, rels []core.Release) {
 			s.knownMu.Unlock()
 			return
 		}
+		s.sweepKnownLocked(now)
 		for _, hash := range hashes {
 			key := knownKey(e.cfg.ID, hash)
 			k, hit := s.known[key]
@@ -945,6 +948,28 @@ func (s *Service) markedFirst(ctx context.Context, entries []*entry, rel core.Re
 		}
 	}
 	return append(marked, rest...)
+}
+
+func (e *entry) kind() string {
+	e.mu.Lock()
+	kind := e.cfg.Kind
+	e.mu.Unlock()
+	return kind
+}
+
+const knownSweepThreshold = 4096
+
+// sweepKnownLocked removes expired entries from s.known when the map grows
+// past knownSweepThreshold. Permanent refusals (zero until) are kept.
+func (s *Service) sweepKnownLocked(now time.Time) {
+	if len(s.known) < knownSweepThreshold {
+		return
+	}
+	for k, v := range s.known {
+		if !v.until.IsZero() && !now.Before(v.until) {
+			delete(s.known, k)
+		}
+	}
 }
 
 func (e *entry) serviceRef() core.DebridServiceRef {
@@ -1481,7 +1506,7 @@ func (s *Service) CachedPackMatcher(ctx context.Context, rel core.Release) (func
 			definitive = false
 			continue
 		}
-		if e.cfg.Kind == config.DebridRealDebrid && e.api != nil {
+		if e.kind() == config.DebridRealDebrid && e.api != nil {
 			if files := e.api.selectedPack(ctx, hash); len(files) > 0 {
 				e.api.noteRemembered()
 				return func(target *core.ReleaseTarget) bool {
@@ -1873,7 +1898,8 @@ func (s *Service) QueueDownload(ctx context.Context, rel core.Release) ([]byte, 
 		qp, isQueued := pendingQueue(err)
 		tid := pendingTorrent(err)
 		confirmed := tid != "" || isQueued || errors.As(err, &untracked)
-		if (confirmed || (e.cfg.Kind != "realdebrid" && e.cfg.Kind != "premiumize")) && errors.Is(err, core.ErrNotCached) && !refusal(err) && !errors.Is(err, core.ErrDownloadLimit) {
+		kind := e.kind()
+		if (confirmed || (kind != "realdebrid" && kind != "premiumize")) && errors.Is(err, core.ErrNotCached) && !refusal(err) && !errors.Is(err, core.ErrDownloadLimit) {
 			qd := queuedDownload{
 				hash:         hash,
 				provider:     e.cfg.ID,
@@ -2002,7 +2028,7 @@ func (s *Service) acquireOn(ctx context.Context, e *entry, base Payload, choose 
 			observe(err)
 			// Real-Debrid has no atomic cached-only API. If the account
 			// list did not answer, an add could duplicate a pending item.
-			if e.cfg.Kind == config.DebridRealDebrid || errors.Is(err, ErrAuth) || errors.Is(err, core.ErrDebridThrottled) {
+			if e.kind() == config.DebridRealDebrid || errors.Is(err, ErrAuth) || errors.Is(err, core.ErrDebridThrottled) {
 				return Payload{}, err
 			}
 		}
@@ -2445,10 +2471,12 @@ func refusal(err error) bool {
 
 // markRefused remembers, in memory, that the provider refused this hash.
 func (s *Service) markRefused(providerID, hash string, ttl time.Duration) {
+	now := s.now()
 	s.knownMu.Lock()
+	s.sweepKnownLocked(now)
 	until := time.Time{} // zero: permanent for this service lifetime
 	if ttl > 0 {
-		until = s.now().Add(ttl)
+		until = now.Add(ttl)
 	}
 	s.known[knownKey(providerID, strings.ToLower(hash))] = knownState{refused: true, until: until}
 	s.knownMu.Unlock()

@@ -338,8 +338,11 @@ func readPkg(pkg []byte) (json.RawMessage, map[string][]byte, error) {
 	var total int64
 	for _, f := range zr.File {
 		name := strings.TrimPrefix(f.Name, "./")
-		if f.FileInfo().IsDir() || unsafePath(name) || strings.HasPrefix(name, "__MACOSX") {
+		if f.FileInfo().IsDir() || strings.HasPrefix(name, "__MACOSX") {
 			continue
+		}
+		if unsafePath(name) {
+			return nil, nil, fmt.Errorf("plugins: unsafe package path %q", name)
 		}
 		if _, exists := files[name]; exists {
 			return nil, nil, fmt.Errorf("plugins: duplicate package path")

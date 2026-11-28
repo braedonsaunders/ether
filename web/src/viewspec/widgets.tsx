@@ -428,8 +428,27 @@ function HealthStripWidget({ props }: { props: Record<string, unknown> }) {
   );
 }
 
+/**
+ * Screen plugin-supplied image URLs: allow only absolute external http(s) URLs
+ * without credentials or control characters. Relative and same-origin paths
+ * are fetched with the owner's token, so a plugin screen must not reach them.
+ */
+export function safeLogoUrl(raw: unknown): string | null {
+  if (typeof raw !== "string" || !raw || /[\\\u0000-\u001f\u007f]/.test(raw)) return null;
+  if (!raw.startsWith("https://") && !raw.startsWith("http://")) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    if (url.origin === window.location.origin) return null;
+    return url.hostname && !url.username && !url.password ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
 function ChannelRowWidget({ props }: { props: Record<string, unknown> }) {
   const level = LEVELS.includes(props.level as HealthLevel) ? (props.level as HealthLevel) : null;
+  const logo = safeLogoUrl(props.logo);
   return (
     <div className="flex items-center gap-3 py-1">
       {props.number != null && props.number !== "" ? (
@@ -437,9 +456,9 @@ function ChannelRowWidget({ props }: { props: Record<string, unknown> }) {
           {str(props.number)}
         </span>
       ) : null}
-      {typeof props.logo === "string" && props.logo ? (
+      {logo ? (
         <Artwork
-          src={props.logo}
+          src={logo}
           alt=""
           title={str(props.name)}
           className="h-9 w-14 shrink-0 rounded"

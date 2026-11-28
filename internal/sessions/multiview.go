@@ -125,6 +125,7 @@ func (b *Broker) DeleteMultiviewGroup(ctx context.Context, a frontend.SessionAcc
 		return core.ErrNotFound
 	}
 	delete(b.multiviewGroups, groupID)
+	b.pruneNonGroupEpochsLocked()
 	for planID, p := range b.plans {
 		if p.request.Multiview != nil && p.request.Multiview.GroupID == groupID {
 			delete(b.plans, planID)
@@ -149,9 +150,34 @@ func (b *Broker) DeleteMultiviewGroup(ctx context.Context, a frontend.SessionAcc
 
 // Caller holds b.mu.
 func (b *Broker) pruneExpiredMultiviewLocked(now time.Time) {
+	pruned := false
 	for id, g := range b.multiviewGroups {
 		if !g.expiresAt.After(now) {
 			delete(b.multiviewGroups, id)
+			pruned = true
+		}
+	}
+	if pruned {
+		b.pruneNonGroupEpochsLocked()
+	}
+}
+
+// Caller holds b.mu.
+func (b *Broker) pruneNonGroupEpochsLocked() {
+	if len(b.nonGroupEpoch) == 0 {
+		return
+	}
+	if len(b.multiviewGroups) == 0 {
+		b.nonGroupEpoch = nil
+		return
+	}
+	active := make(map[string]struct{}, len(b.multiviewGroups))
+	for _, g := range b.multiviewGroups {
+		active[ownerGateKey(g.viewerID, g.clientID)] = struct{}{}
+	}
+	for k := range b.nonGroupEpoch {
+		if _, ok := active[k]; !ok {
+			delete(b.nonGroupEpoch, k)
 		}
 	}
 }
@@ -178,6 +204,7 @@ func (b *Broker) validateMultiviewLocked(viewerID int64, protocol frontend.Proto
 	}
 	if !g.expiresAt.After(now) {
 		delete(b.multiviewGroups, mv.GroupID)
+		b.pruneNonGroupEpochsLocked()
 		return nil, 0, &frontend.MultiviewError{Cause: core.ErrNotFound}
 	}
 	if g.viewerID != viewerID || g.protocol != protocol || device.ID == "" || g.deviceID != device.ID {

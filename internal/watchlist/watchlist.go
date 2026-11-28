@@ -719,7 +719,10 @@ func (s *Service) syncViewer(ctx context.Context, u *core.User, result *SyncResu
 	}
 	if cfg.Trakt && s.o.Trakt != nil {
 		ts, e := s.o.Trakt.Watchlist(ctx, u.ID, 1000)
-		if e == nil {
+		var unlinked interface{ NotConnected() bool }
+		if errors.As(e, &unlinked) && unlinked.NotConnected() {
+			e = nil
+		} else if e == nil {
 			e = s.replace(ctx, u, "trakt", ts)
 		}
 		errs = append(errs, e)

@@ -32,7 +32,8 @@ type hubCtx struct {
 	related frontend.RatingKey
 	// visible caps the rendered items of a hub whose candidate window is
 	// wider (section hubs assemble a stable window for later pages).
-	visible int
+	visible   int
+	pageItems bool
 	// renderSec stamps librarySection* for a scoped hub even when section == 0
 	// (e.g. Home per-directory rows that skip SQL shelfSnapshot pinning).
 	renderSec *Section
@@ -143,6 +144,7 @@ func (s *Server) renderHubWithVisibility(ctx context.Context, pr *Request, hs hu
 // separate lets a screen load the facts for its pages before painting them.
 type hubRender struct {
 	titles []frontend.Title
+	total  int
 	paint  func(context.Context) model.Hub
 }
 
@@ -257,7 +259,17 @@ func (s *Server) prepareHub(ctx context.Context, pr *Request, hs hubSpec, hc hub
 			h.More = true
 		}
 	}
-	return hubRender{titles: page, paint: func(ctx context.Context) model.Hub {
+	total := 0
+	if hc.pageItems {
+		if pinned || isWatchlist {
+			ctx = withShelfMembers(ctx, page)
+		}
+		page = s.hubPageTitles(ctx, pr, page, &opts)
+		total = len(page)
+		start, end := pr.window(total)
+		page = page[start:end]
+	}
+	return hubRender{titles: page, total: total, paint: func(ctx context.Context) model.Hub {
 		if pinned || isWatchlist {
 			ctx = withShelfMembers(ctx, page)
 		}
@@ -1034,7 +1046,15 @@ func (s *Server) handleContinueWatchingItems(w http.ResponseWriter, r *http.Requ
 		vis := s.sectionVisibility(sec)
 		opts.vis, opts.section = &vis, &sec
 	}
-	mc.Metadata = s.renderTitles(ctx, pr, hs.Items, opts)
+	items := s.hubPageTitles(ctx, pr, hs.Items, &opts)
+	total := len(items)
+	start := min(max(pr.Start, 0), total)
+	count := countParam(r, 50)
+	if pr.HasPage && pr.Size >= 0 {
+		count = min(pr.Size, 200)
+	}
+	end := start + min(count, total-start)
+	mc.Metadata = s.renderTitles(ctx, pr, items[start:end], opts)
 	if hs.included {
 		stampIncluded(mc.Metadata)
 	}
@@ -1044,19 +1064,24 @@ func (s *Server) handleContinueWatchingItems(w http.ResponseWriter, r *http.Requ
 			mc.Meta.Type = append(mc.Meta.Type, s.metaType(section, section.Type, ""))
 		}
 	}
-	total := len(mc.Metadata)
-	start := min(max(pr.Start, 0), total)
-	count := countParam(r, 50)
-	if pr.HasPage && pr.Size >= 0 {
-		count = min(pr.Size, 200)
-	}
-	end := start + min(count, total-start)
-	mc.Metadata = mc.Metadata[start:end]
 	mc.Size = len(mc.Metadata)
 	if v != cwSection || pr.HasPage {
 		mc.SetPage(start, total)
 	}
 	s.write(w, r, mc)
+}
+
+// Select page membership before decorating the titles.
+func (s *Server) hubPageTitles(ctx context.Context, pr *Request, items []frontend.Title, opts *renderOpts) []frontend.Title {
+	opts.listRender = len(items) > 1
+	opts.membershipChecked = true
+	ctx = withStoredPolicy(ctx)
+	vis := s.visibilityCtx(ctx)
+	if opts.vis != nil {
+		vis = *opts.vis
+	}
+	ctx = s.withSeriesRows(ctx, pr.User, items)
+	return s.openableTitlesWith(ctx, vis, pr.User, items, opts.availabilityInSQL || shelfContainsAll(ctx, items))
 }
 
 // handleHubItems is /hubs/items?identifier=...: one hub with more items.
@@ -1069,7 +1094,7 @@ func (s *Server) handleHubItems(w http.ResponseWriter, r *http.Request) {
 		id = q.Get("identifier")
 	}
 	count := countParam(r, 50)
-	if pr.HasPage && pr.Size > 0 {
+	if pr.HasPage {
 		// Assembly assigns candidates across rows based on the requested count.
 		// Every page must therefore use the same bounded assembly window.
 		count = 200
@@ -1084,27 +1109,25 @@ func (s *Server) handleHubItems(w http.ResponseWriter, r *http.Request) {
 		sections = s.allowedSectionIDs(pr.User, sections)
 	}
 	var ranked bool
+	var total int
 	if (rawDir == "" || len(sections) > 0) && id != "" {
 		if hs, ok := s.findHub(ctx, pr, id, sections, q.Get("metadataID"), count); ok {
-			hc := hubCtx{}
+			hc := hubCtx{pageItems: true}
 			if len(sections) == 1 {
 				hc.section = sections[0]
 			}
 			if k, err := frontend.ParseRatingKey(q.Get("metadataID")); err == nil {
 				hc.related = k
 			}
-			mh := s.renderHub(ctx, pr, hs, hc)
+			hc, vis := s.hubVisibility(hs, hc)
+			prepared := s.prepareHub(ctx, pr, hs, hc, vis)
+			mh := prepared.paint(ctx)
+			total = prepared.total
 			mc.Metadata = mh.Metadata
 			ranked = mh.RankedTop10
 		}
 	}
-	total := len(mc.Metadata)
-	start := min(max(pr.Start, 0), total)
-	end := total
-	if pr.HasPage && pr.Size > 0 && pr.Size < total-start {
-		end = start + pr.Size
-	}
-	mc.Metadata = mc.Metadata[start:end]
+	start, _ := pr.window(total)
 	mc.Size = len(mc.Metadata)
 	mc.SetPage(start, total)
 	if ranked {

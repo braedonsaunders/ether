@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 )
 
 // ErrLogin reports credentials or a session the site rejected.
 var ErrLogin = errors.New("sign-in failed")
+
+const loginFailureCooldown = 5 * time.Minute
 
 func (r *Runner) lockKey() string { return "cardigann-login:" + r.id }
 
@@ -95,25 +98,51 @@ func (r *Runner) reauth(ctx context.Context, stale int64) error {
 // in, and that session is used instead (unless force is set, as for an
 // owner's explicit test).
 func (r *Runner) login(ctx context.Context, stale int64, force bool) error {
+	if !force {
+		r.mu.Lock()
+		if !r.loginFailedAt.IsZero() && r.now().Sub(r.loginFailedAt) < loginFailureCooldown {
+			err := r.loginFailed
+			r.mu.Unlock()
+			return err
+		}
+		r.mu.Unlock()
+	}
 	unlock, err := r.lock(ctx, r.lockKey())
 	if err != nil {
 		return err
 	}
 	defer unlock()
 	if !force {
+		r.mu.Lock()
+		if !r.loginFailedAt.IsZero() && r.now().Sub(r.loginFailedAt) < loginFailureCooldown {
+			err := r.loginFailed
+			r.mu.Unlock()
+			return err
+		}
+		r.mu.Unlock()
 		row, ok, err := r.loadSession(ctx)
 		if err != nil {
 			return fmt.Errorf("load session: %w", err)
 		}
 		if ok && row.Version > stale {
 			r.adopt(row)
-			r.setLoggedIn(true)
+			r.mu.Lock()
+			r.loggedIn = true
+			r.loginFailedAt = time.Time{}
+			r.loginFailed = nil
+			r.mu.Unlock()
 			return nil
 		}
 	}
 	r.http.clearCookies(r.site)
 	if err := r.doLogin(ctx); err != nil {
-		r.setLoggedIn(false)
+		r.mu.Lock()
+		r.loggedIn = false
+		if ctx.Err() == nil {
+			r.loginFailedAt = r.now()
+			r.loginFailed = err
+		}
+		r.mu.Unlock()
 		return err
 	}
 	version, err := r.sessions.save(ctx, r.id, siteOrigin(r.site), r.http.exportCookies(r.site), r.http.userAgent())
@@ -122,6 +151,8 @@ func (r *Runner) login(ctx context.Context, stale int64, force bool) error {
 	}
 	r.mu.Lock()
 	r.loggedIn, r.version = true, version
+	r.loginFailedAt = time.Time{}
+	r.loginFailed = nil
 	r.mu.Unlock()
 	return nil
 }

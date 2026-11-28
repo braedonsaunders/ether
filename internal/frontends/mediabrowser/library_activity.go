@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
@@ -286,35 +288,52 @@ func (i *instance) resumeUnderParent(w http.ResponseWriter, r *http.Request, vie
 	if values := route.Query(r.URL.Query(), "EnableTotalRecordCount"); len(values) == 1 {
 		requireExact, _ = strconv.ParseBool(values[0])
 	}
+	type resumeItem struct {
+		title  frontend.Title
+		played time.Time
+	}
+	var resumable []resumeItem
 	q := frontend.ItemQuery{Types: resumeUnderParentTypes(r), Recursive: true, Limit: showChildPageMax}
-	page, err := i.host.Experience.Children(frontend.WithNoContainerExpand(r.Context()), viewer, device(r), parent, q)
-	if err != nil {
-		if errors.Is(err, frontend.ErrNotFound) {
-			i.replyItems(w, r, i.queryResult([]any{}, 0, offset))
+	ctx := frontend.WithNoContainerExpand(r.Context())
+	for {
+		page, err := i.host.Experience.Children(ctx, viewer, device(r), parent, q)
+		if err != nil {
+			if errors.Is(err, frontend.ErrNotFound) {
+				i.replyItems(w, r, i.queryResult([]any{}, 0, offset))
+				return
+			}
+			http.Error(w, "Unavailable", http.StatusServiceUnavailable)
 			return
 		}
-		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	keys := make([]frontend.RatingKey, 0, len(page.Items))
-	for _, title := range page.Items {
-		keys = append(keys, title.Key)
-	}
-	states, err := i.host.Experience.UserData(r.Context(), viewer, keys)
-	if err != nil {
-		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	var resumable []frontend.Title
-	for _, title := range page.Items {
-		if states[title.Key].ViewOffset > 0 {
-			resumable = append(resumable, title)
+		if len(page.Items) == 0 {
+			break
+		}
+		keys := make([]frontend.RatingKey, 0, len(page.Items))
+		for _, title := range page.Items {
+			keys = append(keys, title.Key)
+		}
+		states, err := i.host.Experience.UserData(ctx, viewer, keys)
+		if err != nil {
+			http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		for _, title := range page.Items {
+			if state := states[title.Key]; state.ViewOffset > 0 {
+				resumable = append(resumable, resumeItem{title: title, played: state.LastViewedAt})
+			}
+		}
+		q.Offset += len(page.Items)
+		if q.Offset >= page.Total {
+			break
 		}
 	}
-	total := len(resumable)
-	start := min(offset, total)
-	end := min(start+limit, total)
-	i.writeListedTitles(w, r, viewer, resumable[start:end], nil, total, requireExact, offset, false)
+	sort.SliceStable(resumable, func(a, b int) bool { return resumable[a].played.After(resumable[b].played) })
+	window := paging.Slice(resumable, offset, limit)
+	titles := make([]frontend.Title, 0, len(window))
+	for _, item := range window {
+		titles = append(titles, item.title)
+	}
+	i.writeListedTitles(w, r, viewer, titles, nil, len(resumable), requireExact, offset, false)
 }
 
 // resumeUnderParentTypes mirrors the resume row: playable movies and episodes.

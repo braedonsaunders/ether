@@ -2,6 +2,8 @@ package plex
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -71,5 +73,23 @@ func TestTranscodeStopReleasesSourceUnlessReplacementIsActive(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestTranscodeStopReportsGateFailure(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	const id = "busy"
+	f.srv.transcodes.put(&transcodeEntry{id: id, userID: ownerUser.ID, clientID: "client-1"})
+	ctx, cancel := context.WithCancel(withRequest(t.Context(), &Request{User: &ownerUser, ClientID: "client-1"}))
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "/video/:/transcode/universal/stop?session="+id, nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+	f.srv.handleTranscodeStop(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("HTTP %d, want 503", w.Code)
+	}
+	if _, ok := f.srv.transcodes.get(id); !ok {
+		t.Fatal("encoder removed despite gate failure")
 	}
 }

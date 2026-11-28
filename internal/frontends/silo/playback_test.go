@@ -437,6 +437,9 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	if w.Code != 200 || stopped != sessionID || !strings.Contains(w.Body.String(), `"stop_id":"stop"`) {
 		t.Fatalf("stop without final sample: %d %s", w.Code, w.Body.String())
 	}
+	if _, ok := inst.(*instance).rememberedPlan(sessionID); ok {
+		t.Fatal("playback plan retained after stop")
+	}
 	w = call("DELETE", "/api/v2/playback/"+sessionID, `{"installation_id":"install","stop_id":"stop","sequence":2}`)
 	if w.Code != 400 {
 		t.Fatalf("partial final sample: %d %s", w.Code, w.Body.String())

@@ -165,3 +165,90 @@ func TestVODExclusionRequiresXtreamShape(t *testing.T) {
 		}
 	}
 }
+
+func TestXMLTVSkipsBadTimes(t *testing.T) {
+	doc := `<tv><channel id="a"/>
+<programme start="2026-01-01T01:00:00Z" stop="20260101030000 +01:00" channel="a"><title>first</title></programme>
+<programme start="invalid" channel="a"><title>bad start</title></programme>
+<programme start="20260101020000+00:00" stop="invalid" channel="a"><title>bad stop</title></programme>
+<programme start="202601010300 +00:00" stop="202601010400+00:00" channel="a"><title>last</title></programme></tv>`
+	for _, filter := range []guideFilter{{}, {From: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), Until: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)}} {
+		g, dropped, err := parseXMLTV(strings.NewReader(doc), filter)
+		if err != nil || !dropped || len(g.Programmes) != 2 || g.SkippedProgrammes != 2 {
+			t.Fatalf("parse = %+v, skipped = %d, dropped = %v, err = %v", g.Programmes, g.SkippedProgrammes, dropped, err)
+		}
+		if g.Programmes[0].End.Hour() != 2 || g.Programmes[1].Item.Title != "last" {
+			t.Fatalf("unexpected programmes: %+v", g.Programmes)
+		}
+	}
+}
+
+func TestXMLTVInfersStopBeyondWindow(t *testing.T) {
+	doc := `<tv><channel id="a"/>
+<programme start="20260101000000 +0000" channel="a"><title>one</title></programme>
+<programme start="20260101010000 +0000" channel="a"><title>two</title></programme>
+<programme start="20260101220000 +0000" channel="a"><title>out of order</title></programme>
+<programme start="20260101200000 +0000" stop="20260101210000 +0000" channel="a"><title>far</title></programme></tv>`
+	day := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	g, _, err := parseXMLTV(strings.NewReader(doc), guideFilter{From: day, Until: day.Add(12 * time.Hour)})
+	if err != nil || len(g.Programmes) != 2 {
+		t.Fatalf("programmes = %+v, err = %v", g.Programmes, err)
+	}
+	if got := g.Programmes[1].End; !got.Equal(day.Add(20 * time.Hour)) {
+		t.Fatalf("inferred end = %v", got)
+	}
+}
+
+func TestM3USkipsBadEntries(t *testing.T) {
+	doc := `Provider banner
+# Comment before the header
+#EXTM3U
+#EXTINF:-1,A
+https://example.invalid/a
+https://example.invalid/orphan
+#EXTINF:-1,B
+rtmp://example.invalid/b
+#EXTINF:-1,C
+https://example.invalid/c
+#EXTINF:-1,Dangling
+`
+	cs, stats, err := parseM3U(strings.NewReader(doc), "source")
+	if err != nil || len(cs) != 2 || stats.SkippedInvalid != 3 || cs[0].Name != "A" || cs[1].Name != "C" {
+		t.Fatalf("channels = %+v, stats = %+v, err = %v", cs, stats, err)
+	}
+}
+
+func TestM3UExtGroupAndDisplayName(t *testing.T) {
+	doc := `#EXTM3U
+#EXTINF:-1 tvg-name="A,B",A group-title="wrong" tvg-id="wrong"
+#EXTGRP:Sports
+https://example.invalid/a
+#EXTINF:-1 group-title="News",B
+#EXTGRP:Ignored
+https://example.invalid/b
+`
+	cs, err := ParseM3U(strings.NewReader(doc), "source")
+	if err != nil || len(cs) != 2 {
+		t.Fatalf("channels = %+v, err = %v", cs, err)
+	}
+	if cs[0].Group != "Sports" || cs[0].GuideID != "" || cs[0].TvgName != "A,B" || cs[0].Name != `A group-title="wrong" tvg-id="wrong"` || cs[1].Group != "News" {
+		t.Fatalf("unexpected channels: %+v", cs)
+	}
+}
+
+func TestXMLTVTrimsChannelIDs(t *testing.T) {
+	doc := `<tv><channel id=" a "><display-name>Alpha</display-name></channel>
+<programme start="20260101000000" channel=" a "><title>one</title></programme>
+<programme start="20260101010000" channel="a"><title>two</title></programme>
+<programme start="20260101200000" channel=" a "><title>far</title></programme></tv>`
+	day := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	g, _, err := parseXMLTV(strings.NewReader(doc), guideFilter{From: day, Until: day.Add(12 * time.Hour), IDs: map[string]struct{}{"a": {}}})
+	if err != nil || g.Channels["a"].GuideID != "a" || len(g.Names["a"]) != 1 || len(g.Programmes) != 2 {
+		t.Fatalf("guide = %+v, err = %v", g, err)
+	}
+	for i, p := range g.Programmes {
+		if p.ChannelID != "a" || !p.End.Equal(day.Add([]time.Duration{1, 20}[i]*time.Hour)) {
+			t.Fatalf("unexpected programme: %+v", p)
+		}
+	}
+}

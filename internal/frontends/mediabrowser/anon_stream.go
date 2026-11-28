@@ -2,6 +2,7 @@ package mediabrowser
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -272,16 +273,38 @@ func (x *anonIndex) trimLocked() {
 }
 
 // peerAddr returns the verified transport peer for a request, or an invalid
-// address when the host cannot resolve one. Without a peer the anonymous
-// stream path is disabled rather than binding an entry to every caller.
+// address when the host cannot resolve one or the request arrived through an
+// untrusted forwarder whose clients would share a single peer IP.
 func (i *instance) peerAddr(r *http.Request) netip.Addr {
 	if i.host.ClientIP == nil {
 		return netip.Addr{}
 	}
-	if ip, ok := i.host.ClientIP(r); ok {
-		return ip
+	ip, ok := i.host.ClientIP(r)
+	if !ok {
+		return netip.Addr{}
 	}
-	return netip.Addr{}
+	if untrustedForwardedPeer(r, ip) {
+		return netip.Addr{}
+	}
+	return ip
+}
+
+// untrustedForwardedPeer reports whether r carries forwarding headers while
+// ClientIP still resolved to the direct non-loopback peer, meaning a reverse
+// proxy is not in TrustedProxyCIDRs and all callers behind it share one IP.
+func untrustedForwardedPeer(r *http.Request, resolved netip.Addr) bool {
+	if r == nil || !resolved.IsValid() || resolved.IsLoopback() {
+		return false
+	}
+	if len(r.Header.Values("X-Forwarded-For")) == 0 && len(r.Header.Values("Forwarded")) == 0 && r.Header.Get("X-Real-IP") == "" {
+		return false
+	}
+	host := r.RemoteAddr
+	if h, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		host = h
+	}
+	direct, err := netip.ParseAddr(strings.Trim(host, "[]"))
+	return err == nil && direct.Unmap().WithZone("") == resolved.Unmap().WithZone("")
 }
 
 // rememberAnonymousSession records a session an authenticated viewer just

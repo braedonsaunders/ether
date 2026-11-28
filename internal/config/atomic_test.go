@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func TestWriteFileAtomicReplacesAndCleansUp(t *testing.T) {
@@ -103,5 +104,88 @@ func TestWriteFileAtomicFailureLeavesOriginal(t *testing.T) {
 			names = append(names, e.Name())
 		}
 		t.Fatalf("unexpected files %v", names)
+	}
+}
+
+func TestStoreUpdateDoesNotBlockReadersDuringSave(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialName := s.Read().Server.FriendlyName
+	initialGen := s.Generation()
+
+	inSave := make(chan struct{})
+	releaseSave := make(chan struct{})
+	s.syncDir = func(string) error {
+		close(inSave)
+		<-releaseSave
+		return nil
+	}
+
+	updateErr := make(chan error, 1)
+	go func() {
+		updateErr <- s.Update(func(c *Config) error {
+			c.Server.FriendlyName = "during-save"
+			return nil
+		})
+	}()
+
+	<-inSave
+
+	readDone := make(chan struct{})
+	var readName, getName string
+	var readGen uint64
+	go func() {
+		readName = s.Read().Server.FriendlyName
+		getName = s.Get().Server.FriendlyName
+		readGen = s.Generation()
+		close(readDone)
+	}()
+
+	select {
+	case <-readDone:
+	case <-time.After(250 * time.Millisecond):
+		close(releaseSave)
+		<-updateErr
+		t.Fatal("Read/Get blocked while Update was writing config.json")
+	}
+
+	if readName != initialName || getName != initialName || readGen != initialGen {
+		close(releaseSave)
+		<-updateErr
+		t.Fatalf("readers observed uncommitted state during save: read=%q get=%q gen=%d", readName, getName, readGen)
+	}
+
+	close(releaseSave)
+	if err := <-updateErr; err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if got := s.Read().Server.FriendlyName; got != "during-save" {
+		t.Fatalf("FriendlyName after Update = %q, want %q", got, "during-save")
+	}
+	if got := s.Generation(); got != initialGen+1 {
+		t.Fatalf("Generation after Update = %d, want %d", got, initialGen+1)
+	}
+
+	// Rollback semantics: a failed disk write leaves live config and generation untouched.
+	s.syncDir = syncDirAfterRename
+	badTarget := filepath.Join(dir, "occupied-dir")
+	if err := os.MkdirAll(filepath.Join(badTarget, "child"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s.path = badTarget
+	if err := s.Update(func(c *Config) error {
+		c.Server.FriendlyName = "should-not-stick"
+		return nil
+	}); err == nil {
+		t.Fatal("expected Update to fail when config path is a non-empty directory")
+	}
+	if got := s.Get().Server.FriendlyName; got != "during-save" {
+		t.Fatalf("failed Update mutated live config: got %q, want %q", got, "during-save")
+	}
+	if got := s.Generation(); got != initialGen+1 {
+		t.Fatalf("failed Update bumped generation: got %d, want %d", got, initialGen+1)
 	}
 }

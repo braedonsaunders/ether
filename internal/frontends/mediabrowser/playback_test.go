@@ -513,3 +513,45 @@ func TestInfuseTranscodeResumePlaybackInfoDoesNot503(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 }
+
+func TestPlayingPingKeepsSessionAlive(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	var kept string
+	var reports int
+	sessions := frontendtest.Sessions{
+		KeepAliveFunc: func(_ context.Context, access frontend.SessionAccess, id string) error {
+			if access.Viewer != viewer || access.Protocol != "jellyfin" {
+				t.Fatalf("unexpected session access: %+v", access)
+			}
+			kept = id
+			return nil
+		},
+		ReportFunc: func(context.Context, frontend.SessionAccess, string, frontend.Timeline) error {
+			reports++
+			return nil
+		},
+	}
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) {
+		return viewer, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Sessions: sessions})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ name, query, body, want string }{
+		{"query", "?playSessionId=abc", "", "abc"},
+		{"body fallback", "", `{"PlaySessionId":"def","PositionTicks":123}`, "def"},
+		{"query takes precedence", "?PlaySessionId=abc", `{"PlaySessionId":"def"}`, "abc"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			kept = ""
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest(http.MethodPost, "/Sessions/Playing/Ping"+tc.query, strings.NewReader(tc.body))
+			r.Header.Set("X-Emby-Token", "grant")
+			inst.Handler().ServeHTTP(w, r)
+			if w.Code != http.StatusNoContent || kept != tc.want || reports != 0 {
+				t.Fatalf("ping status=%d kept=%q reports=%d", w.Code, kept, reports)
+			}
+		})
+	}
+}

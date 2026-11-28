@@ -16,7 +16,7 @@ import (
 var (
 	reYear                 = regexp.MustCompile(`\b(188[89]|189\d|19\d{2}|20\d{2})\b`)
 	reTemporadaSE          = regexp.MustCompile(`(?i)(^|[^\p{L}\p{N}])T(\d{1,2})E(\d{1,3})\b`)
-	reSE                   = regexp.MustCompile(`(?i)\bS(\d{1,4})[\s\p{So}\x{FE0F}\x{200D}-]*E(\d{1,4})((?:\s*E\d{1,4})*)(?:\s*-\s*E?(\d{1,4}))?(?:v(\d))?\b`)
+	reSE                   = regexp.MustCompile(`(?i)\bS(\d{1,4})(?:[\s\p{So}\x{FE0F}\x{200D}-]*E|[\s-]+(?:Episode|Ep)\s*)(\d{1,4})((?:\s*(?:Episode\s*|Ep\s*|E)\d{1,4})*)(?:\s*-\s*(?:Episode\s*|Ep\s*|E)?(\d{1,4}))?(?:v(\d))?\b`)
 	reSpanishCapUnderscore = regexp.MustCompile(`(?i)\b(Cap(?:[ií]tulo)?[.\s]*\d{1,4})_(\d{1,4})\b`)
 	reSpanishEpisode       = regexp.MustCompile(`(?i)\b(?:Cap|Cap[ií]tulo)\s*(\d{3,4})(?:\s*(?:-|al|a)\s*(?:Cap(?:[ií]tulo)?\s*)?(\d{1,4}))?\b`)
 	reSpanishShortEpisode  = regexp.MustCompile(`(?i)\b(?:Cap|Cap[ií]tulo)\s*0?([1-9]\d?)(?:\s*(?:-|al|a)\s*(?:Cap(?:[ií]tulo)?\s*)?0?([1-9]\d?))?\b`)
@@ -31,7 +31,7 @@ var (
 	reKoreanSeason         = regexp.MustCompile(`(?:^|\s)시즌\s*(\d{1,2})(?:$|\s|-)`)
 	reKoreanEpisode        = regexp.MustCompile(`(?:^|\s)(\d{1,4})\s*[회화](?:$|\s|-)`)
 	reDashEpisode          = regexp.MustCompile(`(?i)\s-\s*(\d{2,3})\s+(?:\d{3,4}[pi]\b|BD\b|BLURAY\b|WEB|HDTV\b|DVD|X264\b|X265\b|HEVC\b|H264\b|H265\b|AV1\b|XVID\b)`)
-	reEpRange              = regexp.MustCompile(`(?i)E(\d{1,4})`)
+	reEpRange              = regexp.MustCompile(`(?i)(?:Episode\s*|Ep\s*|E)(\d{1,4})`)
 	// Anime absolute numbering and "Season N - EE" / "Nth Season - EE"
 	// (parseAbsoluteEpisode, parseSeasonDashEpisode).
 	reAbsoluteBracket     = regexp.MustCompile(`(?i)(?:^|\s)-\s+(\d{1,4})(?:\s*v\d{1,2})?(?:\s*[\[(]|\s*$|\s+(?:END|FINAL)\b)`)
@@ -863,40 +863,54 @@ func parseStandardEpisodes(spaced, upper string, info *core.ReleaseInfo) int {
 }
 
 // parseSEEpisode reads the SxxEyy pattern (reSE), including chained E##
-// tokens (S01E02E03) and a range tail (S01E02-E04).
+// tokens (S01E02E03), adjacent repeated tokens (S01E05.S01E06), and a range
+// tail (S01E02-E04).
 func parseSEEpisode(spaced string) (seasons, episodes []int, at int, ok bool) {
-	loc := reSE.FindStringSubmatchIndex(spaced)
-	if loc == nil {
+	locs := reSE.FindAllStringSubmatchIndex(spaced, -1)
+	if len(locs) == 0 {
 		return nil, nil, -1, false
 	}
-	m := submatches(spaced, loc)
-	s, _ := strconv.Atoi(m[1])
+	parseOne := func(loc []int) (int, []int) {
+		m := submatches(spaced, loc)
+		s, _ := strconv.Atoi(m[1])
+		first, _ := strconv.Atoi(m[2])
+		eps := []int{first}
+		for _, em := range reEpRange.FindAllStringSubmatch(m[3], -1) {
+			n, _ := strconv.Atoi(em[1])
+			eps = append(eps, n)
+		}
+		if m[4] != "" && len(eps) == 1 {
+			last, _ := strconv.Atoi(m[4])
+			if last > first && last-first <= 30 && rangeTailPresent(spaced, m[0]) {
+				for n := first + 1; n <= last; n++ {
+					eps = append(eps, n)
+				}
+			} else if last != first {
+				eps = append(eps, last)
+			}
+		}
+		return s, eps
+	}
+	s, eps := parseOne(locs[0])
 	seasons = []int{s}
-	at = loc[0]
-	if ploc := rePrecedingOrdinal.FindStringSubmatchIndex(spaced[:loc[0]]); ploc != nil {
+	at = locs[0][0]
+	if ploc := rePrecedingOrdinal.FindStringSubmatchIndex(spaced[:locs[0][0]]); ploc != nil {
 		if ord, err := strconv.Atoi(spaced[ploc[2]:ploc[3]]); err == nil && ord == s {
 			at = ploc[0]
 		}
 	}
-	first, _ := strconv.Atoi(m[2])
-	eps := []int{first}
-	// Additional E## tokens chained (S01E02E03).
-	for _, em := range reEpRange.FindAllStringSubmatch(m[3], -1) {
-		n, _ := strconv.Atoi(em[1])
-		eps = append(eps, n)
-	}
-	// Range tail: S01E02-E04 or S01E02-04 (captured last group beyond chained).
-	if m[4] != "" && len(eps) == 1 {
-		last, _ := strconv.Atoi(m[4])
-		// Only expand when it really looks like a range end and is
-		// a small step forward.
-		if last > first && last-first <= 30 && rangeTailPresent(spaced, m[0]) {
-			for n := first + 1; n <= last; n++ {
-				eps = append(eps, n)
-			}
-		} else if last != first {
-			eps = append(eps, last)
+	prevEnd := locs[0][1]
+	for _, loc := range locs[1:] {
+		gap := strings.TrimSpace(spaced[prevEnd:loc[0]])
+		if gap != "" && gap != "-" && gap != "&" && gap != "+" && !strings.EqualFold(gap, "and") {
+			break
 		}
+		nextS, nextEps := parseOne(loc)
+		if nextS != s {
+			break
+		}
+		eps = append(eps, nextEps...)
+		prevEnd = loc[1]
 	}
 	sort.Ints(eps)
 	return seasons, dedupeInts(eps), at, true

@@ -25,7 +25,9 @@ func TestIsPublicIP(t *testing.T) {
 		"169.254.169.254", "169.254.0.1", "fe80::1", // link-local / cloud metadata
 		"100.64.0.1", "100.127.255.1", // CGNAT (repo treats it as local)
 		"224.0.0.1", "ff02::1", // multicast
-		"0.0.0.0", "::", // unspecified
+		"0.0.0.0", "0.1.2.3", "::", // unspecified / "this network"
+		"192.0.0.1", "198.18.0.1", "198.19.255.254", "240.0.0.1", "255.255.255.255", // IANA special IPv4
+		"64:ff9b::127.0.0.1", "64:ff9b:1::1", "2002:7f00:0001::1", "2001::1", "100::1", // NAT64, 6to4, Teredo, discard
 		"::ffff:127.0.0.1", "::ffff:10.0.0.1", // v4-in-v6 forms of blocked v4
 		"not-an-ip", "",
 	}

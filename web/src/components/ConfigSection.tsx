@@ -146,9 +146,16 @@ export function ConfigSection({
       // the stored value, so another form editing the same section is never undone.
       if (endpoint) await api.putSection(endpoint, pickShown(draft, groups));
       else {
-        // Merge into the live config: another form on the page may have just saved.
-        const live = await api.getConfig();
-        await api.putConfig({ ...live, [configKey]: draft } as EtherConfig);
+        // Merge only this form's keys into the live section: another form on
+        // the page may have just saved the same section. The live `cache` is
+        // the effective (possibly shared) policy, so it is only sent back by
+        // the cache form itself; the server keeps the stored one otherwise.
+        const live = (await api.getConfig()) as unknown as Obj;
+        const { cache: _effectiveCache, ...rest } = live;
+        await api.putConfig({
+          ...rest,
+          [configKey]: { ...asObj(live[configKey]), ...pickShown(draft, groups) },
+        } as unknown as EtherConfig);
       }
       toast.success(t("Settings saved"), { description: label });
       await config.reload();

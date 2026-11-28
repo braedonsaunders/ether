@@ -54,6 +54,7 @@ type feedScheduleState struct {
 	lastScheduleFetch time.Time
 	lastPoll          time.Time
 	nextPollAt        time.Time
+	consecutiveErrors int
 }
 
 // AlertSchedulerOptions configures the A7 bounded alert-window scheduler.
@@ -277,8 +278,15 @@ func (s *AlertScheduler) Step(ctx context.Context) (nextWake time.Time, hasWake 
 		res, pollErr := s.poller.PollEvents(ctx, fk.pluginID, fk.feedID, openIDs)
 		pollInterval := s.effectivePollInterval(res.NextPollSec)
 		s.mu.Lock()
+		if pollErr != nil {
+			st.consecutiveErrors++
+			pollInterval = max(s.minPollInterval, errorBackoff(s.minPollInterval, st.consecutiveErrors, 0))
+		} else {
+			st.consecutiveErrors = 0
+		}
 		st.lastPoll = now
-		st.nextPollAt = now.Add(pollInterval)
+		st.nextPollAt = s.now().Add(pollInterval)
+		scheduledNext = st.nextPollAt
 		s.mu.Unlock()
 
 		if pollErr == nil {
@@ -289,7 +297,7 @@ func (s *AlertScheduler) Step(ctx context.Context) (nextWake time.Time, hasWake 
 		// (for example, if the final whistle just blew, stop polling immediately).
 		remainingOpen, nextUpcoming := s.openAndUpcomingForFeed(fk, now)
 		if len(remainingOpen) > 0 {
-			considerWake(now.Add(pollInterval))
+			considerWake(scheduledNext)
 		} else if !nextUpcoming.IsZero() {
 			considerWake(nextUpcoming)
 		}

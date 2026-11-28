@@ -79,7 +79,7 @@ func TestContinueWatchingRefreshIncludesPagination(t *testing.T) {
 	if rec := f.get(t, "/:/scrobble?key="+keys[0].String()+"&identifier=com.plexapp.plugins.library"); rec.Code != http.StatusOK {
 		t.Fatal(rec.Code)
 	}
-	for _, path := range []string{"/hubs/sections/1/continueWatching/items", "/hubs/home/continueWatching", "/hubs/continueWatching/items"} {
+	for _, path := range []string{"/hubs/sections/1/continueWatching/items", "/hubs/home/continueWatching", "/hubs/continueWatching/items", "/hubs/items?identifier=home.continue"} {
 		for _, page := range []struct{ start, size, want int }{{0, 4, 3}, {1, 1, 1}, {3, 2, 0}, {0, 0, 0}} {
 			mc := decodeJSON(t, f.get(t, path, "Accept", "application/json", "X-Plex-Container-Start", fmt.Sprint(page.start), "X-Plex-Container-Size", fmt.Sprint(page.size)))
 			if mc["totalSize"] != float64(3) || mc["offset"] != float64(page.start) || mc["size"] != float64(page.want) {

@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -53,6 +54,26 @@ CREATE INDEX segcache_files_created ON segcache_files(created);
 // reclaimStale is how long an unfinished reclaim record counts: a node that
 // died mid-unlink must not hold the floor open for ever.
 const reclaimStale = 10 * 60 // seconds
+
+var (
+	sharedPoolsMu sync.Mutex
+	sharedPools   = map[string][]*Cache{}
+)
+
+func (s *sharedCache) unregisterPool() {
+	sharedPoolsMu.Lock()
+	defer sharedPoolsMu.Unlock()
+	list := sharedPools[s.token]
+	for i, peer := range list {
+		if peer == s.c {
+			sharedPools[s.token] = append(list[:i], list[i+1:]...)
+			break
+		}
+	}
+	if len(sharedPools[s.token]) == 0 {
+		delete(sharedPools, s.token)
+	}
+}
 
 type sharedCache struct {
 	beforeUnlink func() // tests: runs between an eviction's commit and its unlinks
@@ -131,6 +152,9 @@ func OpenShared(dir string, budget int64, db *sql.DB, node string, logger *slog.
 		return nil, err
 	}
 	c.initEvictWorker(false)
+	sharedPoolsMu.Lock()
+	sharedPools[s.token] = append(sharedPools[s.token], c)
+	sharedPoolsMu.Unlock()
 	return c, nil
 }
 func randomName() string {
@@ -277,12 +301,15 @@ func (s *sharedCache) put(id string, seg int, b []byte, lease string) error {
 	var used int64
 	err = s.tx(ctx, func(tx *sql.Tx) error {
 		if lease != "" {
-			result, err := tx.ExecContext(ctx, `DELETE FROM segcache_writes WHERE id=? AND expires>`+s.nowSQL(), lease)
+			result, err := tx.ExecContext(ctx, `UPDATE segcache_writes SET bytes=bytes-? WHERE id=? AND bytes>=? AND expires>`+s.nowSQL(), len(b), lease, len(b))
 			if err != nil {
 				return err
 			}
 			if n, err := result.RowsAffected(); err != nil || n != 1 {
 				return errors.New("segment write reservation expired")
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM segcache_writes WHERE id=? AND bytes<=0`, lease); err != nil {
+				return err
 			}
 		}
 		var size int64
@@ -807,6 +834,12 @@ func (s *sharedCache) evictTarget(id string, expire, watermarked bool, need int6
 	return more, reclaimed, unlinkErr
 }
 func (s *sharedCache) heartbeat() {
+	s.c.mu.Lock()
+	batchExpired := s.c.batchBytes > 0 && s.c.now().Sub(s.c.batchAt) >= headroomRefreshEvery
+	s.c.mu.Unlock()
+	if batchExpired {
+		s.c.releaseBatch()
+	}
 	ctxGC, stopGC := s.context()
 	_, gcErr := s.db.ExecContext(ctxGC, `DELETE FROM segcache_writes WHERE expires<=`+s.nowSQL())
 	stopGC()

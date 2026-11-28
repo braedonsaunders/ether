@@ -306,3 +306,51 @@ func TestJellyfinResumeStaysOnPlayableItems(t *testing.T) {
 		}
 	}
 }
+
+func TestResumeUnderParentIncludesLaterPagesInWatchOrder(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	parent := core.ShowKey(7)
+	children := make([]frontend.Title, showChildPageMax+1)
+	for n := range children {
+		children[n] = frontend.Title{Key: core.EpisodeKey(7, n/100+1, n%100+1), Type: "episode", ShowKey: parent, Title: "Episode"}
+	}
+	mostRecent := children[len(children)-1].Key
+	states := map[frontend.RatingKey]frontend.WatchStatus{
+		children[0].Key: {ViewOffset: time.Minute, LastViewedAt: time.Unix(10, 0)},
+		mostRecent:      {ViewOffset: time.Minute, LastViewedAt: time.Unix(20, 0)},
+	}
+	experience := frontendtest.Experience{
+		ChildrenFunc: func(_ context.Context, _ *frontend.Viewer, _ frontend.Device, key frontend.RatingKey, q frontend.ItemQuery) (frontend.Page, error) {
+			if key != parent || !q.Recursive {
+				t.Fatalf("unexpected child query %+v on %v", q, key)
+			}
+			return frontend.Page{Items: children[q.Offset:min(q.Offset+q.Limit, len(children))], Total: len(children)}, nil
+		},
+		UserDataFunc: func(_ context.Context, _ *frontend.Viewer, keys []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
+			result := map[frontend.RatingKey]frontend.WatchStatus{}
+			for _, k := range keys {
+				if state, ok := states[k]; ok {
+					result[k] = state
+				}
+			}
+			return result, nil
+		},
+	}
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(t.Context(), frontend.Host{Identity: identity, Experience: experience})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "/UserItems/Resume?Limit=1&ParentId="+ids.RatingKeyGUID(parent), nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	var page struct {
+		Items            []struct{ ID string }
+		TotalRecordCount int
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &page) != nil || page.TotalRecordCount != 2 ||
+		len(page.Items) != 1 || page.Items[0].ID != ids.RatingKeyGUID(mostRecent) {
+		t.Fatalf("HTTP %d: %s", w.Code, w.Body.String())
+	}
+}

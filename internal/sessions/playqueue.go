@@ -279,6 +279,7 @@ func (s *PlayQueues) createShared(userID int64, clientID string, keys []core.Rat
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), playQueueDBTimeout)
 	defer cancel()
+	known := s.queueClients(ctx, userID)
 	tx, err := s.cl.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return PlayQueue{}, err
@@ -292,7 +293,7 @@ func (s *PlayQueues) createShared(userID int64, clientID string, keys []core.Rat
 	if err = tx.QueryRowContext(ctx, `INSERT INTO plex_playqueues(user_id, rev, data, updated_at) VALUES (?, ?, ?, ?) RETURNING id`, userID, q.Rev, data, now.UnixMilli()).Scan(&q.ID); err != nil {
 		return PlayQueue{}, err
 	}
-	retired, err := retireQueueClient(ctx, tx, userID, clientID, q.ID)
+	retired, err := retireQueueClient(ctx, tx, userID, clientID, q.ID, known)
 	if err != nil {
 		return PlayQueue{}, err
 	}
@@ -439,6 +440,7 @@ func QueueItemIndex(items []QueueItem, id int64) int {
 // newly allocated identity. This also applies when the requested state repeats.
 func (s *PlayQueues) Reshuffle(q *PlayQueue, shuffled bool) {
 	oldVersion := q.Version
+	saved := *q // the slices are replaced, never edited in place
 	if shuffled {
 		original := append([]QueueItem(nil), q.Original...)
 		if q.Shuffled {
@@ -463,6 +465,9 @@ func (s *PlayQueues) Reshuffle(q *PlayQueue, shuffled bool) {
 		var err error
 		minted, err = s.Preallocate(keys)
 		if err != nil {
+			// Leave the queue as it was: reordered items with their old ids
+			// would be saved as if the control had succeeded.
+			*q = saved
 			return
 		}
 	}
@@ -505,6 +510,7 @@ func (s *PlayQueues) Take(id, userID int64, clientID string, now time.Time) (Pla
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), playQueueDBTimeout)
 	defer cancel()
+	known := s.queueClients(ctx, userID)
 	tx, err := s.cl.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return PlayQueue{}, false
@@ -535,7 +541,7 @@ func (s *PlayQueues) Take(id, userID int64, clientID string, now time.Time) (Pla
 	if _, err = tx.ExecContext(ctx, `UPDATE plex_playqueues SET data=?,rev=?,updated_at=? WHERE id=?`, data, q.Rev, now.UnixMilli(), id); err != nil {
 		return PlayQueue{}, false
 	}
-	retired, err := retireQueueClient(ctx, tx, userID, clientID, id)
+	retired, err := retireQueueClient(ctx, tx, userID, clientID, id, known)
 	if err != nil {
 		return PlayQueue{}, false
 	}
@@ -551,35 +557,100 @@ func (s *PlayQueues) Take(id, userID int64, clientID string, now time.Time) (Pla
 	return q.Snapshot(), true
 }
 
-// Bound work by active queues, independently of catalogue size.
-func retireQueueClient(ctx context.Context, tx *sql.Tx, userID int64, clientID string, keep int64) ([]int64, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT id,data FROM plex_playqueues WHERE user_id=? AND id<>? LIMIT 2000`, userID, keep)
+// queueClient is a stored queue's owner client as of revision rev.
+type queueClient struct {
+	rev    int64
+	client string
+}
+
+// queueClients reads the user's queue owners before the transaction takes the
+// global counter lock, so the blobs are decoded outside it. It is only a hint:
+// retireQueueClient re-checks each row's rev under the lock. A failure just
+// leaves the hint empty and the rows are decoded under the lock instead.
+func (s *PlayQueues) queueClients(ctx context.Context, userID int64) map[int64]queueClient {
+	known := map[int64]queueClient{}
+	rows, err := s.cl.DB.QueryContext(ctx, `SELECT id,rev,data FROM plex_playqueues WHERE user_id=? LIMIT 2000`, userID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, rev int64
+		var data string
+		if rows.Scan(&id, &rev, &data) != nil {
+			return nil
+		}
+		client, err := queueClientOf(data)
+		if err != nil {
+			return nil
+		}
+		known[id] = queueClient{rev, client}
+	}
+	if rows.Err() != nil {
+		return nil
+	}
+	return known
+}
+
+func queueClientOf(data string) (string, error) {
+	var sq struct {
+		ClientID string `json:"clientID"`
+	}
+	if err := json.Unmarshal([]byte(data), &sq); err != nil {
+		return "", err
+	}
+	return sq.ClientID, nil
+}
+
+// lockedQueueClient decodes one queue's owner client inside the counter-lock
+// transaction; a seam for tests that count how often that slow path runs.
+var lockedQueueClient = func(ctx context.Context, tx *sql.Tx, id int64) (string, error) {
+	var data string
+	if err := tx.QueryRowContext(ctx, `SELECT data FROM plex_playqueues WHERE id=?`, id).Scan(&data); err != nil {
+		return "", err
+	}
+	return queueClientOf(data)
+}
+
+// Bound work by active queues, independently of catalogue size. known holds
+// owners read before the lock; only rows it lacks or has at another rev (a
+// queue created or taken since) are decoded under the lock.
+func retireQueueClient(ctx context.Context, tx *sql.Tx, userID int64, clientID string, keep int64, known map[int64]queueClient) ([]int64, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id,rev FROM plex_playqueues WHERE user_id=? AND id<>? LIMIT 2000`, userID, keep)
 	if err != nil {
 		return nil, err
 	}
-	var ids []int64
+	type row struct{ id, rev int64 }
+	var all []row
 	for rows.Next() {
-		var id int64
-		var data string
-		if err = rows.Scan(&id, &data); err != nil {
+		var r row
+		if err = rows.Scan(&r.id, &r.rev); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		var sq struct {
-			ClientID string `json:"clientID"`
-		}
-		if err = json.Unmarshal([]byte(data), &sq); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		if sq.ClientID == clientID {
-			ids = append(ids, id)
-		}
+		all = append(all, r)
 	}
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
 		return nil, err
+	}
+	var ids []int64
+	for _, r := range all {
+		owner, ok := known[r.id]
+		if !ok || owner.rev != r.rev {
+			c, err := lockedQueueClient(ctx, tx, r.id)
+			if errors.Is(err, sql.ErrNoRows) {
+				continue // expired since the listing
+			}
+			if err != nil {
+				return nil, err
+			}
+			owner.client = c
+		}
+		if owner.client == clientID {
+			ids = append(ids, r.id)
+		}
 	}
 	for _, id := range ids {
 		if _, err = tx.ExecContext(ctx, `DELETE FROM plex_playqueues WHERE id=? AND user_id=?`, id, userID); err != nil {

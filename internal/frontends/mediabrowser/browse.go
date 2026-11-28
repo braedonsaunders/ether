@@ -535,19 +535,26 @@ func (i *instance) browseRoutes() error {
 				r = i.withPageEditions(r, v, keys)
 			}
 			i.fillSeriesTitles(r, v, page)
+			if purpose == frontend.RowNextUp && i.host.Experience != nil {
+				// The stored episode can lack the series name, so fill the page
+				// again in one batch rather than looking each show up per item.
+				replaced := false
+				for n, title := range page {
+					if title.Type != "episode" {
+						continue
+					}
+					if stored, ok := i.storedListTitle(r, v, title.Key); ok && stored.Type == "episode" {
+						page[n] = stored
+						replaced = true
+					}
+				}
+				if replaced {
+					i.fillSeriesTitles(r, v, page)
+				}
+			}
 			i.prefetchParentArtwork(r, page)
 			i.primeTitleLibraries(r, v, page)
 			for _, title := range page {
-				if purpose == frontend.RowNextUp && title.Type == "episode" && i.host.Experience != nil {
-					if stored, ok := i.storedListTitle(r, v, title.Key); ok && stored.Type == "episode" {
-						title = stored
-					}
-				}
-				if title.ShowTitle == "" && (title.Type == "episode" || title.Type == "season") {
-					one := []frontend.Title{title}
-					i.fillSeriesTitles(r, v, one)
-					title = one[0]
-				}
 				item := i.itemDTO(title, state[title.Key])
 				if p := paths[title.Key]; p != "" {
 					item["Path"] = p

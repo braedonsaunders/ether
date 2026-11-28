@@ -567,7 +567,13 @@ func siloMediaURL(sessionID string, format frontend.StreamFormat) string {
 	return "/api/v2/stream/" + sessionID
 }
 
+const (
+	maxPlaybackPlans = 4096
+	playbackPlanTTL  = 24 * time.Hour
+)
+
 type playbackPlan struct {
+	lastUsed        time.Time
 	replacement     string
 	format          frontend.StreamFormat
 	live            bool
@@ -588,17 +594,57 @@ type playbackPlan struct {
 func (i *instance) rememberPlan(id string, plan playbackPlan) {
 	i.plansMu.Lock()
 	defer i.plansMu.Unlock()
+	now := time.Now()
 	if i.plans == nil {
 		i.plans = map[string]playbackPlan{}
 	}
+	var oldestID string
+	var oldestAt time.Time
+	for cachedID, cached := range i.plans {
+		if now.Sub(cached.lastUsed) >= playbackPlanTTL {
+			delete(i.plans, cachedID)
+		} else if oldestAt.IsZero() || cached.lastUsed.Before(oldestAt) {
+			oldestID, oldestAt = cachedID, cached.lastUsed
+		}
+	}
+	if _, exists := i.plans[id]; !exists && len(i.plans) >= maxPlaybackPlans {
+		delete(i.plans, oldestID)
+	}
+	plan.lastUsed = now
 	i.plans[id] = plan
+}
+
+func (i *instance) updatePlan(id string, plan playbackPlan) {
+	i.plansMu.Lock()
+	defer i.plansMu.Unlock()
+	// A replan can finish after a stop has removed the session's plan.
+	if _, ok := i.plans[id]; ok {
+		plan.lastUsed = time.Now()
+		i.plans[id] = plan
+	}
 }
 
 func (i *instance) rememberedPlan(id string) (playbackPlan, bool) {
 	i.plansMu.Lock()
 	defer i.plansMu.Unlock()
 	plan, ok := i.plans[id]
-	return plan, ok
+	if !ok {
+		return playbackPlan{}, false
+	}
+	now := time.Now()
+	if now.Sub(plan.lastUsed) >= playbackPlanTTL {
+		delete(i.plans, id)
+		return playbackPlan{}, false
+	}
+	plan.lastUsed = now
+	i.plans[id] = plan
+	return plan, true
+}
+
+func (i *instance) forgetPlan(id string) {
+	i.plansMu.Lock()
+	defer i.plansMu.Unlock()
+	delete(i.plans, id)
 }
 
 // siloQualityMenu lists Ether's default quality profiles (config.DefaultQuality)
@@ -687,6 +733,7 @@ func siloActiveQuality(preference string, menu []any, videoCopy bool, encodeHeig
 func (i *instance) stopFailedAdmission(ctx context.Context, access frontend.SessionAccess, sessionID string) {
 	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
 	defer cancel()
+	i.forgetPlan(sessionID)
 	if err := i.host.Sessions.Stop(cleanup, access, sessionID); err != nil && i.host.Log != nil {
 		i.host.Log.Error("failed playback admission cleanup", "session", sessionID, "err", err)
 	}
@@ -747,7 +794,9 @@ func (i *instance) progress(w http.ResponseWriter, r *http.Request) {
 		// The airing's watch state is saved after the tune is released or
 		// kept alive; it does not need the session.
 		if stop {
-			_ = i.host.LiveTV.Stop(r.Context(), sessionID, v)
+			if err := i.host.LiveTV.Stop(r.Context(), sessionID, v); err == nil {
+				i.forgetPlan(sessionID)
+			}
 			i.catchUpProgress(r, v, info, b.Position, b.Paused, true)
 			reply(w, 200, map[string]any{"outcome": "stopped", "stop_id": b.StopID})
 		} else if b.Sequence == 0 || b.Position == nil || b.Paused == nil || *b.Position < 0 {
@@ -768,6 +817,7 @@ func (i *instance) progress(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Unavailable", 503)
 			return
 		}
+		i.forgetPlan(sessionID)
 		reply(w, 200, map[string]any{"outcome": "stopped", "stop_id": b.StopID})
 		return
 	}
@@ -793,8 +843,13 @@ func (i *instance) progress(w http.ResponseWriter, r *http.Request) {
 	if outcome == frontend.ReportApplied || outcome == frontend.ReportReplayed {
 		response["accepted"] = map[string]any{"position": *b.Position, "sequence": b.Sequence, "is_paused": *b.Paused}
 	}
-	if stop && (outcome == frontend.ReportApplied || outcome == frontend.ReportReplayed) {
-		response["outcome"] = "stopped"
+	if outcome == frontend.ReportApplied || outcome == frontend.ReportReplayed {
+		if stop {
+			i.forgetPlan(sessionID)
+			response["outcome"] = "stopped"
+		} else {
+			_, _ = i.rememberedPlan(sessionID)
+		}
 	}
 	if b.StopID != "" {
 		response["stop_id"] = b.StopID
@@ -1196,7 +1251,7 @@ func (i *instance) playbackReplan(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	document["session_id"] = id
-	i.rememberPlan(id, playbackPlan{replacement: snap.replacement, format: nextFormat, live: snap.live, baseID: baseID, delivery: nextDelivery, requireAuthored: snap.requireAuthored, body: document, start: snap.start, media: snap.media, hlsRenditions: snap.hlsRenditions, audioCopy: snap.audioCopy && nextDelivery != "server_transcode_hls"})
+	i.updatePlan(id, playbackPlan{replacement: snap.replacement, format: nextFormat, live: snap.live, baseID: baseID, delivery: nextDelivery, requireAuthored: snap.requireAuthored, body: document, start: snap.start, media: snap.media, hlsRenditions: snap.hlsRenditions, audioCopy: snap.audioCopy && nextDelivery != "server_transcode_hls"})
 	reply(w, http.StatusOK, document)
 }
 
@@ -1639,7 +1694,7 @@ func (i *instance) replanSelection(w http.ResponseWriter, r *http.Request, b rep
 	}
 	document["session_id"] = id
 	snap.body = document
-	i.rememberPlan(id, snap)
+	i.updatePlan(id, snap)
 	reply(w, http.StatusOK, document)
 }
 

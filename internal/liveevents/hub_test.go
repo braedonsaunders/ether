@@ -948,3 +948,66 @@ func TestHubClusterLeaderOnlyPollingAndFanout(t *testing.T) {
 	cancel()
 	wg.Wait()
 }
+
+func TestHubOverflowOnlyPublishesChanges(t *testing.T) {
+	hub := NewHub(Options{MaxEventsPerFeed: 2, MaxTotalEvents: 3})
+	defer hub.Close()
+	const before = "2026-11-22T18:00:00Z"
+	events := []core.LiveEvent{
+		sampleEvent("a", core.LiveEventStatePre, "0", "0", before),
+		sampleEvent("b", core.LiveEventStatePre, "0", "0", before),
+		sampleEvent("c", core.LiveEventStatePre, "0", "0", before),
+	}
+	if got := hub.ingestEvents("plug", "feed", events, false); len(got) != len(events) {
+		t.Fatalf("initial changes = %d, want %d", len(got), len(events))
+	}
+	if got := hub.ingestEvents("plug", "feed", events, false); len(got) != 0 {
+		t.Fatalf("unchanged overflow re-emitted %d events", len(got))
+	}
+	events[0].Status.State = core.LiveEventStateIn
+	got := hub.ingestEvents("plug", "feed", events, false)
+	if len(got) != 1 || got[0].ID != "plug:feed:a" {
+		t.Fatalf("updated overflow = %+v", got)
+	}
+	if len(hub.events) != 2 {
+		t.Fatalf("cached events = %d, want 2", len(hub.events))
+	}
+}
+
+func TestHubAlertsObserveOneBatchAfterFanout(t *testing.T) {
+	src := newFakePluginSource(FeedInfo{PluginID: "plug", FeedID: "feed", MinIntervalSec: 10})
+	hub := NewHub(Options{Source: src})
+	defer hub.Close()
+	sub, err := hub.Subscribe(t.Context(), SubscribeRequest{EventIDs: []string{"plug:feed:a", "plug:feed:b"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sub.Close()
+	waitCall(t, src.called)
+
+	calls := 0
+	unsubscribe := hub.OnEventBatch(func(changed []core.LiveEvent) {
+		calls++
+		select {
+		case updates := <-sub.Updates():
+			if len(updates) != 2 || len(changed) != 2 || updates[0].ID != changed[0].ID || updates[1].ID != changed[1].ID {
+				t.Fatalf("subscriber got %+v, hook got %+v", updates, changed)
+			}
+		default:
+			t.Fatal("batch hook ran before subscriber fan-out")
+		}
+	})
+	const at = "2026-11-22T18:00:00Z"
+	batch := []core.LiveEvent{
+		sampleEvent("a", core.LiveEventStatePre, "0", "0", at),
+		sampleEvent("b", core.LiveEventStatePre, "0", "0", at),
+	}
+	hub.ingestEvents("plug", "feed", batch, false)
+	hub.ingestEvents("plug", "feed", batch, false)
+	unsubscribe()
+	batch[0].Status.State = core.LiveEventStateIn
+	hub.ingestEvents("plug", "feed", batch, false)
+	if calls != 1 {
+		t.Fatalf("batch hook called %d times, want 1", calls)
+	}
+}

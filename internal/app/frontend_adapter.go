@@ -13,6 +13,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/blobcache"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/libraries"
 	"github.com/braedonsaunders/ether/internal/pluginitems"
 	"github.com/braedonsaunders/ether/internal/plugins"
 	"github.com/braedonsaunders/ether/internal/plugins/frontendadapter"
@@ -71,7 +72,7 @@ func (c adapterCatalog) resolveLibraries(ctx context.Context, pluginID string, k
 	}
 	out := make([]core.LibraryID, 0, len(kindKeys))
 	for _, key := range kindKeys {
-		lib, err := c.app.libraries.ByKey(ctx, core.PluginLibraryKey(pluginID, key))
+		lib, err := c.app.libraries.ByPluginKind(ctx, pluginID, key)
 		if err != nil {
 			continue
 		}
@@ -310,9 +311,9 @@ func (a *App) adapterKindLibrary(ctx context.Context, pluginID string, viewerID 
 	if err != nil || viewer == nil {
 		return nil, core.Library{}, false, plugins.ErrPermissionDenied
 	}
-	lib, err := a.libraries.ByKey(ctx, core.PluginLibraryKey(pluginID, kindKey))
+	lib, err := a.libraries.ByPluginKind(ctx, pluginID, kindKey)
 	if err != nil {
-		if errors.Is(err, core.ErrNotFound) {
+		if errors.Is(err, core.ErrNotFound) || errors.Is(err, libraries.ErrDeleted) {
 			return viewer, core.Library{}, false, nil
 		}
 		return nil, core.Library{}, false, err

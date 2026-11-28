@@ -38,6 +38,7 @@ type bufferedSession struct {
 	access             atomic.Int64
 	published          atomic.Bool
 	mu                 sync.Mutex
+	capture            chan struct{}
 	headers            map[int64]http.Header // At most one entry per retained segment.
 	supersededAt       int64                 // -1 until a fixed-grid replacement is committed (Runtime.mu).
 	reason             string
@@ -61,7 +62,47 @@ func (r *Runtime) newBufferedSession(route Route, q core.HLSRequest, s *remotetr
 		slog.Warn("recovery buffer admission refused", "session", route.Fence.Session, "error", err)
 		return nil // Existing public sequences are never overwritten or evicted.
 	}
-	return &bufferedSession{controlledSession: &controlledSession{Session: s, r: r}, r: r, route: route, headers: make(map[int64]http.Header), supersededAt: -1}
+	return &bufferedSession{controlledSession: &controlledSession{Session: s, r: r}, r: r, route: route, capture: make(chan struct{}, 1), headers: make(map[int64]http.Header), supersededAt: -1}
+}
+
+const (
+	// outputScratchBudgetBytes bounds worst-case concurrent segment capture
+	// memory across buffered sessions (128 MiB only when MaxSegmentBytes > 32 MiB).
+	outputScratchBudgetBytes int64 = 64 << 20
+	maxPooledSegmentScratch        = 16 << 20
+)
+
+func outputScratchSlots(maxSegmentBytes int64) int {
+	if maxSegmentBytes <= 0 {
+		return 2
+	}
+	return min(max(int(outputScratchBudgetBytes/maxSegmentBytes), 2), 16)
+}
+
+func (r *Runtime) acquireOutputScratch() []byte {
+	if p, ok := r.outputScratchPool.Get().(*[]byte); ok && p != nil {
+		return (*p)[:0]
+	}
+	return nil
+}
+
+func (r *Runtime) releaseOutputScratch(b []byte) {
+	limit := int(min(r.o.MaxSegmentBytes, maxPooledSegmentScratch))
+	if cap(b) == 0 || (limit > 0 && cap(b) > limit) {
+		return
+	}
+	b = b[:0]
+	r.outputScratchPool.Put(&b)
+}
+
+func (s *bufferedSession) captureGate() chan struct{} {
+	s.mu.Lock()
+	if s.capture == nil {
+		s.capture = make(chan struct{}, 1)
+	}
+	ch := s.capture
+	s.mu.Unlock()
+	return ch
 }
 
 func (r *Runtime) SnapshotOutput(id string) (OutputBufferSnapshot, error) {
@@ -217,6 +258,21 @@ func (s *bufferedSession) serveSegment(w http.ResponseWriter, q *http.Request, n
 	}
 	wait, cancel := context.WithTimeout(q.Context(), waitBound)
 	defer cancel()
+	gate := s.captureGate()
+	select {
+	case gate <- struct{}{}:
+		defer func() { <-gate }()
+	case <-wait.Done():
+		http.Error(w, "segment capture unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if s.serveRetained(w, q, n, key, &retained) {
+		return
+	}
+	if s.passThrough(n) {
+		serve(w, q)
+		return
+	}
 	select {
 	case s.r.outputScratch <- struct{}{}:
 		defer func() { <-s.r.outputScratch }()
@@ -231,7 +287,8 @@ func (s *bufferedSession) serveSegment(w http.ResponseWriter, q *http.Request, n
 	// Scratch is charged globally BEFORE allocation/read. No recorder, pipe,
 	// child reader or retry exists. Hold only the final representation byte until
 	// validated contiguous publication; preceding bytes retain backpressure.
-	capture := &segmentCapture{ResponseWriter: w, limit: s.r.o.MaxSegmentBytes, body: make([]byte, 0, int(s.r.o.MaxSegmentBytes))}
+	capture := &segmentCapture{ResponseWriter: w, limit: s.r.o.MaxSegmentBytes, body: s.r.acquireOutputScratch()}
+	defer func() { s.r.releaseOutputScratch(capture.body) }()
 	completion := serve(capture, q)
 	if completion.StatusCode == http.StatusServiceUnavailable && capture.Header().Get("Retry-After") != "" {
 		return
@@ -489,9 +546,18 @@ func (w *segmentCapture) Write(p []byte) (int, error) {
 		n, err := w.ResponseWriter.Write(p[:count])
 		if err != nil || n != count {
 			w.failed = true
-			w.body = nil
+			w.body = w.body[:0]
 			return n, err
 		}
+	}
+	if need := len(w.body) + len(p); need > cap(w.body) {
+		nextCap := max(cap(w.body)*2, need, 64<<10)
+		if int64(nextCap) > w.length {
+			nextCap = int(w.length)
+		}
+		grown := make([]byte, len(w.body), nextCap)
+		copy(grown, w.body)
+		w.body = grown
 	}
 	w.body = append(w.body, p...)
 	return len(p), nil

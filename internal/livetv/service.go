@@ -97,6 +97,8 @@ type Service struct {
 	broadcastProviders    map[string]map[string]string
 	providerWait          providerWaitQueue
 	chanSnap              channelSnapshot // decoded lineup shared by request paths (channel_cache.go)
+	catchUpListMu         sync.Mutex
+	catchUpLists          map[catchUpListKey]catchUpListEntry
 	guidePreviewMu        sync.Mutex
 	guidePreview          map[string]guidePreviewEntry
 	authCache             authCache  // provider credentials for the stream path (auth.go)

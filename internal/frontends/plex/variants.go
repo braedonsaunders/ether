@@ -798,6 +798,8 @@ func (s *Server) watchVariants(pr *Request, t *frontend.Title) {
 	s.variantWatch.mu.Unlock()
 	caps := s.clientCapsForKey(pr, t.Key)
 	user, title := *pr.User, *t
+	// Retry admission uses the original client identity and current settings.
+	client := Request{Product: pr.Product, Platform: pr.Platform, Device: pr.Device}
 	// If the two refill slots were occupied, retry admission while this
 	// page is being watched. Once admitted, never retry a failed search.
 	retryAdmission := pr.detailRefillRequested && pr.detailRefill == nil
@@ -817,7 +819,7 @@ func (s *Server) watchVariants(pr *Request, t *frontend.Title) {
 				return
 			case <-timer.C:
 			}
-			if retryAdmission && s.detailSearchAllowed(pr) && s.svc().variants != nil {
+			if retryAdmission && s.detailSearchAllowed(&client) && s.svc().variants != nil {
 				retryAdmission = s.svc().variants.RefillSearchCache(&title) == nil
 			}
 			vctx, cancel := context.WithTimeout(s.ctx, variantRenderBudget)

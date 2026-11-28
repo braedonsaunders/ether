@@ -74,6 +74,9 @@ type Cache struct {
 	poolUsage       atomic.Pointer[int64]
 	files           FilePool   // protected by mu
 	segmentReserved int64      // local segments still being written
+	batchID         string     // shared segcache_writes row id for the active batch
+	batchBytes      int64      // pre-verified segment headroom remaining in the current batch
+	batchAt         time.Time  // when batchBytes was computed
 	indexMu         sync.Mutex // serializes initial local disk accounting
 	indexed         atomic.Bool
 	ownerMu         sync.RWMutex // orders owner clearing against writes and new pins
@@ -640,6 +643,7 @@ func (c *Cache) ReleaseBytes(releaseID string) int64 {
 // SetBudget changes the budget (<=0 = unlimited) and evicts immediately if
 // the cache is now over it.
 func (c *Cache) SetBudget(budget int64) {
+	c.releaseBatch()
 	var pending pendingCacheEvents
 	c.mu.Lock()
 	c.budget = max(budget, 0)
@@ -807,6 +811,10 @@ func (c *Cache) Close() error {
 	c.mu.Lock()
 	c.closed = true
 	c.mu.Unlock()
+	c.releaseBatch()
+	if c.shared != nil {
+		c.shared.unregisterPool()
+	}
 	if c.evictStop != nil {
 		c.evictStopOnce.Do(func() {
 			close(c.evictStop)

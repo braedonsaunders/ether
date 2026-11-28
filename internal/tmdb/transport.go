@@ -352,7 +352,8 @@ func (c *Client) doAttempts(ctx context.Context, full, etag string, cfg clientSe
 				if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
 					lastErr = he
 					wait := backoff
-					if ra, _ := retryafter.Parse(resp.Header.Get("Retry-After"), time.Now(), 0); ra > 0 {
+					const maxRetryAfter = 10 * time.Second
+					if ra, _ := retryafter.Parse(resp.Header.Get("Retry-After"), time.Now(), maxRetryAfter); ra > 0 {
 						wait = ra
 					}
 					if attempt < c.opts.maxRetries && !c.brk.open(time.Now()) {

@@ -73,31 +73,32 @@ type Runtime struct {
 	neutralControl       func(context.Context, frontend.SessionAccess, string, string, frontend.Timeline, frontend.StreamRequest) (string, error)
 	mediaBrowserDelivery http.Handler
 
-	deliveryScratch chan struct{}
-	automaticOutput bool
-	outputScratch   chan struct{}
-	history         *placement.History
-	credentials     map[string]sourceCredential
-	reopenLives     map[string]*ReopenResponsibility
-	publicDelivery  bool
-	reopens         map[string]*reopenRecord
-	adapterDelivery http.Handler
-	remotePlayback  *RemotePlayback
-	control         sync.Mutex
-	preparations    map[string]*preparation
-	delivery        func(http.ResponseWriter, *http.Request, string)
-	workerStarting  int
-	encoderTokens   []core.EncoderRetirement
-	o               Options
-	mu              sync.Mutex
-	closed          bool
-	mux             *http.ServeMux
-	authority       *nodeauthority.Authority
-	bytes           *nodesource.Handler
-	sources         map[string]*ownedSource
-	worker          *remotetranscode.Worker
-	inputs          map[remotetranscode.Identity]*workerInput
-	executions      map[string]*execution
+	deliveryScratch   chan struct{}
+	automaticOutput   bool
+	outputScratch     chan struct{}
+	outputScratchPool sync.Pool
+	history           *placement.History
+	credentials       map[string]sourceCredential
+	reopenLives       map[string]*ReopenResponsibility
+	publicDelivery    bool
+	reopens           map[string]*reopenRecord
+	adapterDelivery   http.Handler
+	remotePlayback    *RemotePlayback
+	control           sync.Mutex
+	preparations      map[string]*preparation
+	delivery          func(http.ResponseWriter, *http.Request, string)
+	workerStarting    int
+	encoderTokens     []core.EncoderRetirement
+	o                 Options
+	mu                sync.Mutex
+	closed            bool
+	mux               *http.ServeMux
+	authority         *nodeauthority.Authority
+	bytes             *nodesource.Handler
+	sources           map[string]*ownedSource
+	worker            *remotetranscode.Worker
+	inputs            map[remotetranscode.Identity]*workerInput
+	executions        map[string]*execution
 }
 
 func NewRuntime(o Options) (*Runtime, error) {
@@ -155,7 +156,7 @@ func NewRuntime(o Options) (*Runtime, error) {
 	}
 	r := &Runtime{mediaSessions: make(map[string]*mediaReplica), deliveryScratch: make(chan struct{}, 4), automaticOutput: automaticOutput, credentials: map[string]sourceCredential{}, reopenLives: map[string]*ReopenResponsibility{}, reopens: map[string]*reopenRecord{}, preparations: map[string]*preparation{}, o: o, mux: http.NewServeMux(), sources: map[string]*ownedSource{}, inputs: map[remotetranscode.Identity]*workerInput{}, executions: map[string]*execution{}}
 	if o.OutputBuffer != nil {
-		r.outputScratch = make(chan struct{}, 1)
+		r.outputScratch = make(chan struct{}, outputScratchSlots(o.MaxSegmentBytes))
 	}
 	history, historyErr := placement.NewHistory(o.Placement, o.Self.Cluster, r)
 	if historyErr != nil {

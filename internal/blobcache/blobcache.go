@@ -539,8 +539,8 @@ func (c *Cache) enforceGlobalLimitLocked(need int64, protectNS *Namespace, prote
 // for wiring into plugins.KindBackends (spec §3.6, §5.4).
 //
 // quotaFor may be nil, in which case the namespace's existing or default quota
-// is used. CacheOpen and CacheDelete search only namespaces owned by pluginID
-// (or any namespace whose libraryKey starts with "pk-" + slug(pluginID) + "-").
+// is used. CacheOpen and CacheDelete search only namespaces explicitly bound
+// to pluginID via BindPluginLibrary.
 func (c *Cache) HostBackends(quotaFor func(pluginID, libraryKey string) Quota) (
 	cachePut func(ctx context.Context, pluginID, libraryKey, name string, r io.Reader) (string, error),
 	cacheOpen func(ctx context.Context, pluginID, blobRef string) (io.ReadSeekCloser, error),
@@ -680,16 +680,6 @@ func (c *Cache) namespacesForPlugin(pluginID string) ([]*Namespace, error) {
 				seen[ns] = true
 				out = append(out, ns)
 			}
-		}
-	}
-	// Also match by canonical plugin library key prefix if namespaces were
-	// loaded from disk on restart before BindPluginLibrary was called.
-	slug := slugify(pluginID)
-	prefix := "pk-" + slug + "-"
-	for key, ns := range c.namespaces {
-		if !seen[ns] && ((slug != "" && strings.HasPrefix(key, prefix)) || pluginID == "") {
-			seen[ns] = true
-			out = append(out, ns)
 		}
 	}
 	return out, nil
@@ -958,10 +948,7 @@ func (n *Namespace) SetQuota(q Quota) {
 // Quota returns the namespace's current quota.
 func (n *Namespace) Quota() Quota {
 	if n.cache.options.Shared {
-		if unlock, err := n.cache.lockPool(context.Background()); err == nil {
-			_ = n.readOwnerQuota()
-			unlock()
-		}
+		_ = n.readOwnerQuota()
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -995,13 +982,27 @@ func (n *Namespace) storedStats() (bytes int64, blobs int) {
 // LookupKey checks if a blob was stored under key, is not expired, and still
 // exists on disk. If found, it returns its Ref ("blob:<sha256>").
 func (n *Namespace) LookupKey(key string) (Ref, bool) {
-	unlock, err := n.cache.guard(context.Background())
-	if err != nil {
-		return "", false
-	}
-	defer unlock()
 	if key == "" {
 		return "", false
+	}
+	if n.cache.options.CheckVolume != nil {
+		if err := n.cache.options.CheckVolume(); err != nil {
+			return "", false
+		}
+	}
+	if n.cache.options.Shared {
+		if _, err := os.Stat(filepath.Join(n.dir, ".publishing")); err == nil {
+			unlock, err := n.cache.readGuard()
+			if err != nil {
+				return "", false
+			}
+			unlock()
+		} else {
+			_ = n.readOwnerQuota()
+			if err := n.refreshIndexUnlocked(); err != nil {
+				return "", false
+			}
+		}
 	}
 	now := n.cache.now()
 	n.mu.Lock()
@@ -1018,7 +1019,7 @@ func (n *Namespace) LookupKey(key string) (Ref, bool) {
 	}
 	if n.isExpiredLocked(e, now) {
 		n.mu.Unlock()
-		n.sweep(0, "")
+		n.Sweep(0)
 		return "", false
 	}
 	n.mu.Unlock()

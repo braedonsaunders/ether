@@ -10,9 +10,11 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/clientnet"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/lru"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
 )
 
@@ -54,6 +56,8 @@ func (i *instance) registerRoutes() error {
 type instance struct {
 	host   frontend.Host
 	router *route.Router
+	pathMu sync.Mutex
+	paths  *lru.Cache[pathIndexKey, map[string]resource]
 }
 
 func (i *instance) Handler() http.Handler {

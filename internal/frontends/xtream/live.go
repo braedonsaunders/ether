@@ -3,7 +3,6 @@ package xtream
 import (
 	"bufio"
 	"encoding/base64"
-	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
@@ -261,7 +260,8 @@ func (i *instance) programmeIcon(r *http.Request, l login, p frontend.LiveProgra
 }
 
 func (i *instance) epg(w http.ResponseWriter, r *http.Request, l login, action string) {
-	c, ok := i.findChannel(r, l, r.URL.Query().Get("stream_id"))
+	streamID := r.URL.Query().Get("stream_id")
+	c, ok := i.findChannel(r, l, streamID)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -297,7 +297,7 @@ func (i *instance) epg(w http.ResponseWriter, r *http.Request, l login, action s
 		if ended, _ := frontend.ArchiveFlags(c.ArchiveDays, p.Start, p.End, now); ended {
 			hasArchive = 1
 		}
-		row := map[string]any{"id": p.ID, "epg_id": strconv.FormatInt(int64(l.channels[c.ID]), 10), "channel_id": c.ID, "title": base64.StdEncoding.EncodeToString([]byte(p.Title)), "description": base64.StdEncoding.EncodeToString([]byte(p.Summary)), "lang": "", "start": p.Start.UTC().Format("2006-01-02 15:04:05"), "end": p.End.UTC().Format("2006-01-02 15:04:05"), "start_timestamp": strconv.FormatInt(p.Start.Unix(), 10), "stop_timestamp": strconv.FormatInt(p.End.Unix(), 10), "now_playing": playing, "has_archive": hasArchive}
+		row := map[string]any{"id": p.ID, "epg_id": streamID, "channel_id": c.ID, "title": base64.StdEncoding.EncodeToString([]byte(p.Title)), "description": base64.StdEncoding.EncodeToString([]byte(p.Summary)), "lang": "", "start": p.Start.UTC().Format("2006-01-02 15:04:05"), "end": p.End.UTC().Format("2006-01-02 15:04:05"), "start_timestamp": strconv.FormatInt(p.Start.Unix(), 10), "stop_timestamp": strconv.FormatInt(p.End.Unix(), 10), "now_playing": playing, "has_archive": hasArchive}
 		if icon := i.programmeIcon(r, l, p); icon != "" {
 			row["icon"] = icon
 		}
@@ -307,70 +307,6 @@ func (i *instance) epg(w http.ResponseWriter, r *http.Request, l login, action s
 		}
 	}
 	jsonResponse(w, map[string]any{"epg_listings": out})
-}
-
-type programmeXMLIcon struct {
-	Source string `xml:"src,attr"`
-}
-
-func (i *instance) xmltv(w http.ResponseWriter, r *http.Request, l login) {
-	cs, err := i.host.LiveTV.Channels(r.Context(), l.viewer)
-	if err != nil {
-		http.Error(w, "Unavailable", 503)
-		return
-	}
-	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-	_, _ = w.Write([]byte(xml.Header + "<tv>"))
-	e := xml.NewEncoder(w)
-	for _, c := range cs {
-		_ = e.Encode(struct {
-			XMLName xml.Name `xml:"channel"`
-			ID      string   `xml:"id,attr"`
-			Name    string   `xml:"display-name"`
-		}{ID: c.ID, Name: c.Name})
-	}
-	now := i.liveNow()
-	const batchSize = frontend.MaxLiveGuideExportChannels
-	for start := 0; start < len(cs); start += batchSize {
-		batch := cs[start:min(start+batchSize, len(cs))]
-		ids := make([]string, len(batch))
-		for j, c := range batch {
-			ids[j] = c.ID
-		}
-		ps, err := i.host.LiveTV.Guide(r.Context(), l.viewer, frontend.LiveGuideQuery{
-			Device: l.device, Channels: ids, From: now.Add(-6 * time.Hour), Until: now.Add(48 * time.Hour),
-			Limit: 10000, PerChannelLimit: true,
-		})
-		if err != nil {
-			return
-		}
-		byChannel := make(map[string][]frontend.LiveProgramme, len(batch))
-		for _, p := range ps {
-			byChannel[p.ChannelID] = append(byChannel[p.ChannelID], p)
-		}
-		for _, channel := range batch {
-			for _, p := range byChannel[channel.ID] {
-				if !p.End.After(p.Start) {
-					continue
-				}
-				var icon *programmeXMLIcon
-				if src := i.programmeIcon(r, l, p); src != "" {
-					icon = &programmeXMLIcon{Source: src}
-				}
-				_ = e.Encode(struct {
-					XMLName xml.Name          `xml:"programme"`
-					Channel string            `xml:"channel,attr"`
-					Start   string            `xml:"start,attr"`
-					Stop    string            `xml:"stop,attr"`
-					Title   string            `xml:"title"`
-					Desc    string            `xml:"desc"`
-					Icon    *programmeXMLIcon `xml:"icon,omitempty"`
-				}{Icon: icon, Channel: channel.ID, Start: p.Start.UTC().Format("20060102150405 -0700"), Stop: p.End.UTC().Format("20060102150405 -0700"), Title: p.Title, Desc: p.Summary})
-			}
-		}
-	}
-	_ = e.Flush()
-	_, _ = w.Write([]byte("</tv>"))
 }
 
 func (i *instance) playlist(w http.ResponseWriter, r *http.Request, l login) {

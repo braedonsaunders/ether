@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/agent"
 	"github.com/braedonsaunders/ether/internal/agent/tools"
@@ -566,8 +567,122 @@ func PermissionDiff(cur, next Manifest) []string {
 	if !cur.HasCapability(CapDebridCacheHints) && next.HasCapability(CapDebridCacheHints) {
 		added = append(added, "Gets the torrents you are about to play and says which are cached")
 	}
+	// Cover every remaining capability so a silent update or catalogue entry
+	// mismatch cannot add new capabilities without owner approval.
+	handledCaps := map[Capability]bool{
+		CapEvents: true, CapFlowActions: true, CapPosterBadges: true,
+		CapLiveEvents: true, CapScreens: true, CapDebridCacheHints: true,
+	}
+	for _, cap := range next.EffectiveEther().Capabilities {
+		if handledCaps[cap] || cur.HasCapability(cap) {
+			continue
+		}
+		added = append(added, capabilityPermissionLine(cap))
+	}
+	haveTools := map[string]bool{}
+	for _, tl := range cur.Ether.Contributes.Tools {
+		haveTools[tl.Name] = true
+	}
+	for _, tl := range next.Ether.Contributes.Tools {
+		if !haveTools[tl.Name] {
+			added = append(added, "Adds tool: "+tl.Name)
+		}
+	}
+	added = append(added, runtimeLimitDiff(cur.Ether.Runtime.Limits, next.Ether.Runtime.Limits)...)
 	if n := next.ListItemsRequested(); n > cur.ListItemsRequested() {
 		added = append(added, listItemsLine(n))
+	}
+	return added
+}
+
+func capabilityPermissionLine(c Capability) string {
+	switch c {
+	case CapTools:
+		return "Adds tools for the AI assistant"
+	case CapFrontendAdapter:
+		return "Adds a frontend adapter"
+	case CapKindResolver:
+		return "Resolves playback sources for custom libraries"
+	case CapCatalogProvider:
+		return "Provides custom library catalogues"
+	case CapMatcher:
+		return "Matches custom library items"
+	case CapDebridProvider:
+		return "Acts as a debrid provider"
+	case CapStreamSource:
+		return "Provides stream sources"
+	case CapUI:
+		return "Adds console pages or panels"
+	case CapSubtitles:
+		return "Provides subtitles"
+	case CapNotify:
+		return "Adds a notification channel"
+	case CapMetadata:
+		return "Provides metadata"
+	case CapMarkers:
+		return "Provides playback markers"
+	case CapLiveTV:
+		return "Provides live TV channels"
+	case CapOnAirContent:
+		return "Provides On Air content"
+	case CapLiveTVPack:
+		return "Provides a live TV style pack"
+	case CapListSource:
+		return "Provides curated lists"
+	case CapPluginDirectory:
+		return "Provides a plugin directory"
+	case CapRankingStep:
+		return "Adds a release ranking step"
+	case CapRuleCondition:
+		return "Adds a rule condition"
+	default:
+		return "Adds capability: " + string(c)
+	}
+}
+
+func runtimeLimitDiff(cur, next *RuntimeLimits) []string {
+	if next == nil {
+		return nil
+	}
+	var a RuntimeLimits
+	if cur != nil {
+		a = *cur
+	}
+	b := *next
+	var added []string
+	if b.MemoryBytes > a.MemoryBytes {
+		added = append(added, fmt.Sprintf("Raises memory limit to %d bytes", b.MemoryBytes))
+	}
+	if b.FetchBytes > a.FetchBytes {
+		added = append(added, fmt.Sprintf("Raises fetch size limit to %d bytes", b.FetchBytes))
+	}
+	if b.ReadBytes > a.ReadBytes {
+		added = append(added, fmt.Sprintf("Raises read size limit to %d bytes", b.ReadBytes))
+	}
+	if b.ArchiveMemberBytes > a.ArchiveMemberBytes {
+		added = append(added, fmt.Sprintf("Raises archive member limit to %d bytes", b.ArchiveMemberBytes))
+	}
+	if b.ArchiveExpandedBytes > a.ArchiveExpandedBytes {
+		added = append(added, fmt.Sprintf("Raises archive expanded limit to %d bytes", b.ArchiveExpandedBytes))
+	}
+	if b.ArchiveMembers > a.ArchiveMembers {
+		added = append(added, fmt.Sprintf("Raises archive member count limit to %d", b.ArchiveMembers))
+	}
+	if b.MaxItems > a.MaxItems {
+		added = append(added, fmt.Sprintf("Raises stored items limit to %d", b.MaxItems))
+	}
+	if b.UnitBudget > a.UnitBudget {
+		added = append(added, fmt.Sprintf("Raises compute budget limit to %d", b.UnitBudget))
+	}
+	if b.PoolSize > a.PoolSize {
+		added = append(added, fmt.Sprintf("Raises instance pool size to %d", b.PoolSize))
+	}
+	if b.Deadline != "" && b.Deadline != a.Deadline {
+		bd, bErr := time.ParseDuration(b.Deadline)
+		ad, aErr := time.ParseDuration(a.Deadline)
+		if bErr == nil && (a.Deadline == "" || aErr != nil || bd > ad) {
+			added = append(added, "Raises call deadline to "+b.Deadline)
+		}
 	}
 	return added
 }

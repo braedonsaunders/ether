@@ -4,8 +4,12 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"io"
+	"log/slog"
 	"path/filepath"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -350,5 +354,196 @@ func TestMediaPoolSharedSubsecondOrdering(t *testing.T) {
 	node.seg.SetBudget(500)
 	if !node.seg.Has("stream", 0) {
 		t.Fatal("a newer segment was rounded below the disc's last-use timestamp")
+	}
+}
+
+type countingFilePool struct {
+	segcache.FilePool
+	allocations atomic.Int32
+}
+
+func (p *countingFilePool) WithAllocation(fn func(accounted, unwritten int64, files segcache.FileCandidates) error) error {
+	p.allocations.Add(1)
+	return p.FilePool.WithAllocation(fn)
+}
+
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func TestMediaPoolBatchedReservationAndPoolFullWarn(t *testing.T) {
+	for _, mode := range []string{"local", "shared"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx := context.Background()
+			var db *sql.DB
+			if mode == "shared" {
+				var err error
+				db, err = store.OpenMemory(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { db.Close() })
+			}
+			dir := t.TempDir()
+			var logBuf syncBuffer
+			logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+			var seg *segcache.Cache
+			var err error
+			if db == nil {
+				seg, err = segcache.Open(dir, 1000, logger)
+			} else {
+				seg, err = segcache.OpenShared(dir, 1000, db, "a", logger)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { seg.Close() })
+			files, err := blobcache.Open(filepath.Join(dir, "plugin-files"), blobcache.Options{
+				Unified:      true,
+				Shared:       db != nil,
+				SweepPeriod:  -1,
+				PoolCapacity: seg.MediaFileCapacity,
+				MakeFileRoom: seg.MakeFileRoom,
+				CheckVolume:  seg.CheckVolume,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { seg.SetFilePool(nil); files.Close() })
+			pool := &countingFilePool{FilePool: files}
+			seg.SetFilePool(pool)
+
+			var diskCalls atomic.Int32
+			seg.SetDiskUsage(func() (int64, int64, error) {
+				diskCalls.Add(1)
+				return 10000, 5000, nil
+			})
+			pool.allocations.Store(0)
+
+			// A burst of 10 small segments with ample headroom should take the
+			// pool lock and measure disk free space only once.
+			for i := 0; i < 10; i++ {
+				if err := seg.Put("burst", i, make([]byte, 20)); err != nil {
+					t.Fatalf("put %d: %v", i, err)
+				}
+			}
+			if got := pool.allocations.Load(); got != 1 {
+				t.Fatalf("WithAllocation calls = %d, want 1", got)
+			}
+			if got := diskCalls.Load(); got != 1 {
+				t.Fatalf("diskFn calls = %d, want 1", got)
+			}
+			if db != nil {
+				var rows int
+				if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM segcache_writes`).Scan(&rows); err != nil {
+					t.Fatal(err)
+				}
+				if rows > 1 {
+					t.Fatalf("segcache_writes rows = %d, want <= 1 batched row", rows)
+				}
+			}
+
+			// A subsequent file admission must reclaim any unspent segment batch
+			// headroom so the full remaining budget is available.
+			games := files.Namespace("games", blobcache.Quota{})
+			if _, err := games.Put(ctx, "disc.iso", bytes.NewReader(make([]byte, 800)), 800); err != nil {
+				t.Fatalf("file put after segment batch: %v", err)
+			}
+			if db != nil {
+				var rows int
+				if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM segcache_writes`).Scan(&rows); err != nil {
+					t.Fatal(err)
+				}
+				if rows != 0 {
+					t.Fatalf("segcache_writes rows after file admission = %d, want 0", rows)
+				}
+			}
+
+			// Pin the segments and hold the file open so the pool cannot evict
+			// anything; repeated ErrPoolFull failures must log at Warn once per interval.
+			if err := seg.Pin("burst", "session"); err != nil {
+				t.Fatal(err)
+			}
+			ref, ok := games.LookupKey("disc.iso")
+			if !ok {
+				t.Fatal("missing disc.iso")
+			}
+			rc, err := games.Open(ref)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer rc.Close()
+
+			for i := 0; i < 4; i++ {
+				err := seg.Put("overflow", i, make([]byte, 100))
+				if !errors.Is(err, segcache.ErrPoolFull) {
+					t.Fatalf("overflow put %d = %v, want ErrPoolFull", i, err)
+				}
+			}
+			logs := logBuf.String()
+			if count := strings.Count(logs, "media cache full"); count != 1 {
+				t.Fatalf("ErrPoolFull warn count = %d, want 1; logs:\n%s", count, logs)
+			}
+		})
+	}
+}
+
+// Unused shared batch headroom goes back to the pool once the batch window
+// ends, even when no further segment write arrives to release it.
+func TestSharedSegmentBatchReleasedAfterWindow(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	dir := t.TempDir()
+	seg, err := segcache.OpenShared(dir, 1000, db, "a", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { seg.Close() })
+	files, err := blobcache.Open(filepath.Join(dir, "plugin-files"), blobcache.Options{
+		Unified: true, Shared: true, SweepPeriod: -1,
+		PoolCapacity: seg.MediaFileCapacity, MakeFileRoom: seg.MakeFileRoom, CheckVolume: seg.CheckVolume,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { seg.SetFilePool(nil); files.Close() })
+	seg.SetFilePool(files)
+	seg.SetDiskUsage(func() (int64, int64, error) { return 10000, 5000, nil })
+	if err := seg.Put("burst", 0, make([]byte, 20)); err != nil {
+		t.Fatal(err)
+	}
+	reserved := func() int64 {
+		var n sql.NullInt64
+		if err := db.QueryRowContext(ctx, `SELECT SUM(bytes) FROM segcache_writes`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n.Int64
+	}
+	if reserved() == 0 {
+		t.Fatal("expected a batched reservation after the first segment")
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for reserved() != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("batch headroom still reserved: %d bytes", reserved())
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }

@@ -9,11 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"net/url"
+	"strings"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/safefetch"
 )
 
 type PushKeys struct {
@@ -43,6 +46,23 @@ func validatePush(p *PushSubscription) error {
 	}
 	if _, err := ecdh.P256().NewPublicKey(pub); err != nil {
 		return errors.New("invalid browser encryption key")
+	}
+	return nil
+}
+
+// validateViewerPush extends validatePush for non-admin viewer subscriptions,
+// rejecting loopback, local-domain and non-public IP literal endpoints.
+func validateViewerPush(p *PushSubscription) error {
+	if err := validatePush(p); err != nil {
+		return err
+	}
+	u, _ := url.Parse(p.Endpoint)
+	host := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(u.Hostname()), "."))
+	if host == "" || host == "localhost" || strings.HasSuffix(host, ".localhost") || strings.HasSuffix(host, ".local") {
+		return errors.New("public HTTPS push endpoint required")
+	}
+	if ip, err := netip.ParseAddr(host); err == nil && !safefetch.IsPublicIP(ip) {
+		return errors.New("public HTTPS push endpoint required")
 	}
 	return nil
 }

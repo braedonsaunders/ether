@@ -74,6 +74,12 @@ type cachedEvent struct {
 	touchSeq  int64
 }
 
+// eventTombstone keeps enough of an evicted event to suppress replayed updates.
+type eventTombstone struct {
+	feedKey, hash, updatedAt string
+	touchSeq                 int64
+}
+
 type cachedQuery struct {
 	resp      core.LiveEventsResponse
 	expiresAt time.Time
@@ -243,6 +249,7 @@ type Hub struct {
 	feedsLoaded         bool
 	feeds               map[string]FeedInfo // "pluginID:feedID" -> info
 	events              map[string]*cachedEvent
+	eventTombstones     map[string]eventTombstone
 	feedEventCounts     map[string]int
 	feedLastPolled      map[string]time.Time
 	feedHealth          map[string]*FeedHealth
@@ -260,6 +267,7 @@ type Hub struct {
 	remotePruneCancel   context.CancelFunc
 	nextChangeHookID    int64
 	changeHooks         map[int64]ChangeHandler
+	batchHooks          map[int64]func([]core.LiveEvent)
 	nextPollHookID      int64
 	pollHooks           map[int64]FeedPollHandler
 	watchEnricher       WatchEnricher
@@ -325,6 +333,7 @@ func NewHub(opts Options) *Hub {
 		leading:             opts.Cluster == nil,
 		feeds:               make(map[string]FeedInfo),
 		events:              make(map[string]*cachedEvent),
+		eventTombstones:     make(map[string]eventTombstone),
 		feedEventCounts:     make(map[string]int),
 		feedLastPolled:      make(map[string]time.Time),
 		feedHealth:          make(map[string]*FeedHealth),
@@ -337,6 +346,7 @@ func NewHub(opts Options) *Hub {
 		pollers:             make(map[string]*feedPoller),
 		remoteInterests:     make(map[string]remotePeerInterest),
 		changeHooks:         make(map[int64]ChangeHandler),
+		batchHooks:          make(map[int64]func([]core.LiveEvent)),
 		pollHooks:           make(map[int64]FeedPollHandler),
 		watchEnricher:       opts.WatchEnricher,
 		detailWatchEnricher: opts.DetailWatchEnricher,
@@ -475,7 +485,7 @@ func (d hubAlertDeliverer) PublishAlert(viewerID int64, alert core.LiveEventAler
 
 // OnEventChange registers a callback invoked with raw (unmasked) event
 // transitions whenever the hub ingests a new or modified event. Returns an
-// unsubscribe function. Used by A7 alert detection.
+// unsubscribe function.
 func (h *Hub) OnEventChange(fn ChangeHandler) func() {
 	if h == nil || fn == nil {
 		return func() {}
@@ -488,6 +498,24 @@ func (h *Hub) OnEventChange(fn ChangeHandler) func() {
 	return func() {
 		h.mu.Lock()
 		delete(h.changeHooks, id)
+		h.mu.Unlock()
+	}
+}
+
+// OnEventBatch observes a whole ingest's raw changes after subscriber and
+// cluster fan-out. It returns a function that unregisters the callback.
+func (h *Hub) OnEventBatch(fn func([]core.LiveEvent)) func() {
+	if h == nil || fn == nil {
+		return func() {}
+	}
+	h.mu.Lock()
+	h.nextChangeHookID++
+	id := h.nextChangeHookID
+	h.batchHooks[id] = fn
+	h.mu.Unlock()
+	return func() {
+		h.mu.Lock()
+		delete(h.batchHooks, id)
 		h.mu.Unlock()
 	}
 }
@@ -535,6 +563,11 @@ func (h *Hub) SyncFeeds(ctx context.Context) {
 			if h.feedEventCounts[ce.feedKey] <= 0 {
 				delete(h.feedEventCounts, ce.feedKey)
 			}
+		}
+	}
+	for id, tombstone := range h.eventTombstones {
+		if _, active := next[tombstone.feedKey]; !active {
+			delete(h.eventTombstones, id)
 		}
 	}
 	for k := range h.feedLastPolled {
@@ -2134,9 +2167,11 @@ func (h *Hub) ingestEvents(pluginID, feedID string, events []core.LiveEvent, bro
 	var changed []core.LiveEvent
 	var deltas []eventDelta
 	var hooks []ChangeHandler
+	var batchHooks []func([]core.LiveEvent)
 	var matchingSubs []*Subscription
 
 	h.mu.Lock()
+	batchStart := h.cacheSeq
 	for _, ev := range events {
 		if strings.TrimSpace(ev.ID) == "" {
 			continue
@@ -2163,12 +2198,23 @@ func (h *Hub) ingestEvents(pluginID, feedID string, events []core.LiveEvent, bro
 			if ev.UpdatedAt == prev.event.UpdatedAt {
 				ev.UpdatedAt = bumpUpdatedAt(prev.event.UpdatedAt, now)
 			}
-			prevCopy := prev.event.Clone()
+			if len(h.changeHooks) != 0 {
+				prevCopy := prev.event.Clone()
+				deltas = append(deltas, eventDelta{prev: &prevCopy, next: ev})
+			}
 			prev.event = ev.Clone()
 			prev.hash = nextHash
 			changed = append(changed, ev.Clone())
-			deltas = append(deltas, eventDelta{prev: &prevCopy, next: ev.Clone()})
 		} else {
+			tombstone, evicted := h.eventTombstones[ev.ID]
+			if evicted && IsStaleUpdate(tombstone.updatedAt, ev.UpdatedAt) {
+				continue
+			}
+			unchanged := evicted && tombstone.hash == nextHash
+			if evicted && !unchanged && ev.UpdatedAt == tombstone.updatedAt {
+				ev.UpdatedAt = bumpUpdatedAt(tombstone.updatedAt, now)
+			}
+			delete(h.eventTombstones, ev.ID)
 			h.events[ev.ID] = &cachedEvent{
 				event:     ev.Clone(),
 				pluginID:  pluginID,
@@ -2179,18 +2225,26 @@ func (h *Hub) ingestEvents(pluginID, feedID string, events []core.LiveEvent, bro
 				touchSeq:  h.cacheSeq,
 			}
 			h.feedEventCounts[feedKey]++
+			if unchanged {
+				continue
+			}
 			changed = append(changed, ev.Clone())
-			deltas = append(deltas, eventDelta{prev: nil, next: ev.Clone()})
+			if len(h.changeHooks) != 0 {
+				deltas = append(deltas, eventDelta{next: ev})
+			}
 		}
 	}
 
+	h.evictEventsLocked(feedKey, batchStart)
 	if len(changed) > 0 {
-		h.evictEventsLocked(feedKey)
 		if len(h.changeHooks) > 0 {
 			hooks = make([]ChangeHandler, 0, len(h.changeHooks))
 			for _, fn := range h.changeHooks {
 				hooks = append(hooks, fn)
 			}
+		}
+		for _, fn := range h.batchHooks {
+			batchHooks = append(batchHooks, fn)
 		}
 		for _, sub := range h.subs {
 			for _, ev := range changed {
@@ -2207,7 +2261,7 @@ func (h *Hub) ingestEvents(pluginID, feedID string, events []core.LiveEvent, bro
 		return nil
 	}
 
-	// Notify raw change observers (e.g. A7 alert detector).
+	// Notify raw transition observers.
 	for _, fn := range hooks {
 		for _, d := range deltas {
 			fn(d.prev, d.next.Clone())
@@ -2254,6 +2308,13 @@ func (h *Hub) ingestEvents(pluginID, feedID string, events []core.LiveEvent, bro
 	if broadcastCluster {
 		h.broadcastClusterUpdates(pluginID, feedID, changed)
 	}
+	for _, fn := range batchHooks {
+		batch := make([]core.LiveEvent, len(changed))
+		for i, ev := range changed {
+			batch[i] = ev.Clone()
+		}
+		fn(batch)
+	}
 	return changed
 }
 
@@ -2270,55 +2331,55 @@ func (h *Hub) cachedEventsForFeed(feedKey string) []core.LiveEvent {
 	return out
 }
 
-func (h *Hub) evictEventsLocked(feedKey string) {
-	// Per-feed cap: prefer evicting non-live events first, oldest touched first.
-	for h.feedEventCounts[feedKey] > h.maxEventsPerFeed {
-		var victimID string
-		var victimSeq int64
-		victimLive := true
-		found := false
-		for id, ce := range h.events {
-			if ce.feedKey != feedKey {
-				continue
-			}
-			isLive := ce.event.Status.State == core.LiveEventStateIn
-			if !found || (victimLive && !isLive) || (victimLive == isLive && ce.touchSeq < victimSeq) {
-				victimID = id
-				victimSeq = ce.touchSeq
-				victimLive = isLive
-				found = true
+func (h *Hub) evictEventsLocked(feedKey string, batchStart int64) {
+	evict := func(feed string, excess int) {
+		if excess <= 0 {
+			return
+		}
+		var candidates []*cachedEvent
+		for _, ce := range h.events {
+			if feed == "" || ce.feedKey == feed {
+				candidates = append(candidates, ce)
 			}
 		}
-		if !found {
-			break
+		sort.Slice(candidates, func(i, j int) bool {
+			a, b := candidates[i], candidates[j]
+			aInBatch, bInBatch := a.touchSeq > batchStart, b.touchSeq > batchStart
+			if aInBatch != bInBatch {
+				return !aInBatch
+			}
+			aLive := a.event.Status.State == core.LiveEventStateIn
+			bLive := b.event.Status.State == core.LiveEventStateIn
+			if aLive != bLive {
+				return !aLive
+			}
+			return a.touchSeq < b.touchSeq
+		})
+		for _, ce := range candidates[:excess] {
+			id := ce.event.ID
+			delete(h.events, id)
+			h.eventTombstones[id] = eventTombstone{ce.feedKey, ce.hash, ce.event.UpdatedAt, ce.touchSeq}
+			h.feedEventCounts[ce.feedKey]--
+			if h.feedEventCounts[ce.feedKey] == 0 {
+				delete(h.feedEventCounts, ce.feedKey)
+			}
 		}
-		delete(h.events, victimID)
-		h.feedEventCounts[feedKey]--
 	}
-	// Global cap across all feeds.
-	for len(h.events) > h.maxTotalEvents {
-		var victimID string
-		var victimFeed string
-		var victimSeq int64
-		victimLive := true
-		found := false
-		for id, ce := range h.events {
-			isLive := ce.event.Status.State == core.LiveEventStateIn
-			if !found || (victimLive && !isLive) || (victimLive == isLive && ce.touchSeq < victimSeq) {
-				victimID = id
-				victimFeed = ce.feedKey
-				victimSeq = ce.touchSeq
-				victimLive = isLive
-				found = true
-			}
+
+	evict(feedKey, h.feedEventCounts[feedKey]-h.maxEventsPerFeed)
+	evict("", len(h.events)-h.maxTotalEvents)
+
+	limit := max(h.maxTotalEvents, defaultMaxTotalEvents)
+	if excess := len(h.eventTombstones) - limit; excess > 0 {
+		ids := make([]string, 0, len(h.eventTombstones))
+		for id := range h.eventTombstones {
+			ids = append(ids, id)
 		}
-		if !found {
-			break
-		}
-		delete(h.events, victimID)
-		h.feedEventCounts[victimFeed]--
-		if h.feedEventCounts[victimFeed] <= 0 {
-			delete(h.feedEventCounts, victimFeed)
+		sort.Slice(ids, func(i, j int) bool {
+			return h.eventTombstones[ids[i]].touchSeq < h.eventTombstones[ids[j]].touchSeq
+		})
+		for _, id := range ids[:excess] {
+			delete(h.eventTombstones, id)
 		}
 	}
 }

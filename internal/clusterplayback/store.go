@@ -55,6 +55,20 @@ func (r *Runtime) route(ctx context.Context, id string) (Route, error) {
 	return out, nil
 }
 func (r *Runtime) putRoute(ctx context.Context, route Route) error {
+	if got, err := r.route(ctx, route.Fence.Session); err == nil {
+		if got.Fence.Generation > route.Fence.Generation || (got.Fence.Generation == route.Fence.Generation && got != route && (got.Fence != route.Fence || got.SourceGeneration <= route.SourceGeneration)) {
+			return ErrDenied
+		}
+		if got.Fence == route.Fence && (got == route || got.SourceGeneration > route.SourceGeneration) {
+			if route.Fence.Generation <= 0 {
+				return nil
+			}
+			var gen int64
+			if r.o.DB.QueryRowContext(ctx, `SELECT generation FROM clusterplayback_coordinators WHERE session=?`, route.Fence.Session).Scan(&gen) == nil && gen >= route.Fence.Generation {
+				return nil
+			}
+		}
+	}
 	b, e := json.Marshal(route)
 	if e != nil {
 		return e

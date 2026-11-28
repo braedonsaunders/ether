@@ -60,7 +60,7 @@ func (i *instance) replanRecoveredOriginal(w http.ResponseWriter, r *http.Reques
 	document["session_id"] = id
 	snap.format, snap.delivery, snap.replacement = frontend.StreamDirect, "original_http", state.Revision
 	snap.requireAuthored, snap.body, snap.media, snap.audioCopy = authored, document, state.Media, state.Decision.AudioCopy
-	i.rememberPlan(id, snap)
+	i.updatePlan(id, snap)
 	reply(w, http.StatusOK, document)
 	return true
 }

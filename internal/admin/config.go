@@ -210,7 +210,13 @@ func (h *Handler) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	next.Availability.ApplyMode()
-	next.SetCachePolicy(next.Cache)
+	// GET returns the effective cache policy; a document without "cache"
+	// keeps the stored node-local and shared policies untouched.
+	if _, present := fields["cache"]; present {
+		next.SetCachePolicy(next.Cache)
+	} else {
+		next.Cache, next.SharedCache = prev.Cache, prev.SharedCache
+	}
 	errs, err := h.saveConfig(next, prev, identityFields(plexRaw), !postersEqual(next.Posters, prev.Posters))
 	switch {
 	case err != nil:

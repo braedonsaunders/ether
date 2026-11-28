@@ -1,9 +1,11 @@
 package cardigann
 
 import (
+	"bufio"
 	"bytes"
 	"compress/flate"
 	"compress/gzip"
+	"compress/zlib"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,6 +23,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/newznab"
+	"github.com/braedonsaunders/ether/internal/safefetch"
 
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/htmlindex"
@@ -54,15 +57,16 @@ var ErrCaptcha = errors.New("the site's sign-in requires a captcha, which Ether 
 // httpSession is one indexer's HTTP state: cookie jar, user agent,
 // request pacing and challenge solving.
 type httpSession struct {
-	client  *http.Client
-	jar     *resettableJar
-	enc     encoding.Encoding // site charset; nil = UTF-8
-	delay   time.Duration
-	flare   func() string // FlareSolverr base URL ("" = not configured)
-	flareHC *http.Client
-	log     *slog.Logger
-	site    string // display name for errors
-	hosts   *newznab.HostLimiter
+	client        *http.Client
+	jar           *resettableJar
+	enc           encoding.Encoding // site charset; nil = UTF-8
+	delay         time.Duration
+	flare         func() string // FlareSolverr base URL ("" = not configured)
+	flareHC       *http.Client
+	log           *slog.Logger
+	site          string // display name for errors
+	hosts         *newznab.HostLimiter
+	redirectCheck func(context.Context, *url.URL) error
 
 	mu   sync.Mutex
 	ua   string
@@ -261,6 +265,8 @@ func (s *httpSession) roundTrip(ctx context.Context, req request) (*response, er
 			}
 		}
 	}
+	origin := target
+	hopHeaders := req.headers
 	for hop := 0; ; hop++ {
 		if err := s.pace(ctx); err != nil {
 			return nil, err
@@ -273,7 +279,7 @@ func (s *httpSession) roundTrip(ctx context.Context, req request) (*response, er
 		if err != nil {
 			return nil, err
 		}
-		for k, vs := range req.headers {
+		for k, vs := range hopHeaders {
 			if strings.EqualFold(k, "Connection") {
 				for _, v := range vs {
 					if strings.EqualFold(v, "close") {
@@ -324,7 +330,20 @@ func (s *httpSession) roundTrip(ctx context.Context, req request) (*response, er
 				}
 				bodyReader = zr
 			case "deflate":
-				bodyReader = flate.NewReader(hresp.Body)
+				// HTTP "deflate" is zlib-wrapped (RFC 9110); some servers send
+				// raw DEFLATE, recognised by the missing zlib header.
+				br := bufio.NewReader(hresp.Body)
+				if h, _ := br.Peek(2); len(h) == 2 && h[0]&0x0f == 8 && (uint(h[0])<<8|uint(h[1]))%31 == 0 {
+					zr, zerr := zlib.NewReader(br)
+					if zerr != nil {
+						hresp.Body.Close()
+						releaseHost()
+						return nil, fmt.Errorf("%s: decode deflate response: %w", s.site, zerr)
+					}
+					bodyReader = zr
+				} else {
+					bodyReader = flate.NewReader(br)
+				}
 			}
 		}
 		data, err := io.ReadAll(io.LimitReader(bodyReader, maxResponseBytes+1))
@@ -349,15 +368,49 @@ func (s *httpSession) roundTrip(ctx context.Context, req request) (*response, er
 			resp.location = loc
 			return resp, nil
 		}
-		if next.Scheme == "magnet" || !req.follow || hop >= maxRedirects {
+		if (next.Scheme != "http" && next.Scheme != "https") || !req.follow || hop >= maxRedirects {
 			resp.location = next.String()
 			return resp, nil
 		}
-		if hresp.StatusCode != http.StatusTemporaryRedirect && hresp.StatusCode != http.StatusPermanentRedirect {
+		// A redirect away from the indexer's origin must resolve to a public
+		// address, and cross-host hops drop credentials and POST bodies.
+		if !strings.EqualFold(origin.Hostname(), next.Hostname()) {
+			if err := s.checkRedirectTarget(ctx, next); err != nil {
+				return nil, fmt.Errorf("%s: redirect to %s refused: %w", s.site, next.Host, err)
+			}
+		}
+		if !strings.EqualFold(target.Host, next.Host) {
+			hopHeaders = stripSensitiveRedirectHeaders(hopHeaders)
+			method, body = http.MethodGet, ""
+		} else if hresp.StatusCode != http.StatusTemporaryRedirect && hresp.StatusCode != http.StatusPermanentRedirect {
 			method, body = http.MethodGet, ""
 		}
 		target = next
 	}
+}
+
+func (s *httpSession) checkRedirectTarget(ctx context.Context, next *url.URL) error {
+	if s.redirectCheck != nil {
+		return s.redirectCheck(ctx, next)
+	}
+	return safefetch.ValidatePublicURL(ctx, next.String())
+}
+
+func stripSensitiveRedirectHeaders(h http.Header) http.Header {
+	if len(h) == 0 {
+		return nil
+	}
+	out := make(http.Header, len(h))
+	for k, vs := range h {
+		lk := strings.ToLower(k)
+		if lk == "authorization" || lk == "proxy-authorization" || lk == "cookie" ||
+			strings.Contains(lk, "api-key") || strings.Contains(lk, "apikey") ||
+			strings.Contains(lk, "token") || strings.Contains(lk, "auth") {
+			continue
+		}
+		out[k] = vs
+	}
+	return out
 }
 
 // isChallenge recognises Cloudflare and DDoS-Guard browser challenges.
