@@ -68,11 +68,16 @@ type systemEventHooks struct {
 	dbDownSince   time.Time
 	dbLastDialect string
 
-	clusterMu      sync.Mutex
-	clusterSeeded  bool
-	clusterMembers map[string]cluster.Node
-	lastLeaderID   string
-	lastLeaderEp   int64
+	clusterObserveMu sync.Mutex
+	clusterMu        sync.Mutex
+	clusterSeeded    bool
+	clusterMembers   map[string]cluster.Node
+	lastLeaderID     string
+	lastLeaderEp     int64
+	clusterKick      atomic.Bool
+	clusterRunning   atomic.Bool
+	clusterStop      chan struct{}
+	clusterStopOnce  sync.Once
 
 	drainEmitted atomic.Bool
 }
@@ -93,12 +98,15 @@ func (a *App) ensureSystemEvents() *systemEventHooks {
 		diskLow:        make(map[string]bool),
 		diskFunc:       datafs.Usage,
 		clusterMembers: make(map[string]cluster.Node),
+		clusterStop:    make(chan struct{}),
 	}
 	h.batcher = newLibraryBatcher(defaultLibraryBatchWindow, func(p events.LibraryBatchAddedPayload) {
 		a.publishEvent(events.EventLibraryBatchAdded, p, events.WithSource("catalog"))
 	})
 	a.systemEvents = h
-	a.closers = append(a.closers, h.batcher.Close)
+	a.closers = append(a.closers, h.batcher.Close, func() {
+		h.clusterStopOnce.Do(func() { close(h.clusterStop) })
+	})
 	return h
 }
 
@@ -137,7 +145,7 @@ func (a *App) wireSystemEvents() {
 	if a.cluster != nil {
 		a.closers = append(a.closers, a.cluster.OnLeaderChange(a.onClusterLeaderChange))
 		a.closers = append(a.closers, a.cluster.Subscribe(cluster.TopicMembers, func([]byte) {
-			go a.observeClusterMembership(context.Background())
+			a.triggerClusterMembershipObserve()
 		}))
 	}
 }
@@ -1041,6 +1049,46 @@ func normalizeIPString(raw string) string {
 
 // --- Cluster domain emitters ---
 
+func (a *App) triggerClusterMembershipObserve() {
+	if a == nil || a.cluster == nil || a.eventBus == nil {
+		return
+	}
+	h := a.ensureSystemEvents()
+	if h == nil {
+		return
+	}
+	select {
+	case <-h.clusterStop:
+		return
+	default:
+	}
+	h.clusterKick.Store(true)
+	if !h.clusterRunning.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			select {
+			case <-h.clusterStop:
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+		defer cancel()
+		for {
+			h.clusterKick.Store(false)
+			if ctx.Err() == nil {
+				a.observeClusterMembership(ctx)
+			}
+			h.clusterRunning.Store(false)
+			if !h.clusterKick.Load() || ctx.Err() != nil || !h.clusterRunning.CompareAndSwap(false, true) {
+				return
+			}
+		}
+	}()
+}
+
 func (a *App) seedClusterMembership(ctx context.Context) {
 	if a == nil || a.cluster == nil {
 		return
@@ -1049,6 +1097,8 @@ func (a *App) seedClusterMembership(ctx context.Context) {
 	if h == nil {
 		return
 	}
+	h.clusterObserveMu.Lock()
+	defer h.clusterObserveMu.Unlock()
 	nodes, err := a.cluster.Nodes(ctx)
 	if err != nil {
 		return
@@ -1076,6 +1126,8 @@ func (a *App) observeClusterMembership(ctx context.Context) {
 	if h == nil {
 		return
 	}
+	h.clusterObserveMu.Lock()
+	defer h.clusterObserveMu.Unlock()
 	qctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	live, err := a.cluster.Nodes(qctx)
