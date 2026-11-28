@@ -31,6 +31,7 @@ import { confirmLibraryRebuild } from "./rebuildLibrary";
 import { invalidateRegistry } from "../../lib/extend";
 import { useStreamEvent } from "../../lib/stream";
 import { PermissionSheet, RuntimeLimitsCard } from "./PermissionSheet";
+import { safeHref } from "../../viewspec/cells";
 import {
   categoryLabel,
   kindIcon,
@@ -630,9 +631,9 @@ export function CatalogueTab({
                       <span>{t("By {author}", { author: selected.author })}</span>
                     ) : null}
                     {selected.license ? <span>{selected.license}</span> : null}
-                    {selected.homepage ? (
+                    {selected.homepage && safeHref(selected.homepage)?.startsWith("https://") ? (
                       <a
-                        href={selected.homepage}
+                        href={safeHref(selected.homepage)!}
                         target="_blank"
                         rel="noreferrer"
                         className="inline-flex items-center gap-1 text-accent hover:underline"
@@ -640,9 +641,9 @@ export function CatalogueTab({
                         {t("Homepage")} <ExternalLink size={12} aria-hidden />
                       </a>
                     ) : null}
-                    {selected.repo ? (
+                    {selected.repo && safeHref(selected.repo)?.startsWith("https://") ? (
                       <a
-                        href={selected.repo}
+                        href={safeHref(selected.repo)!}
                         target="_blank"
                         rel="noreferrer"
                         className="inline-flex items-center gap-1 text-accent hover:underline"
