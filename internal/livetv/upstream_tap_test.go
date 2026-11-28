@@ -7,8 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -185,4 +187,35 @@ func TestAuthCacheRejectsStaleConcurrentFill(t *testing.T) {
 	if got := s.sourceConnectionLimit("provider"); got != 1 {
 		t.Fatalf("stale background fill overwrote connection limit: got %d, want 1", got)
 	}
+}
+
+func TestTapIgnoresIdleCallbackFromPreviousReader(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tap := &upstreamTap{closedDone: make(chan struct{})}
+		tap.cond = sync.NewCond(&tap.mu)
+		defer tap.close(nil)
+		tap.attach()
+		tap.detach()
+		previous := tap.idle
+
+		tap.attach()
+		tap.detach()
+		// Simulate the old callback already queued as the tap lost and
+		// regained its last reader. It cannot expire this idle period.
+		previous.Reset(0)
+		synctest.Wait()
+		select {
+		case <-tap.closedDone:
+			t.Fatal("old idle callback closed the tap during a new idle period")
+		default:
+		}
+
+		time.Sleep(tapIdle)
+		synctest.Wait()
+		select {
+		case <-tap.closedDone:
+		default:
+			t.Fatal("tap did not close after its current idle period")
+		}
+	})
 }
