@@ -35,17 +35,20 @@ func MinFreeBytes(total int64) int64 { return min(floorMaxBytes, max(total, 0)/f
 
 // floorStat is one measurement of the volume.
 type floorStat struct {
-	ok      bool
-	at      time.Time
-	cap     int64 // most the cache may use while this measurement holds
-	floor   int64
-	free    int64
-	failing bool // the last measurement failed (logged once)
+	ok         bool
+	at         time.Time
+	cap        int64 // most the cache may use while this measurement holds
+	floor      int64
+	free       int64
+	usedAt     int64
+	retainedAt int64
+	failing    bool // the last measurement failed (logged once)
 }
 
 // SetDiskUsage enables the free-space floor; nil disables it. It applies
 // immediately.
 func (c *Cache) SetDiskUsage(fn DiskUsageFunc) {
+	c.releaseBatch()
 	c.floorMu.Lock()
 	c.diskFn = fn
 	c.floor = floorStat{}

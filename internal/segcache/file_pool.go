@@ -24,6 +24,11 @@ type FileCandidates func() ([]FileCandidate, error)
 
 var ErrPoolFull = errors.New("media cache has insufficient evictable space")
 
+const (
+	headroomRefreshEvery = time.Second
+	segmentBatchMaxBytes = 16 << 20
+)
+
 // FilePool supplies reservations and eviction for whole plugin files.
 type FilePool interface {
 	// accounted includes retained files, partials and the unwritten portion of
@@ -34,11 +39,51 @@ type FilePool interface {
 
 // SetFilePool attaches the file store to the media cache budget.
 func (c *Cache) SetFilePool(files FilePool) {
+	c.releaseBatch()
 	c.mu.Lock()
 	c.files = files
 	c.mu.Unlock()
 	if c.shared != nil || c.indexed.Load() {
 		c.trimPool()
+	}
+}
+
+func (c *Cache) releaseBatch() {
+	c.mu.Lock()
+	id, unused := c.batchID, c.batchBytes
+	c.batchID, c.batchBytes, c.batchAt = "", 0, time.Time{}
+	c.mu.Unlock()
+	if c.shared != nil && id != "" && unused > 0 {
+		c.endReservation(id, unused)
+	}
+}
+
+func (c *Cache) releasePoolBatches() {
+	c.releaseBatch()
+	if c.shared == nil {
+		return
+	}
+	sharedPoolsMu.Lock()
+	peers := append([]*Cache(nil), sharedPools[c.shared.token]...)
+	sharedPoolsMu.Unlock()
+	for _, peer := range peers {
+		if peer != c {
+			peer.releaseBatch()
+		}
+	}
+}
+
+func (c *Cache) logPoolFull(shortage int64) {
+	now := c.now()
+	c.mu.Lock()
+	shouldLog := now.Sub(c.lastOverLog) >= overBudgetLogEvery
+	if shouldLog {
+		c.lastOverLog = now
+	}
+	budget := c.budget
+	c.mu.Unlock()
+	if shouldLog {
+		c.logger.Warn("media cache full: insufficient evictable space", "shortBytes", shortage, "budget", budget)
 	}
 }
 
@@ -76,7 +121,8 @@ func (c *Cache) trimPoolWatermarked(watermarked bool) bool {
 			}
 			return nil
 		}
-		return c.makeRoom(accounted, unwritten, 0, candidates, watermarked)
+		_, err := c.makeRoom(accounted, unwritten, 0, candidates, watermarked)
+		return err
 	})
 	if err != nil {
 		c.logger.Debug("media pool sweep", "err", err)
@@ -87,53 +133,60 @@ func (c *Cache) trimPoolWatermarked(watermarked bool) bool {
 // MakeFileRoom is called under the pool allocation lock. Playback and
 // plugin-file admissions use the same order when pressure requires eviction.
 func (c *Cache) MakeFileRoom(accounted, unwritten, additional int64, candidates FileCandidates) error {
-	return c.makeRoom(accounted, unwritten, additional, candidates, false)
+	_, err := c.makeRoom(accounted, unwritten, additional, candidates, false)
+	return err
 }
 
-func (c *Cache) makeRoom(accounted, unwritten, additional int64, candidates FileCandidates, watermarked bool) error {
+func (c *Cache) makeRoom(accounted, unwritten, additional int64, candidates FileCandidates, watermarked bool) (int64, error) {
 	if accounted < 0 || unwritten < 0 || additional < 0 || unwritten > accounted {
-		return errors.New("invalid media allocation")
+		return 0, errors.New("invalid media allocation")
 	}
+	c.releasePoolBatches()
 	defer c.publishFileUsage(accounted - unwritten)()
 	cap := c.MediaFileCapacity()
 	if additional > cap {
-		return ErrTooLarge
+		return 0, ErrTooLarge
 	}
 	if c.shared == nil && !c.indexed.Load() {
 		// Maintenance runs again when the background index completes. A
 		// writer must know about retained segments before spending its bytes.
 		if additional == 0 {
-			return nil
+			return 0, nil
 		}
 		if err := c.indexDisk(context.Background()); err != nil {
-			return err
+			return 0, err
 		}
 	}
 	used, pending, err := c.segmentAllocation()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	total, err := sumSizes(used, pending, accounted, additional)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	shortage := max(total-cap, 0)
 	if watermarked && cap > 0 && used >= highWatermark(cap) {
 		shortage = max(shortage, total-lowWatermark(cap))
 	}
-	diskShort, err := c.volumeShortfall(used, unwritten, pending, additional)
+	diskShort, diskHeadroom, err := c.volumeShortfall(used, accounted-unwritten, unwritten, pending, additional)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	shortage = max(shortage, diskShort)
 	if shortage <= 0 {
-		return nil
+		budgetLimit := cap
+		if budgetLimit < math.MaxInt64 {
+			budgetLimit = highWatermark(budgetLimit)
+		}
+		budgetHeadroom := max(budgetLimit-total, 0)
+		return min(budgetHeadroom, diskHeadroom), nil
 	}
 	var files []FileCandidate
 	if accounted > 0 && candidates != nil {
 		files, err = candidates()
 		if err != nil {
-			return err
+			return 0, err
 		}
 	}
 	// Walk the sorted file list. At each boundary, evict only playback
@@ -143,34 +196,35 @@ func (c *Cache) makeRoom(accounted, unwritten, additional int64, candidates File
 		if used > 0 {
 			reclaimed, err := c.evictSegmentsBefore(shortage, file.LastUsed)
 			if err != nil {
-				return err
+				return 0, err
 			}
 			shortage -= reclaimed
 			used -= reclaimed
 		}
 		if shortage <= 0 {
-			return nil
+			return 0, nil
 		}
 		reclaimed, err := file.Evict()
 		if err != nil {
-			return err
+			return 0, err
 		}
 		shortage -= reclaimed
 		if shortage <= 0 {
-			return nil
+			return 0, nil
 		}
 	}
 	if used > 0 {
 		reclaimed, err := c.evictSegmentsBefore(shortage, time.Time{})
 		if err != nil {
-			return err
+			return 0, err
 		}
 		shortage -= reclaimed
 	}
 	if shortage > 0 {
-		return ErrPoolFull
+		c.logPoolFull(shortage)
+		return 0, ErrPoolFull
 	}
-	return nil
+	return 0, nil
 }
 
 func (c *Cache) publishFileUsage(retained int64) func() {
@@ -193,37 +247,58 @@ func (c *Cache) evictSegmentsBefore(need int64, cutoff time.Time) (int64, error)
 	return freed, nil
 }
 
-// A fresh volume measurement is required before promising space to a writer.
-// Publish the segment headroom to the playback planners as well.
-func (c *Cache) volumeShortfall(used, unwritten, pending, additional int64) (int64, error) {
+// A volume measurement is refreshed at most once per headroomRefreshEvery when
+// free headroom is known and no new file was committed. Publish the segment
+// headroom to the playback planners as well.
+func (c *Cache) volumeShortfall(used, retained, unwritten, pending, additional int64) (int64, int64, error) {
 	c.floorMu.Lock()
 	defer c.floorMu.Unlock()
 	if c.diskFn == nil {
-		return 0, nil
-	}
-	size, free, err := c.diskFn()
-	if err != nil {
-		return 0, err
-	}
-	if size <= 0 || free < 0 {
-		return 0, errors.New("cannot measure media cache volume")
-	}
-	floor := MinFreeBytes(size)
-	required, err := sumSizes(floor, unwritten, pending, additional)
-	if err != nil {
-		return 0, err
+		return 0, math.MaxInt64, nil
 	}
 	now := c.now()
+	var size, free, floor int64
+	cached := false
+	if c.floor.ok && retained == c.floor.retainedAt && now.Sub(c.floor.at) < headroomRefreshEvery && !now.Before(c.floor.at) {
+		estFree := c.floor.free - max(used-c.floor.usedAt, 0)
+		req, rerr := sumSizes(c.floor.floor, unwritten, pending, additional)
+		if rerr == nil && estFree >= req {
+			free = estFree
+			floor = c.floor.floor
+			cached = true
+		}
+	}
+	if !cached {
+		var err error
+		size, free, err = c.diskFn()
+		if err != nil {
+			return 0, 0, err
+		}
+		if size <= 0 || free < 0 {
+			return 0, 0, errors.New("cannot measure media cache volume")
+		}
+		floor = MinFreeBytes(size)
+	}
+	required, err := sumSizes(floor, unwritten, pending, additional)
+	if err != nil {
+		return 0, 0, err
+	}
 	headroom := free - (required - additional)
 	capacity := max(used+min(headroom, math.MaxInt64-used), 0)
-	c.floor = floorStat{ok: true, at: now, cap: capacity, floor: floor, free: free}
+	if !cached {
+		c.floor = floorStat{ok: true, at: now, cap: capacity, floor: floor, free: free, usedAt: used, retainedAt: retained}
+	} else {
+		c.floor.cap = capacity
+	}
 	c.mu.Lock()
 	c.floorEnabled = true
 	c.floorOKSnap = true
 	c.floorCapSnap = capacity
-	c.floorAtNs = now.UnixNano()
+	if !cached {
+		c.floorAtNs = now.UnixNano()
+	}
 	c.mu.Unlock()
-	return max(required-free, 0), nil
+	return max(required-free, 0), max(free-required, 0), nil
 }
 
 func sumSizes(values ...int64) (int64, error) {
@@ -254,14 +329,37 @@ func (c *Cache) segmentAllocation() (used, pending int64, err error) {
 }
 
 func (c *Cache) reserveSegment(files FilePool, size int64) (string, error) {
+	now := c.now()
+	c.mu.Lock()
+	if !c.closed && c.policy.Mode != "off" && (c.shared != nil || c.indexed.Load()) &&
+		size > 0 && size <= c.batchBytes && now.Sub(c.batchAt) < headroomRefreshEvery && !now.Before(c.batchAt) {
+		c.batchBytes -= size
+		lease := c.batchID
+		if c.shared == nil {
+			c.segmentReserved += size
+		}
+		c.mu.Unlock()
+		return lease, nil
+	}
+	c.mu.Unlock()
+
 	var lease string
 	err := files.WithAllocation(func(accounted, unwritten int64, candidates FileCandidates) error {
-		if err := c.MakeFileRoom(accounted, unwritten, size, candidates); err != nil {
+		headroom, err := c.makeRoom(accounted, unwritten, size, candidates, false)
+		if err != nil {
 			return err
 		}
+		var extra int64
+		if size > 0 && unwritten == 0 && headroom >= 7*size {
+			extra = min(max(int64(segmentBatchMaxBytes)-size, 0), headroom/2)
+		}
+		at := c.now()
 		if c.shared == nil {
 			c.mu.Lock()
 			c.segmentReserved += size
+			c.batchID = ""
+			c.batchBytes = extra
+			c.batchAt = at
 			c.mu.Unlock()
 			return nil
 		}
@@ -269,8 +367,15 @@ func (c *Cache) reserveSegment(files FilePool, size int64) (string, error) {
 		lease = randomName()
 		ctx, cancel := s.context()
 		defer cancel()
-		_, err := s.db.ExecContext(ctx, `INSERT INTO segcache_writes(id,bytes,expires) VALUES(?,?,`+s.nowSQL()+`+600)`, lease, size)
-		return err
+		if _, err := s.db.ExecContext(ctx, `INSERT INTO segcache_writes(id,bytes,expires) VALUES(?,?,`+s.nowSQL()+`+600)`, lease, size+extra); err != nil {
+			return err
+		}
+		c.mu.Lock()
+		c.batchID = lease
+		c.batchBytes = extra
+		c.batchAt = at
+		c.mu.Unlock()
+		return nil
 	})
 	return lease, err
 }
@@ -285,6 +390,8 @@ func (c *Cache) endReservation(lease string, size int64) {
 	s := c.shared
 	ctx, cancel := s.context()
 	defer cancel()
-	_, err := s.db.ExecContext(ctx, `DELETE FROM segcache_writes WHERE id=?`, lease)
+	_, err := s.db.ExecContext(ctx, `UPDATE segcache_writes SET bytes=bytes-? WHERE id=? AND bytes>=?`, size, lease, size)
+	s.log(err)
+	_, err = s.db.ExecContext(ctx, `DELETE FROM segcache_writes WHERE id=? AND bytes<=0`, lease)
 	s.log(err)
 }
