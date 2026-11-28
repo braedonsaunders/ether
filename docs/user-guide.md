@@ -1074,7 +1074,7 @@ account themselves, and only the owner's linked account opens the console.
 
 1. At your provider, create an OIDC client. Ether asks for the `openid`,
    `profile` and `email` scopes and uses the authorization code flow with
-   PKCE, so a public client (no secret) works. Register the redirect URI
+   PKCE, so a public client (no secret) works. Open Ether over HTTPS and register the redirect URI
    `https://<address>/ether/api/oidc/callback` for each address people open
    Ether at, for example both the console and the viewer portal hostnames.
 2. Open **Integrations › Single sign-on**, enter the issuer URL exactly as the
@@ -1122,10 +1122,12 @@ password sign-in still needs an Ether password.
 
 Ether matches people by the provider's issuer and subject, never by e-mail or
 username, so renaming someone at the provider keeps their link, and changing
-the issuer URL means everyone links again. **Disconnect** under **Sign-in
-methods** removes a link. Pending sign-ins are kept in memory for ten minutes
-on the node that started them; in a cluster, the provider must return people
-to the same node.
+the issuer URL means everyone links again. After an ownership transfer, the
+new owner signs in another way and confirms their OIDC account under
+**Sign-in methods**. **Disconnect** removes the link and revokes any Ether
+browser sessions issued through it. Pending sign-ins expire after ten
+minutes or when the OIDC settings change. In a cluster, keep the callback
+and poll requests on the node that started the sign-in.
 
 ## Plex account watch sync
 

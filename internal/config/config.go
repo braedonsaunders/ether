@@ -1133,8 +1133,9 @@ type Store struct {
 	cfg           Config
 	// generation changes whenever the live config is replaced, so readers
 	// can reuse a derived snapshot until the next successful update.
-	generation uint64
-	subs       []func(Config)
+	generation   uint64
+	oidcRevision uint64
+	subs         []func(Config)
 	// syncDir is the post-rename directory-sync step used by save. Open
 	// sets it to syncDirAfterRename (production: skipped on Windows);
 	// tests may replace it per Store to inject a post-rename failure.
@@ -1544,6 +1545,22 @@ func (s *Store) Generation() uint64 {
 	return s.generation
 }
 
+// OIDCSettings returns the live settings and the revision of their sign-in
+// policy. Switching OIDC off and back on invalidates in-flight sign-ins.
+func (s *Store) OIDCSettings() (OIDC, uint64) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg.OIDC, s.oidcRevision
+}
+
+// configChanged runs under mu after a config replacement has committed.
+func (s *Store) configChanged(prev Config) {
+	s.generation++
+	if prev.OIDC != s.cfg.OIDC {
+		s.oidcRevision++
+	}
+}
+
 // Update applies fn to a copy of the config, saves it and notifies subscribers.
 //
 // On a cluster node the shared part is written to the database with an
@@ -1572,7 +1589,7 @@ func (s *Store) update(fn func(*Config) error) error {
 		s.mu.Unlock()
 		return err
 	}
-	s.generation++
+	s.configChanged(prev)
 	subs := append([]func(Config){}, s.subs...)
 	s.mu.Unlock()
 	for _, f := range subs {

@@ -62,9 +62,9 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
     // Open the window inside the click so popup blockers allow it.
     const popup = window.open("", `${kind}-sign-in`, "width=560,height=720");
     popupRef.current = popup;
-    const poll = kind === "plex" ? api.signInPoll : api.oidcSignInPoll;
     try {
-      const pin = await (kind === "plex" ? api.signInStart() : api.oidcSignInStart());
+      const pin =
+        kind === "plex" ? { ...(await api.signInStart()), state: "" } : await api.oidcSignInStart();
       if (cancelled.current) return;
       setPending({ kind, authUrl: pin.authUrl });
       if (popup) {
@@ -76,7 +76,9 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
       while (!cancelled.current && Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, POLL_MS));
         if (cancelled.current) return;
-        const res = await poll(pin.handle);
+        const res = await (kind === "plex"
+          ? api.signInPoll(pin.handle)
+          : api.oidcSignInPoll(pin.handle, pin.state));
         if (cancelled.current) return;
         if (res.done && res.token) {
           setToken(res.token);

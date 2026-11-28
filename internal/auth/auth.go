@@ -1387,9 +1387,18 @@ func (s *Service) setOwnerTx(ctx context.Context, a plextv.Account, serverToken 
 	if _, err := tx.ExecContext(ctx, `UPDATE auth_users SET plex_id=? WHERE is_owner=1 AND plex_id IS NULL`, a.ID); err != nil {
 		return fmt.Errorf("auth: attach Plex owner: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE auth_users SET is_owner=0, origin=CASE WHEN origin='owner' THEN 'friend' ELSE origin END,
-		active=CASE WHEN is_owner=1 THEN 0 ELSE active END WHERE is_owner=1 AND plex_id<>?`, a.ID); err != nil {
+	var formerOwner int64
+	if err := tx.QueryRowContext(ctx, `UPDATE auth_users SET is_owner=0, origin=CASE WHEN origin='owner' THEN 'friend' ELSE origin END,
+		active=0 WHERE is_owner=1 AND plex_id<>? RETURNING id`, a.ID).Scan(&formerOwner); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
+	}
+	// A former owner must confirm their OIDC account again if they return
+	// to the owner role. Refreshing the current owner keeps their approval.
+	if formerOwner != 0 {
+		if _, err := tx.ExecContext(ctx, `UPDATE identity_links SET oidc_owner_approved=0
+			WHERE provider='oidc' AND oidc_owner_approved=1 AND viewer_id=?`, formerOwner); err != nil {
+			return err
+		}
 	}
 	title := a.DisplayName()
 	if _, err := tx.ExecContext(ctx, `

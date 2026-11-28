@@ -43,9 +43,9 @@ func randomCredential(prefix string) (string, error) {
 	return prefix + base64.RawURLEncoding.EncodeToString(b[:]), nil
 }
 
-// lockRefreshViewer takes the viewer's write lock on PostgreSQL and the
-// writer lock on SQLite before reading or changing refresh lineage in a transaction.
-func lockRefreshViewer(ctx context.Context, tx *sql.Tx, viewerID int64) error {
+// lockViewer takes the viewer's write lock on PostgreSQL and the writer
+// lock on SQLite before reading or changing credentials in a transaction.
+func lockViewer(ctx context.Context, tx *sql.Tx, viewerID int64) error {
 	_, err := tx.ExecContext(ctx, `UPDATE auth_users SET updated_at=updated_at WHERE id=?`, viewerID)
 	return err
 }
@@ -75,7 +75,7 @@ func (g *Grants) IssueRefresh(ctx context.Context, surface, access string, devic
 		return "", e
 	}
 	defer tx.Rollback()
-	if e = lockRefreshViewer(ctx, tx, viewer.ID); e != nil {
+	if e = lockViewer(ctx, tx, viewer.ID); e != nil {
 		return "", e
 	}
 	res, e := tx.ExecContext(ctx, `INSERT INTO identity_refresh_families(id,viewer_id,surface,device_id,current_hash,access_hash,absolute_expiry,idle_expiry) SELECT ?,g.viewer_id,g.surface,g.device_id,?,?,?,? FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.viewer_id=? AND g.surface=? AND g.device_id=? AND g.revoked=0 AND g.expires>? AND u.active=1 AND (u.origin<>'dlna_guest' OR g.surface='dlna')`, family, rh, ah, now+refreshAbsolute.Milliseconds(), now+refreshIdle.Milliseconds(), ah, viewer.ID, surface, device.ID, now)
@@ -133,7 +133,7 @@ func (g *Grants) Refresh(ctx context.Context, surface, token string, device core
 		return "", "", e
 	}
 	defer tx.Rollback()
-	if e = lockRefreshViewer(ctx, tx, memberID); e != nil {
+	if e = lockViewer(ctx, tx, memberID); e != nil {
 		return "", "", e
 	}
 	var family string

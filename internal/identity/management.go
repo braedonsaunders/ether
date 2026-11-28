@@ -11,13 +11,14 @@ import (
 )
 
 type LinkedIdentity struct {
-	ID       int64  `json:"id"`
-	Provider string `json:"provider"`
-	Display  string `json:"display"`
+	ID                int64  `json:"id"`
+	Provider          string `json:"provider"`
+	Display           string `json:"display"`
+	OIDCOwnerApproved bool   `json:"oidcOwnerApproved,omitempty"`
 }
 
 func (l *Local) Links(ctx context.Context, viewerID int64) ([]LinkedIdentity, error) {
-	rows, err := l.db.QueryContext(ctx, `SELECT id,provider,display FROM identity_links WHERE viewer_id=? ORDER BY id`, viewerID)
+	rows, err := l.db.QueryContext(ctx, `SELECT id,provider,display,oidc_owner_approved FROM identity_links WHERE viewer_id=? ORDER BY id`, viewerID)
 	if err != nil {
 		return nil, err
 	}
@@ -25,7 +26,7 @@ func (l *Local) Links(ctx context.Context, viewerID int64) ([]LinkedIdentity, er
 	result := []LinkedIdentity{}
 	for rows.Next() {
 		var v LinkedIdentity
-		if err = rows.Scan(&v.ID, &v.Provider, &v.Display); err != nil {
+		if err = rows.Scan(&v.ID, &v.Provider, &v.Display, &v.OIDCOwnerApproved); err != nil {
 			return nil, err
 		}
 		result = append(result, v)

@@ -149,29 +149,45 @@ func grantHash(credential string) (string, bool) {
 
 // Issue creates a new independent credential for a device and surface.
 func (g *Grants) Issue(ctx context.Context, viewerID int64, identityID *int64, surface string, device core.Device) (string, error) {
-	return g.issue(ctx, viewerID, identityID, surface, device, false, false, "", "", "")
+	return g.issue(ctx, viewerID, identityID, surface, device, grantIssue{})
 }
 
 // IssueLogin atomically issues a grant and records a successful explicit sign-in.
 func (g *Grants) IssueLogin(ctx context.Context, viewerID int64, identityID *int64, surface string, device core.Device) (string, error) {
-	return g.issue(ctx, viewerID, identityID, surface, device, true, false, "", "", "")
+	return g.issue(ctx, viewerID, identityID, surface, device, grantIssue{login: true})
 }
 
 // IssueOwnerLogin admits only an active owner and records the sign-in atomically.
 func (g *Grants) IssueOwnerLogin(ctx context.Context, viewerID int64, identityID *int64, surface string, device core.Device) (string, error) {
-	return g.issue(ctx, viewerID, identityID, surface, device, true, true, "", "", "")
+	return g.issue(ctx, viewerID, identityID, surface, device, grantIssue{login: true, ownerOnly: true})
+}
+
+// IssueOIDCLogin verifies that the link still belongs to the viewer while
+// issuing the browser grant. Owners need an explicitly confirmed link on
+// both browser surfaces.
+func (g *Grants) IssueOIDCLogin(ctx context.Context, viewerID int64, identityID *int64, surface string, device core.Device) (string, error) {
+	if identityID == nil || (surface != "owner" && surface != "viewer-portal") {
+		return "", core.ErrUnauthorized
+	}
+	return g.issue(ctx, viewerID, identityID, surface, device, grantIssue{login: true, ownerOnly: surface == "owner", oidc: true})
 }
 
 // ViewerTimes returns the database-backed event observer owned by this grant service.
 func (g *Grants) ViewerTimes() *ViewerTimes { return g.times }
 
-func (g *Grants) issue(ctx context.Context, viewerID int64, identityID *int64, surface string, device core.Device, login, ownerOnly bool, token, xtreamUsername, sealedPassword string) (string, error) {
+type grantIssue struct {
+	login, ownerOnly, oidc                bool
+	token, xtreamUsername, sealedPassword string
+}
+
+func (g *Grants) issue(ctx context.Context, viewerID int64, identityID *int64, surface string, device core.Device, opts grantIssue) (string, error) {
 	if surface == "" || viewerID <= 0 {
 		return "", errors.New("identity: surface and viewer required")
 	}
 	if _, err := g.viewers.ActiveUser(ctx, viewerID); err != nil {
 		return "", err
 	}
+	token := opts.token
 	if token == "" {
 		var raw [32]byte
 		if _, err := rand.Read(raw[:]); err != nil {
@@ -186,7 +202,7 @@ func (g *Grants) issue(ctx context.Context, viewerID int64, identityID *int64, s
 	} = g.db
 	var tx *sql.Tx
 	var err error
-	if login {
+	if opts.login {
 		tx, err = g.db.BeginTx(ctx, nil)
 		if err != nil {
 			return "", err
@@ -194,11 +210,25 @@ func (g *Grants) issue(ctx context.Context, viewerID int64, identityID *int64, s
 		defer tx.Rollback()
 		exec = tx
 	}
-	ownerFlag := 0
-	if ownerOnly {
-		ownerFlag = 1
+	if opts.oidc {
+		if err = lockViewer(ctx, tx, viewerID); err != nil {
+			return "", err
+		}
+		var owner, approved bool
+		err = tx.QueryRowContext(ctx, `SELECT u.is_owner,i.oidc_owner_approved FROM identity_links i JOIN auth_users u ON u.id=i.viewer_id
+			WHERE i.id=? AND i.viewer_id=? AND i.provider=?`, identityID, viewerID, OIDCProvider).Scan(&owner, &approved)
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", core.ErrUnauthorized
+		}
+		if err != nil {
+			return "", err
+		}
+		if owner && !approved {
+			return "", ErrOIDCOwnerApproval
+		}
 	}
-	result, err := exec.ExecContext(ctx, `INSERT INTO identity_grants(hash,viewer_id,identity_id,surface,device_id,client,product,version,created,last_used,expires,xtream_username,xtream_password) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM auth_users WHERE id=? AND active=1 AND (?=0 OR is_owner=1) AND (origin<>'dlna_guest' OR ?='dlna')) ON CONFLICT(xtream_username) DO NOTHING`, hash, viewerID, identityID, surface, device.ID, device.Client, device.Product, device.Version, now, now, now+g.ttl.Milliseconds(), nullableXtreamUsername(xtreamUsername), sealedPassword, viewerID, ownerFlag, surface)
+	result, err := exec.ExecContext(ctx, `INSERT INTO identity_grants(hash,viewer_id,identity_id,surface,device_id,client,product,version,created,last_used,expires,xtream_username,xtream_password) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM auth_users WHERE id=? AND active=1 AND (?=0 OR is_owner=1) AND (origin<>'dlna_guest' OR ?='dlna')) ON CONFLICT(xtream_username) DO NOTHING`,
+		hash, viewerID, identityID, surface, device.ID, device.Client, device.Product, device.Version, now, now, now+g.ttl.Milliseconds(), nullableXtreamUsername(opts.xtreamUsername), opts.sealedPassword, viewerID, store.BoolInt(opts.ownerOnly), surface)
 	if err != nil {
 		return "", err
 	}
@@ -207,12 +237,12 @@ func (g *Grants) issue(ctx context.Context, viewerID int64, identityID *int64, s
 		return "", err
 	}
 	if n != 1 {
-		if xtreamUsername != "" {
+		if opts.xtreamUsername != "" {
 			return "", errXtreamNameUnavailable
 		}
 		return "", core.ErrUnauthorized
 	}
-	if login {
+	if opts.login {
 		if err := recordLogin(ctx, tx, viewerID, now); err != nil {
 			return "", err
 		}
@@ -319,7 +349,11 @@ func (g *Grants) resolve(ctx context.Context, surface, credential string, asyncA
 	// the queue before the row: the drainer drops a touch only after its
 	// write commits, so a touch missing from the queue is in the row.
 	touch, pending := g.pendingTouch(grantTouchKey{hash: hash, surface: surface})
-	err := g.db.QueryRowContext(ctx, `SELECT g.hash,g.viewer_id,u.is_owner,g.last_used,g.expires FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.surface=? AND g.revoked=0 AND u.active=1 AND (u.origin<>'dlna_guest' OR g.surface='dlna')`, hash, surface).Scan(&stored, &id, &owner, &lastUsed, &expires)
+	err := g.db.QueryRowContext(ctx, `SELECT g.hash,g.viewer_id,u.is_owner,g.last_used,g.expires FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id
+		WHERE g.hash=? AND g.surface=? AND g.revoked=0 AND u.active=1 AND (u.origin<>'dlna_guest' OR g.surface='dlna')
+		AND (u.is_owner=0 OR NOT EXISTS(SELECT 1 FROM identity_links i
+			WHERE i.id=g.identity_id AND i.viewer_id=g.viewer_id AND i.provider=? AND i.oidc_owner_approved=0))`,
+		hash, surface, OIDCProvider).Scan(&stored, &id, &owner, &lastUsed, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, core.ErrUnauthorized
 	}
@@ -462,7 +496,7 @@ func (g *Grants) revoke(ctx context.Context, viewerID int64, kind, reason, grant
 		return 0, err
 	}
 	defer tx.Rollback()
-	if err = lockRefreshViewer(ctx, tx, viewerID); err != nil {
+	if err = lockViewer(ctx, tx, viewerID); err != nil {
 		return 0, err
 	}
 	args := append([]any{viewerID}, filterArgs...)

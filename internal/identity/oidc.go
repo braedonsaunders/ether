@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/store"
 )
 
 // OIDCProvider is the identity_links provider name for single sign-on
@@ -19,6 +20,9 @@ const OIDCProvider = "oidc"
 // ErrIdentityLinked means the provider account already signs in as another
 // viewer.
 var ErrIdentityLinked = errors.New("identity: provider account is linked to another viewer")
+
+// ErrOIDCOwnerApproval means the viewer needs to confirm their link as owner.
+var ErrOIDCOwnerApproval = errors.New("identity: single sign-on link needs owner confirmation")
 
 func validOIDCSubject(subject string) bool {
 	return subject != "" && len(subject) <= 1024 && !strings.ContainsAny(subject, "\x00\r\n")
@@ -41,18 +45,48 @@ func (l *Local) OIDCViewer(ctx context.Context, subject string) (viewerID, ident
 }
 
 // LinkOIDC lets a verified provider account sign in as viewerID. Linking the
-// same account again refreshes its display name. An account that already
-// signs in as someone else is refused with ErrIdentityLinked.
-func (l *Local) LinkOIDC(ctx context.Context, viewerID int64, subject, display string) error {
+// same account again refreshes its display name. An owner confirmation
+// requires that the viewer still owns the server when the link is written.
+func (l *Local) LinkOIDC(ctx context.Context, viewerID int64, subject, display string, owner bool) error {
 	if viewerID <= 0 || !validOIDCSubject(subject) {
 		return errors.New("identity: invalid single sign-on identity")
 	}
-	display = strings.TrimSpace(display)
-	result, err := l.db.ExecContext(ctx, `INSERT INTO identity_links (viewer_id,provider,subject,display,verified_at)
-		SELECT id, ?, ?, ?, ? FROM auth_users WHERE id=? AND active=1 AND origin<>'dlna_guest'
-		ON CONFLICT(provider, subject) DO UPDATE SET display=excluded.display, verified_at=excluded.verified_at
+	tx, err := l.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = lockViewer(ctx, tx, viewerID); err != nil {
+		return err
+	}
+	if owner {
+		// Confirming a former viewer's link must not restore sessions
+		// that were blocked when that viewer became the owner.
+		var id int64
+		err := tx.QueryRowContext(ctx, `SELECT id FROM identity_links
+			WHERE viewer_id=? AND provider=? AND subject=? AND oidc_owner_approved=0`, viewerID, OIDCProvider, subject).Scan(&id)
+		if err == nil {
+			if _, err := revokeOIDCGrants(ctx, tx, viewerID, id); err != nil {
+				return err
+			}
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+	}
+	if err = linkOIDC(ctx, tx, viewerID, subject, display, owner); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func linkOIDC(ctx context.Context, tx *sql.Tx, viewerID int64, subject, display string, owner bool) error {
+	ownerFlag := store.BoolInt(owner)
+	result, err := tx.ExecContext(ctx, `INSERT INTO identity_links (viewer_id,provider,subject,display,verified_at,oidc_owner_approved)
+		SELECT id, ?, ?, ?, ?, is_owner FROM auth_users WHERE id=? AND active=1 AND origin<>'dlna_guest' AND is_owner=?
+		ON CONFLICT(provider, subject) DO UPDATE SET display=excluded.display, verified_at=excluded.verified_at,
+			oidc_owner_approved=excluded.oidc_owner_approved
 		WHERE identity_links.viewer_id=excluded.viewer_id`,
-		OIDCProvider, subject, display, time.Now().Unix(), viewerID)
+		OIDCProvider, subject, strings.TrimSpace(display), time.Now().Unix(), viewerID, ownerFlag)
 	if err != nil {
 		return err
 	}
@@ -63,9 +97,9 @@ func (l *Local) LinkOIDC(ctx context.Context, viewerID int64, subject, display s
 	if n == 1 {
 		return nil
 	}
-	var owner int64
-	err = l.db.QueryRowContext(ctx, `SELECT viewer_id FROM identity_links WHERE provider=? AND subject=?`, OIDCProvider, subject).Scan(&owner)
-	if err == nil && owner != viewerID {
+	var linkedViewer int64
+	err = tx.QueryRowContext(ctx, `SELECT viewer_id FROM identity_links WHERE provider=? AND subject=?`, OIDCProvider, subject).Scan(&linkedViewer)
+	if err == nil && linkedViewer != viewerID {
 		return ErrIdentityLinked
 	}
 	return core.ErrUnauthorized
@@ -74,21 +108,53 @@ func (l *Local) LinkOIDC(ctx context.Context, viewerID int64, subject, display s
 // HasOIDC reports whether an active viewer can sign in with single sign-on.
 func (l *Local) HasOIDC(ctx context.Context, viewerID int64) (bool, error) {
 	var found bool
-	err := l.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity_links i JOIN auth_users u ON u.id=i.viewer_id WHERE i.viewer_id=? AND i.provider=? AND u.active=1 AND u.origin<>'dlna_guest')`, viewerID, OIDCProvider).Scan(&found)
+	err := l.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity_links i JOIN auth_users u ON u.id=i.viewer_id
+		WHERE i.viewer_id=? AND i.provider=? AND u.active=1 AND u.origin<>'dlna_guest'
+		AND (u.is_owner=0 OR i.oidc_owner_approved=1))`, viewerID, OIDCProvider).Scan(&found)
 	return found, err
 }
 
-// UnlinkOIDC removes one of the viewer's single sign-on identities. Other
-// providers' links are never removed here.
-func (l *Local) UnlinkOIDC(ctx context.Context, viewerID, identityID int64) error {
-	result, err := l.db.ExecContext(ctx, `DELETE FROM identity_links WHERE id=? AND viewer_id=? AND provider=?`, identityID, viewerID, OIDCProvider)
+// UnlinkOIDC removes the viewer's single sign-on link and its sessions in
+// one transaction, using the same viewer lock as issuance.
+func (g *Grants) UnlinkOIDC(ctx context.Context, viewerID, identityID int64) error {
+	tx, err := g.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	if n, err := result.RowsAffected(); err != nil || n != 1 {
+	defer tx.Rollback()
+	if err = lockViewer(ctx, tx, viewerID); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM identity_links WHERE id=? AND viewer_id=? AND provider=?`, identityID, viewerID, OIDCProvider)
+	if err != nil {
+		return err
+	}
+	if n, err := result.RowsAffected(); err != nil {
+		return err
+	} else if n != 1 {
 		return core.ErrNotFound
 	}
+	revoked, err := revokeOIDCGrants(ctx, tx, viewerID, identityID)
+	if err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	if revoked > 0 {
+		g.gen.Add(1)
+		g.emitRevoked(viewerID, "grant", "identity_unlinked")
+	}
 	return nil
+}
+
+func revokeOIDCGrants(ctx context.Context, tx *sql.Tx, viewerID, identityID int64) (int64, error) {
+	result, err := tx.ExecContext(ctx, `UPDATE identity_grants SET revoked=1
+		WHERE viewer_id=? AND identity_id=? AND revoked=0`, viewerID, identityID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 // ErrNoMatch means automatic linking found no viewer, or more than one.
@@ -106,18 +172,51 @@ type OIDCMatch struct {
 	Username string
 }
 
-// MatchOIDCViewer finds the single active viewer that m names. The owner is
-// never matched: ownership is only reached through a link the owner made
-// while signed in. Viewers already linked to another account at the same
-// provider are skipped, so a second account cannot take one over. When e-mail
-// and username both match, they must name the same viewer.
-func (l *Local) MatchOIDCViewer(ctx context.Context, m OIDCMatch) (int64, error) {
+// AutoLinkOIDC links the single matching viewer. Recheck the match under
+// the viewer lock so another sign-in cannot claim the same viewer between
+// matching and writing the link.
+func (l *Local) AutoLinkOIDC(ctx context.Context, m OIDCMatch, subject, display string) (int64, error) {
+	if !validOIDCSubject(subject) || m.Issuer == "" || !strings.HasPrefix(subject, m.Issuer+"|") {
+		return 0, errors.New("identity: invalid single sign-on identity")
+	}
+	id, err := matchOIDCViewer(ctx, l.db, m)
+	if err != nil {
+		return 0, err
+	}
+	tx, err := l.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if err = lockViewer(ctx, tx, id); err != nil {
+		return 0, err
+	}
+	match, err := matchOIDCViewer(ctx, tx, m)
+	if err != nil {
+		return 0, err
+	}
+	if match != id {
+		return 0, ErrNoMatch
+	}
+	if err = linkOIDC(ctx, tx, id, subject, display, false); err != nil {
+		return 0, err
+	}
+	if err = tx.Commit(); err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+// Only a single active non-owner without a link at this issuer can match.
+func matchOIDCViewer(ctx context.Context, db interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}, m OIDCMatch) (int64, error) {
 	email := strings.ToLower(strings.TrimSpace(m.Email))
 	username := strings.ToLower(strings.TrimSpace(m.Username))
 	if email == "" && username == "" {
 		return 0, ErrNoMatch
 	}
-	rows, err := l.db.QueryContext(ctx, `SELECT DISTINCT u.id FROM auth_users u
+	rows, err := db.QueryContext(ctx, `SELECT DISTINCT u.id FROM auth_users u
 		WHERE u.active=1 AND u.is_owner=0 AND u.origin<>'dlna_guest'
 		AND NOT EXISTS (SELECT 1 FROM identity_links o WHERE o.viewer_id=u.id AND o.provider=? AND o.subject LIKE ? ESCAPE '\')
 		AND ((?<>'' AND LOWER(u.email)=?)

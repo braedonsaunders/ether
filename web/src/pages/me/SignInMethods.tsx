@@ -16,7 +16,7 @@ import { SettingsRow } from "../../components/SettingsRow";
 
 export const MIN_LOCAL_PASSWORD = 12;
 
-type Method = { id: number; provider: string; display: string };
+type Method = { id: number; provider: string; display: string; oidcOwnerApproved?: boolean };
 type Device = {
   hash: string;
   surface: string;
@@ -60,6 +60,7 @@ export default function SignInMethods({
   beforeDevices,
   quickConnect,
   oidcName = null,
+  viewerIsOwner = false,
 }: {
   base: string;
   token: string;
@@ -72,6 +73,7 @@ export default function SignInMethods({
   showInvite?: boolean;
   /** The single sign-on provider's name when it is on; viewers may link it. */
   oidcName?: string | null;
+  viewerIsOwner?: boolean;
 }) {
   const [methods, setMethods] = useState<Method[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
@@ -204,7 +206,7 @@ export default function SignInMethods({
     setMessage("");
     const popup = window.open("", "_blank", "width=560,height=720");
     try {
-      const flow = await call<{ handle: string; authUrl: string }>("/link/oidc", {});
+      const flow = await call<{ handle: string; state: string; authUrl: string }>("/link/oidc", {});
       if (cancelled.current) return;
       if (popup) {
         popup.opener = null;
@@ -214,9 +216,10 @@ export default function SignInMethods({
       while (!cancelled.current && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
         if (cancelled.current) return;
-        const result = await call<{ done: boolean }>(
-          `/link/oidc/${encodeURIComponent(flow.handle)}`,
-        );
+        const result = await call<{ done: boolean }>("/link/oidc/poll", {
+          handle: flow.handle,
+          state: flow.state,
+        });
         if (result.done) {
           await load();
           setMessage(t("{provider} account linked.", { provider: oidcName ?? "" }));
@@ -266,7 +269,9 @@ export default function SignInMethods({
       (owner && methods.findIndex((other) => other.provider === "invite") === index),
   );
   const plexLinked = methods.some((m) => m.provider === "plex");
-  const oidcLinked = methods.some((m) => m.provider === "oidc");
+  const oidcLinked = methods.some(
+    (m) => m.provider === "oidc" && (!viewerIsOwner || m.oidcOwnerApproved),
+  );
   const canLinkOIDC = !owner && Boolean(oidcName) && !oidcLinked;
   return (
     <div className="space-y-6">

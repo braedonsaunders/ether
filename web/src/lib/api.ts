@@ -372,9 +372,9 @@ export const api = {
   signInStart: () => post<{ handle: string; code: string; authUrl: string }>("/auth/pin"),
   signInPoll: (handle: string) =>
     apiFetch<{ done: boolean; token?: string }>(`/auth/pin/${encodeURIComponent(handle)}`),
-  oidcSignInStart: () => post<{ handle: string; authUrl: string }>("/auth/oidc"),
-  oidcSignInPoll: (handle: string) =>
-    apiFetch<{ done: boolean; token?: string }>(`/auth/oidc/${encodeURIComponent(handle)}`),
+  oidcSignInStart: () => post<{ handle: string; state: string; authUrl: string }>("/auth/oidc"),
+  oidcSignInPoll: (handle: string, state: string) =>
+    post<{ done: boolean; token?: string }>("/auth/oidc/poll", { handle, state }),
   /** Exchanges a pasted owner Plex token for a console session. */
   createSession: (plexToken: string) =>
     apiFetch<{ done: boolean; token: string }>("/auth/session", {

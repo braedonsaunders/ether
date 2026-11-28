@@ -71,12 +71,12 @@ func (v *validator) oidcIssuer(field, s string, required bool) {
 		return
 	}
 	u, err := url.Parse(s)
-	if err != nil || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+	if err != nil || u.Hostname() == "" || u.User != nil || strings.ContainsAny(s, "?#|") {
 		v.add(field, "must be the provider's issuer URL")
 		return
 	}
 	host := u.Hostname()
-	loopback := host == "localhost"
+	loopback := strings.EqualFold(host, "localhost")
 	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
 		loopback = true
 	}

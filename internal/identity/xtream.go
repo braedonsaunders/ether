@@ -100,7 +100,7 @@ func (g *Grants) IssueAppLogin(ctx context.Context, viewerID int64, surface stri
 		if e != nil {
 			return "", "", "", e
 		}
-		_, err = g.issue(ctx, viewerID, nil, surface, device, false, false, credential, username, sealed)
+		_, err = g.issue(ctx, viewerID, nil, surface, device, grantIssue{token: credential, xtreamUsername: username, sealedPassword: sealed})
 		if errors.Is(err, errXtreamNameUnavailable) {
 			continue
 		}

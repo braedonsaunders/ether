@@ -162,30 +162,33 @@ func TestSignInVerifiesAndReleasesOnceToTheHandle(t *testing.T) {
 		t.Fatal(err)
 	}
 	handle, authURL := st.Handle, st.AuthURL
-	if _, done, err := c.Take(handle, PurposePortal, 0); err != nil || done {
+	if _, done, err := c.Take(handle, st.Binding, 0, PurposePortal, 0); err != nil || done {
 		t.Fatalf("pending take = done %v err %v", done, err)
 	}
 	state, code := p.approve(t, authURL)
 	if state != st.State || state == handle || st.Binding == "" || st.Binding == handle || st.Binding == state {
 		t.Fatal("state, handle and binding must be distinct and only the state may travel through the provider")
 	}
-	if err := c.Callback(ctx, state, st.Binding, code, ""); err != nil {
+	if err := c.Callback(ctx, state, st.Binding, code, "", 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := c.Take(handle, PurposeOwner, 0); !errors.Is(err, ErrExpired) {
+	if _, _, err := c.Take(handle, st.Binding, 0, PurposeOwner, 0); !errors.Is(err, ErrExpired) {
 		t.Fatalf("take for another purpose = %v, want ErrExpired", err)
 	}
-	id, done, err := c.Take(handle, PurposePortal, 0)
+	if _, _, err := c.Take(handle, "", 0, PurposePortal, 0); !errors.Is(err, ErrRejected) {
+		t.Fatalf("take without browser proof = %v, want ErrRejected", err)
+	}
+	id, done, err := c.Take(handle, st.Binding, 0, PurposePortal, 0)
 	if err != nil || !done {
 		t.Fatalf("take = done %v err %v", done, err)
 	}
 	if id.Subject != SubjectFor(p.srv.URL, "user-1") || id.Display != "alex" {
 		t.Fatalf("identity = %+v", id)
 	}
-	if _, _, err := c.Take(handle, PurposePortal, 0); !errors.Is(err, ErrExpired) {
+	if _, _, err := c.Take(handle, st.Binding, 0, PurposePortal, 0); !errors.Is(err, ErrExpired) {
 		t.Fatalf("second take = %v, want ErrExpired", err)
 	}
-	if err := c.Callback(ctx, state, st.Binding, code, ""); !errors.Is(err, ErrExpired) {
+	if err := c.Callback(ctx, state, st.Binding, code, "", 0); !errors.Is(err, ErrExpired) {
 		t.Fatalf("replayed callback = %v, want ErrExpired", err)
 	}
 }
@@ -203,13 +206,13 @@ func TestLinkFlowIsBoundToTheStartingViewer(t *testing.T) {
 	}
 	handle := st.Handle
 	state, code := p.approve(t, st.AuthURL)
-	if err := c.Callback(ctx, state, st.Binding, code, ""); err != nil {
+	if err := c.Callback(ctx, state, st.Binding, code, "", 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := c.Take(handle, PurposeLink, 8); !errors.Is(err, ErrExpired) {
+	if _, _, err := c.Take(handle, st.Binding, 0, PurposeLink, 8); !errors.Is(err, ErrExpired) {
 		t.Fatalf("take by another viewer = %v, want ErrExpired", err)
 	}
-	if _, done, err := c.Take(handle, PurposeLink, 7); err != nil || !done {
+	if _, done, err := c.Take(handle, st.Binding, 0, PurposeLink, 7); err != nil || !done {
 		t.Fatalf("take by the starting viewer = done %v err %v", done, err)
 	}
 }
@@ -251,10 +254,10 @@ func TestRejectedAnswersEndTheFlow(t *testing.T) {
 			if tc.binding != nil {
 				binding = *tc.binding
 			}
-			if err := c.Callback(context.Background(), state, binding, code, tc.providerError); !errors.Is(err, ErrRejected) {
+			if err := c.Callback(context.Background(), state, binding, code, tc.providerError, 0); !errors.Is(err, ErrRejected) {
 				t.Fatalf("callback = %v, want ErrRejected", err)
 			}
-			if _, done, err := c.Take(handle, PurposePortal, 0); !done || !errors.Is(err, ErrRejected) {
+			if _, done, err := c.Take(handle, st.Binding, 0, PurposePortal, 0); !done || !errors.Is(err, ErrRejected) {
 				t.Fatalf("take = done %v err %v, want rejected", done, err)
 			}
 		})
@@ -273,11 +276,81 @@ func TestFlowsExpire(t *testing.T) {
 	handle := st.Handle
 	state, code := p.approve(t, st.AuthURL)
 	now = now.Add(FlowTTL + time.Second)
-	if err := c.Callback(context.Background(), state, st.Binding, code, ""); !errors.Is(err, ErrExpired) {
+	if err := c.Callback(context.Background(), state, st.Binding, code, "", 0); !errors.Is(err, ErrExpired) {
 		t.Fatalf("late callback = %v, want ErrExpired", err)
 	}
-	if _, _, err := c.Take(handle, PurposeOwner, 0); !errors.Is(err, ErrExpired) {
+	if _, _, err := c.Take(handle, st.Binding, 0, PurposeOwner, 0); !errors.Is(err, ErrExpired) {
 		t.Fatalf("late take = %v, want ErrExpired", err)
+	}
+}
+
+func TestCompletedFlowsRequireCurrentRevisionAndDeadline(t *testing.T) {
+	for _, name := range []string{"deadline", "revision"} {
+		t.Run(name, func(t *testing.T) {
+			p := newFakeProvider(t)
+			c := New(p.srv.Client())
+			now := time.Now()
+			c.now = func() time.Time { return now }
+			settings := p.settings()
+			settings.Revision = 1
+			st, err := c.Start(t.Context(), settings, redirect, PurposePortal, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			state, code := p.approve(t, st.AuthURL)
+			if err := c.Callback(t.Context(), state, st.Binding, code, "", settings.Revision); err != nil {
+				t.Fatal(err)
+			}
+			if name == "deadline" {
+				now = now.Add(FlowTTL)
+			} else {
+				settings.Revision++
+			}
+			if _, _, err := c.Take(st.Handle, st.Binding, settings.Revision, PurposePortal, 0); !errors.Is(err, ErrExpired) {
+				t.Fatalf("take = %v, want ErrExpired", err)
+			}
+		})
+	}
+}
+
+func TestProviderTransportValidation(t *testing.T) {
+	for _, endpoint := range []string{"authorization_endpoint", "token_endpoint", "jwks_uri", "userinfo_endpoint"} {
+		t.Run(endpoint, func(t *testing.T) {
+			var issuer string
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				metadata := map[string]string{
+					"issuer":                 issuer,
+					"authorization_endpoint": issuer + "/authorize",
+					"token_endpoint":         issuer + "/token",
+					"jwks_uri":               issuer + "/jwks",
+					"userinfo_endpoint":      issuer + "/userinfo",
+				}
+				metadata[endpoint] = "http://127.0.0.1:12345/" + endpoint
+				_ = json.NewEncoder(w).Encode(metadata)
+			}))
+			t.Cleanup(server.Close)
+			issuer = server.URL
+			if err := New(server.Client()).Check(t.Context(), Settings{Issuer: issuer, ClientID: "ether"}); err == nil {
+				t.Fatalf("https issuer accepted a plaintext %s", endpoint)
+			}
+		})
+	}
+	for _, tc := range []struct {
+		name, method, from, to string
+		allowed                bool
+	}{
+		{"same origin", "POST", "https://auth.example.test/token", "https://auth.example.test/v2/token", true},
+		{"downgrade", "GET", "https://auth.example.test/jwks", "http://127.0.0.1:12345/jwks", false},
+		{"cross-origin token exchange", "POST", "https://auth.example.test/token", "https://other.example.test/token", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			origin := httptest.NewRequest(tc.method, tc.from, nil)
+			next := httptest.NewRequest(tc.method, tc.to, nil)
+			err := New(nil).HTTP.CheckRedirect(next, []*http.Request{origin})
+			if (err == nil) != tc.allowed {
+				t.Fatalf("redirect permission = %v", err)
+			}
+		})
 	}
 }
 
@@ -321,10 +394,10 @@ func TestProfileClaims(t *testing.T) {
 				t.Fatalf("scope = %q", scope)
 			}
 			state, code := p.approve(t, st.AuthURL)
-			if err := c.Callback(context.Background(), state, st.Binding, code, ""); err != nil {
+			if err := c.Callback(context.Background(), state, st.Binding, code, "", 0); err != nil {
 				t.Fatal(err)
 			}
-			id, _, err := c.Take(st.Handle, PurposePortal, 0)
+			id, _, err := c.Take(st.Handle, st.Binding, 0, PurposePortal, 0)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -349,10 +422,10 @@ func TestIssuerKeptExactly(t *testing.T) {
 				t.Fatal(err)
 			}
 			state, code := p.approve(t, st.AuthURL)
-			if err := c.Callback(context.Background(), state, st.Binding, code, ""); err != nil {
+			if err := c.Callback(context.Background(), state, st.Binding, code, "", 0); err != nil {
 				t.Fatal(err)
 			}
-			id, _, err := c.Take(st.Handle, PurposePortal, 0)
+			id, _, err := c.Take(st.Handle, st.Binding, 0, PurposePortal, 0)
 			if err != nil || id.Subject != SubjectFor(p.issuer(), "user-1") {
 				t.Fatalf("identity = %+v %v", id, err)
 			}
@@ -383,10 +456,10 @@ func TestGroupsClaimNameAndShape(t *testing.T) {
 		t.Fatalf("scope = %q, want no extra scopes unless configured", scope)
 	}
 	state, code := p.approve(t, st.AuthURL)
-	if err := c.Callback(context.Background(), state, st.Binding, code, ""); err != nil {
+	if err := c.Callback(context.Background(), state, st.Binding, code, "", 0); err != nil {
 		t.Fatal(err)
 	}
-	id, _, _ := c.Take(st.Handle, PurposePortal, 0)
+	id, _, _ := c.Take(st.Handle, st.Binding, 0, PurposePortal, 0)
 	if len(id.Groups) != 1 || id.Groups[0] != "ether" {
 		t.Fatalf("groups = %v", id.Groups)
 	}

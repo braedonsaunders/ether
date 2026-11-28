@@ -3,8 +3,12 @@ package admin_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/http/cookiejar"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +19,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/oidcsignin"
+	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -34,28 +39,29 @@ type stubFlow struct {
 	failed   bool
 	purpose  oidcsignin.Purpose
 	viewerID int64
+	revision uint64
 	done     bool
 	who      oidcsignin.Identity
 }
 
 func (s *stubOIDC) Check(context.Context, oidcsignin.Settings) error { return nil }
-func (s *stubOIDC) Start(_ context.Context, _ oidcsignin.Settings, redirectURL string, purpose oidcsignin.Purpose, viewerID int64) (oidcsignin.Started, error) {
+func (s *stubOIDC) Start(_ context.Context, settings oidcsignin.Settings, redirectURL string, purpose oidcsignin.Purpose, viewerID int64) (oidcsignin.Started, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.n++
 	handle := fmt.Sprintf("handle-%d", s.n)
-	f := &stubFlow{state: fmt.Sprintf("state-%d-0123456789abcdef", s.n), binding: fmt.Sprintf("binding-%d", s.n), purpose: purpose, viewerID: viewerID}
+	f := &stubFlow{state: fmt.Sprintf("state-%d-0123456789abcdef", s.n), binding: fmt.Sprintf("binding-%d", s.n), purpose: purpose, viewerID: viewerID, revision: settings.Revision}
 	s.flows[handle] = f
 	s.redirect = redirectURL
 	return oidcsignin.Started{Handle: handle, AuthURL: "https://auth.example.test/authorize?state=" + f.state, State: f.state, Binding: f.binding}, nil
 }
 
 // Callback approves the flow as subject "callback" when the binding matches.
-func (s *stubOIDC) Callback(_ context.Context, state, binding, _, _ string) error {
+func (s *stubOIDC) Callback(_ context.Context, state, binding, _, _ string, revision uint64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, f := range s.flows {
-		if f.state == state && !f.done {
+		if f.state == state && !f.done && f.revision == revision {
 			f.done = true
 			if binding != f.binding {
 				f.failed = true
@@ -67,12 +73,15 @@ func (s *stubOIDC) Callback(_ context.Context, state, binding, _, _ string) erro
 	}
 	return oidcsignin.ErrExpired
 }
-func (s *stubOIDC) Take(handle string, purpose oidcsignin.Purpose, viewerID int64) (oidcsignin.Identity, bool, error) {
+func (s *stubOIDC) Take(handle, binding string, revision uint64, purpose oidcsignin.Purpose, viewerID int64) (oidcsignin.Identity, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	f, ok := s.flows[handle]
-	if !ok || f.purpose != purpose || (purpose == oidcsignin.PurposeLink && f.viewerID != viewerID) {
+	if !ok || f.purpose != purpose || f.viewerID != viewerID || f.revision != revision {
 		return oidcsignin.Identity{}, false, oidcsignin.ErrExpired
+	}
+	if binding != f.binding {
+		return oidcsignin.Identity{}, false, oidcsignin.ErrRejected
 	}
 	if !f.done {
 		return oidcsignin.Identity{}, false, nil
@@ -96,12 +105,14 @@ func (s *stubOIDC) finishAs(handle string, who oidcsignin.Identity) {
 }
 
 type oidcHarness struct {
-	t     *testing.T
-	h     http.Handler
-	stub  *stubOIDC
-	cfg   *config.Store
-	local *identity.Local
-	db    *sql.DB
+	t       *testing.T
+	h       http.Handler
+	stub    *stubOIDC
+	cfg     *config.Store
+	local   *identity.Local
+	db      *sql.DB
+	users   *auth.Service
+	browser *cookiejar.Jar
 }
 
 func newOIDCHarness(t *testing.T) *oidcHarness {
@@ -115,13 +126,17 @@ func newOIDCHarness(t *testing.T) *oidcHarness {
 	local, _ := identity.NewLocal(db)
 	grants, _ := identity.NewGrants(db, users, time.Hour, nil)
 	limiter, _ := identity.NewLoginLimiter(db, time.Minute, 100, 20, nil)
-	poll, _ := identity.NewLoginLimiter(db, time.Minute, 1000, 200, nil)
+	poll, _ := identity.NewPollLimiter(db, time.Minute, 1000, 200, nil)
 	cfg := newStore(t, func(c *config.Config) {
 		c.OIDC = config.OIDC{Enabled: true, DisplayName: "Pocket ID", Issuer: "https://auth.example.test", ClientID: "ether", ClientSecret: "s3cret"}
 	})
 	stub := &stubOIDC{flows: map[string]*stubFlow{}}
 	h := admin.NewHandler(admin.Deps{Config: cfg, LocalIdentity: local, IdentityGrants: grants, IdentityLimiter: limiter, PollLimiter: poll, RefreshViewers: users.RefreshViewers, OIDC: stub, LocalOwnerConfigured: func(ctx context.Context) bool { x, err := users.Owner(ctx); return err == nil && x.PlexID == 0 }})
-	x := &oidcHarness{t: t, h: h, stub: stub, cfg: cfg, local: local, db: db}
+	browser, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	x := &oidcHarness{t: t, h: h, stub: stub, cfg: cfg, local: local, db: db, users: users, browser: browser}
 	if res := serve(h, req("POST", "/ether/api/setup/local", `{"username":"alice","password":"secret-pass1"}`)); res.Code != 200 {
 		t.Fatalf("setup: %d %s", res.Code, res.Body)
 	}
@@ -137,21 +152,40 @@ func newOIDCHarness(t *testing.T) *oidcHarness {
 	return x
 }
 
-func (x *oidcHarness) call(method, path, token, body string) (int, map[string]any) {
-	x.t.Helper()
-	r := req(method, path, body)
+const oidcBrowserOrigin = "https://192.168.1.10:32400"
+
+func (x *oidcHarness) exchange(method, path, token, body string) *httptest.ResponseRecorder {
 	if body == "" && method == "POST" {
-		r = req(method, path, "{}")
+		body = "{}"
 	}
+	r := req(method, oidcBrowserOrigin+path, body)
 	if token != "" {
 		r.Header.Set("Authorization", "Bearer "+token)
 	}
+	for _, cookie := range x.browser.Cookies(r.URL) {
+		r.AddCookie(cookie)
+	}
 	res := serve(x.h, r)
+	x.browser.SetCookies(r.URL, res.Result().Cookies())
+	return res
+}
+
+func (x *oidcHarness) call(method, path, token, body string) (int, map[string]any) {
+	x.t.Helper()
+	res := x.exchange(method, path, token, body)
 	out := map[string]any{}
 	if strings.HasPrefix(res.Header().Get("Content-Type"), "application/json") {
 		decode(x.t, res, &out)
 	}
 	return res.Code, out
+}
+
+func oidcPollBody(handle, state string) string {
+	return fmt.Sprintf(`{"handle":%q,"state":%q}`, handle, state)
+}
+
+func (x *oidcHarness) poll(start, token string, flow map[string]any) (int, map[string]any) {
+	return x.call("POST", start+"/poll", token, oidcPollBody(flow["handle"].(string), flow["state"].(string)))
 }
 
 func (x *oidcHarness) portalLogin(user, pass string) string {
@@ -166,16 +200,17 @@ func (x *oidcHarness) portalLogin(user, pass string) string {
 // link runs the portal link flow for the signed-in viewer behind token.
 func (x *oidcHarness) link(token, subject string) (int, map[string]any) {
 	x.t.Helper()
-	code, out := x.call("POST", "/ether/api/me/link/oidc", token, "")
+	const start = "/ether/api/me/link/oidc"
+	code, out := x.call("POST", start, token, "")
 	if code != 200 {
 		x.t.Fatalf("link start: %d %v", code, out)
 	}
 	handle := out["handle"].(string)
-	if code, out = x.call("GET", "/ether/api/me/link/oidc/"+handle, token, ""); code != 200 || out["done"] != false {
-		x.t.Fatalf("pending link poll: %d %v", code, out)
+	if status, result := x.poll(start, token, out); status != 200 || result["done"] != false {
+		x.t.Fatalf("pending link poll: %d %v", status, result)
 	}
 	x.stub.finish(handle, subject, subject+"-display")
-	return x.call("GET", "/ether/api/me/link/oidc/"+handle, token, "")
+	return x.poll(start, token, out)
 }
 
 // signIn runs a sign-in flow (owner console or portal) for subject.
@@ -187,7 +222,7 @@ func (x *oidcHarness) signIn(start, subject string) (int, map[string]any) {
 	}
 	handle := out["handle"].(string)
 	x.stub.finish(handle, subject, subject)
-	return x.call("GET", start+"/"+handle, "", "")
+	return x.poll(start, "", out)
 }
 
 func TestOIDCSignInRequiresALinkAndOwnershipForTheConsole(t *testing.T) {
@@ -257,13 +292,13 @@ func TestOIDCSignInRequiresALinkAndOwnershipForTheConsole(t *testing.T) {
 	code, out = x.call("POST", "/ether/api/me/oidc", "", "")
 	handle := out["handle"].(string)
 	x.stub.finish(handle, "https://auth.example.test|bob", "bob")
-	if code, _ := x.call("GET", "/ether/api/auth/oidc/"+handle, "", ""); code != 404 {
+	if code, _ := x.poll("/ether/api/auth/oidc", "", out); code != 404 {
 		t.Fatalf("portal handle on console = %d", code)
 	}
-	if code, _ := x.call("GET", "/ether/api/me/oidc/"+handle, "", ""); code != 200 {
+	if code, _ := x.poll("/ether/api/me/oidc", "", out); code != 200 {
 		t.Fatalf("portal handle = %d", code)
 	}
-	if code, _ := x.call("GET", "/ether/api/me/oidc/"+handle, "", ""); code != 404 {
+	if code, _ := x.poll("/ether/api/me/oidc", "", out); code != 404 {
 		t.Fatalf("redeemed handle = %d", code)
 	}
 }
@@ -274,6 +309,11 @@ func TestOIDCUnlinkAndSwitchOff(t *testing.T) {
 	if code, out := x.link(bob, "https://auth.example.test|bob"); code != 200 {
 		t.Fatalf("link = %d %v", code, out)
 	}
+	code, signedIn := x.signIn("/ether/api/me/oidc", "https://auth.example.test|bob")
+	if code != 200 {
+		t.Fatalf("initial OIDC sign-in = %d %v", code, signedIn)
+	}
+	oidcToken := signedIn["token"].(string)
 	code, out := x.call("GET", "/ether/api/me/identities", bob, "")
 	if code != 200 {
 		t.Fatalf("identities = %d", code)
@@ -307,6 +347,12 @@ func TestOIDCUnlinkAndSwitchOff(t *testing.T) {
 	if code, _ := x.signIn("/ether/api/me/oidc", "https://auth.example.test|bob"); code != 403 {
 		t.Fatalf("sign-in after unlink = %d", code)
 	}
+	if code, _ := x.call("GET", "/ether/api/me", oidcToken, ""); code != 401 {
+		t.Fatalf("OIDC session after unlink = %d", code)
+	}
+	if code, _ := x.call("GET", "/ether/api/me", bob, ""); code != 200 {
+		t.Fatalf("password session after unlink = %d", code)
+	}
 
 	// Switched off, nothing is advertised or started, and the secret stays redacted.
 	if err := x.cfg.Update(func(c *config.Config) error { c.OIDC.Enabled = false; return nil }); err != nil {
@@ -326,6 +372,99 @@ func TestOIDCUnlinkAndSwitchOff(t *testing.T) {
 	_, section := x.call("GET", "/ether/api/config/oidc", owner, "")
 	if strings.Contains(fmt.Sprint(section), "s3cret") {
 		t.Fatalf("client secret leaked: %v", section)
+	}
+}
+
+func TestOIDCOwnerConfirmsLinkAfterPlexOwnershipTransfer(t *testing.T) {
+	x := newOIDCHarness(t)
+	ctx := t.Context()
+	if err := x.users.SetOwner(ctx, plextv.Account{ID: 101, Username: "alice"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := x.db.ExecContext(ctx, `UPDATE auth_users SET plex_id=202 WHERE username='bob'`); err != nil {
+		t.Fatal(err)
+	}
+	x.setOIDC(func(c *config.OIDC) { c.AutoLinkUsername = true })
+	who := oidcsignin.Identity{Subject: "https://auth.example.test|bob", Username: "bob"}
+	code, out := x.portalAs(who)
+	if code != 200 {
+		t.Fatalf("auto-link = %d %v", code, out)
+	}
+	priorGrant := out["token"].(string)
+	if err := x.users.SetOwner(ctx, plextv.Account{ID: 202, Username: "bob"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, surface := range []string{"/ether/api/me/oidc", "/ether/api/auth/oidc"} {
+		if code, _ := x.signIn(surface, who.Subject); code != 403 {
+			t.Fatalf("sign-in with an unconfirmed link at %s = %d", surface, code)
+		}
+	}
+	if code, _ := x.call("GET", "/ether/api/me", priorGrant, ""); code != 401 {
+		t.Fatalf("pre-transfer OIDC grant = %d", code)
+	}
+	bob := x.portalLogin("bob", "secret-pass2")
+	if code, out := x.link(bob, who.Subject); code != 200 {
+		t.Fatalf("owner confirmation = %d %v", code, out)
+	}
+	if code, _ := x.signIn("/ether/api/auth/oidc", who.Subject); code != 200 {
+		t.Fatalf("owner sign-in after confirming the link = %d", code)
+	}
+	if code, _ := x.call("GET", "/ether/api/me", priorGrant, ""); code != 401 {
+		t.Fatalf("pre-transfer OIDC grant after confirmation = %d", code)
+	}
+}
+
+func TestOIDCConcurrentAutoLinkKeepsOneIdentity(t *testing.T) {
+	x := newOIDCHarness(t)
+	const issuer = "https://auth.example.test"
+	match := identity.OIDCMatch{Issuer: issuer, Username: "bob"}
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	for _, sub := range []string{"first", "second"} {
+		go func() {
+			<-start
+			_, err := x.local.AutoLinkOIDC(t.Context(), match, oidcsignin.SubjectFor(issuer, sub), sub)
+			results <- err
+		}()
+	}
+	close(start)
+	winners := 0
+	for range 2 {
+		if err := <-results; err == nil {
+			winners++
+		} else if !errors.Is(err, identity.ErrNoMatch) {
+			t.Errorf("automatic link = %v", err)
+		}
+	}
+	if winners != 1 {
+		t.Fatalf("%d sign-ins linked to the viewer, want 1", winners)
+	}
+}
+
+func TestOIDCProviderConfigurationInvalidatesPendingAndCompletedFlows(t *testing.T) {
+	x := newOIDCHarness(t)
+	const start = "/ether/api/me/oidc"
+	if code, _ := x.link(x.portalLogin("bob", "secret-pass2"), "https://auth.example.test|bob"); code != 200 {
+		t.Fatalf("link = %d", code)
+	}
+	if code, flow := x.call("POST", start, "", ""); code != 200 {
+		t.Fatalf("start = %d %v", code, flow)
+	} else {
+		x.stub.finish(flow["handle"].(string), "https://auth.example.test|bob", "bob")
+		x.setOIDC(func(c *config.OIDC) { c.Enabled = false })
+		x.setOIDC(func(c *config.OIDC) { c.Enabled = true })
+		if code, out := x.poll(start, "", flow); code != 404 || out["token"] != nil {
+			t.Fatalf("completed flow after toggling sign-in = %d %v", code, out)
+		}
+	}
+	code, flow := x.call("POST", start, "", "")
+	if code != 200 {
+		t.Fatalf("start = %d %v", code, flow)
+	}
+	x.setOIDC(func(c *config.OIDC) { c.Issuer = "https://other.example.test" })
+	callback := "/ether/api/oidc/callback?code=c&state=" + flow["state"].(string)
+	if res := x.exchange("GET", callback, "", ""); res.Code != 400 || !strings.Contains(res.Body.String(), "Sign-in expired") {
+		t.Fatalf("callback after issuer change = %d %s", res.Code, res.Body)
 	}
 }
 
@@ -367,75 +506,85 @@ func TestOIDCIssuerValidation(t *testing.T) {
 
 func TestOIDCCallbackRequiresTheStartingBrowser(t *testing.T) {
 	x := newOIDCHarness(t)
-	start := serve(x.h, req("POST", "/ether/api/me/oidc", "{}"))
+	const startPath = "/ether/api/me/oidc"
+	if res := serve(x.h, req("POST", startPath, "{}")); res.Code != 403 {
+		t.Fatalf("insecure start = %d %s", res.Code, res.Body)
+	}
+	start := x.exchange("POST", startPath, "", "{}")
 	if start.Code != 200 {
 		t.Fatalf("start = %d %s", start.Code, start.Body)
 	}
 	var started struct {
 		Handle  string `json:"handle"`
+		State   string `json:"state"`
 		AuthURL string `json:"authUrl"`
 	}
 	decode(t, start, &started)
 	var binding *http.Cookie
 	for _, c := range start.Result().Cookies() {
-		if strings.HasPrefix(c.Name, "ether_oidc_") {
+		if strings.HasPrefix(c.Name, "__Host-ether_oidc_") {
 			binding = c
 		}
 	}
-	if binding == nil || !binding.HttpOnly || binding.SameSite != http.SameSiteLaxMode ||
-		binding.Path != "/ether/api/oidc/callback" || binding.MaxAge <= 0 || binding.MaxAge > 600 {
+	if binding == nil || !binding.Secure || !binding.HttpOnly || binding.SameSite != http.SameSiteLaxMode ||
+		binding.Path != "/" || binding.Domain != "" || binding.MaxAge <= 0 || binding.MaxAge > 600 {
 		t.Fatalf("binding cookie = %+v", binding)
 	}
-	state := strings.TrimPrefix(started.AuthURL, "https://auth.example.test/authorize?state=")
+	u, err := url.Parse(started.AuthURL)
+	if err != nil || started.State == "" || u.Query().Get("state") != started.State {
+		t.Fatalf("start state does not match the authorization URL: %v", err)
+	}
 
 	// The same link opened in a browser without the cookie fails, and the
 	// flow ends: the starting browser cannot collect a sign-in either.
-	forwarded := serve(x.h, req("GET", "/ether/api/oidc/callback?code=c&state="+state, ""))
+	forwarded := serve(x.h, req("GET", oidcBrowserOrigin+"/ether/api/oidc/callback?code=c&state="+started.State, ""))
 	if forwarded.Code != 400 || !strings.Contains(forwarded.Body.String(), "Sign-in failed") {
 		t.Fatalf("forwarded callback = %d %s", forwarded.Code, forwarded.Body)
 	}
 	if got := forwarded.Header().Get("Content-Security-Policy"); !strings.Contains(got, "default-src 'none'") {
 		t.Fatalf("callback CSP = %q", got)
 	}
-	if code, _ := x.call("GET", "/ether/api/me/oidc/"+started.Handle, "", ""); code != 401 {
+	if code, _ := x.call("POST", startPath+"/poll", "", oidcPollBody(started.Handle, started.State)); code != 401 {
 		t.Fatalf("poll after forwarded callback = %d", code)
 	}
 
-	// From the starting browser the callback succeeds and clears the cookie.
-	start = serve(x.h, req("POST", "/ether/api/me/oidc", "{}"))
+	// A successful callback leaves the cookie for the original browser's poll.
+	start = x.exchange("POST", startPath, "", "{}")
 	decode(t, start, &started)
-	state = strings.TrimPrefix(started.AuthURL, "https://auth.example.test/authorize?state=")
-	cb := req("GET", "/ether/api/oidc/callback?code=c&state="+state, "")
-	for _, c := range start.Result().Cookies() {
-		cb.AddCookie(c)
-	}
-	res := serve(x.h, cb)
+	res := x.exchange("GET", "/ether/api/oidc/callback?code=c&state="+started.State, "", "")
 	if res.Code != 200 || !strings.Contains(res.Body.String(), "Signed in") {
 		t.Fatalf("callback = %d %s", res.Code, res.Body)
 	}
-	cleared := false
-	for _, c := range res.Result().Cookies() {
-		cleared = cleared || (strings.HasPrefix(c.Name, "ether_oidc_") && c.MaxAge < 0)
-	}
-	if !cleared {
-		t.Fatal("callback left the binding cookie in place")
+	poll := oidcPollBody(started.Handle, started.State)
+	unbound := serve(x.h, req("POST", oidcBrowserOrigin+startPath+"/poll", poll))
+	if unbound.Code != 401 {
+		t.Fatalf("poll without the original browser = %d", unbound.Code)
 	}
 	// The stub vouches for subject "callback", which nobody linked.
-	if code, out := x.call("GET", "/ether/api/me/oidc/"+started.Handle, "", ""); code != 403 || fmt.Sprint(out["error"]) == "" {
-		t.Fatalf("poll after callback = %d %v", code, out)
+	res = x.exchange("POST", startPath+"/poll", "", poll)
+	if res.Code != 403 {
+		t.Fatalf("poll after callback = %d %s", res.Code, res.Body)
+	}
+	cleared := false
+	for _, c := range res.Result().Cookies() {
+		cleared = cleared || (strings.HasPrefix(c.Name, "__Host-ether_oidc_") && c.MaxAge < 0)
+	}
+	if !cleared {
+		t.Fatal("poll left the binding cookie in place")
 	}
 }
 
 // portalAs runs a portal sign-in for a provider account with profile claims.
 func (x *oidcHarness) portalAs(who oidcsignin.Identity) (int, map[string]any) {
 	x.t.Helper()
-	code, out := x.call("POST", "/ether/api/me/oidc", "", "")
+	const start = "/ether/api/me/oidc"
+	code, out := x.call("POST", start, "", "")
 	if code != 200 {
 		x.t.Fatalf("start: %d %v", code, out)
 	}
 	handle := out["handle"].(string)
 	x.stub.finishAs(handle, who)
-	return x.call("GET", "/ether/api/me/oidc/"+handle, "", "")
+	return x.poll(start, "", out)
 }
 
 func (x *oidcHarness) setOIDC(fn func(*config.OIDC)) {
@@ -497,7 +646,7 @@ func TestOIDCAutoLinkByEmail(t *testing.T) {
 	// Auto-linking never runs from the console.
 	code, out = x.call("POST", "/ether/api/auth/oidc", "", "")
 	x.stub.finishAs(out["handle"].(string), oidcsignin.Identity{Subject: iss + "|a1", Email: "alice@example.test", EmailVerified: true})
-	if code, _ := x.call("GET", "/ether/api/auth/oidc/"+out["handle"].(string), "", ""); code != 403 {
+	if code, _ := x.poll("/ether/api/auth/oidc", "", out); code != 403 {
 		t.Fatalf("console auto-link = %d", code)
 	}
 }

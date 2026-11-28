@@ -17,4 +17,5 @@ CREATE TABLE identity_links (
 );
 CREATE INDEX identity_links_viewer ON identity_links(viewer_id);
 `)
+	store.Register("identity_links", 2, `ALTER TABLE identity_links ADD COLUMN oidc_owner_approved INTEGER NOT NULL DEFAULT 0;`)
 }

@@ -500,17 +500,16 @@ func (h *Handler) routes() *route.Mux {
 	mux.HandleFunc("POST /api/me/pin", h.limitIdentityAuth(h.handlePortalPIN))
 	mux.HandleFunc("GET /api/me/pin/{handle}", h.limitIdentityPoll(h.handlePortalPINPoll))
 	mux.HandleFunc("POST /api/me/quickconnect", h.handleApproveQuickConnect)
-	// Single sign-on. Starts and polls mirror the Plex PIN routes; only the
-	// browser holding the handle collects the result. The callback needs
-	// no limiter: it acts only on an unguessable pending state.
+	// Single sign-on polls carry the handle in the request body and require
+	// the starting browser's cookie. Callbacks act on a pending state.
 	mux.HandleFunc("GET /api/oidc/callback", h.handleOIDCCallback)
 	mux.HandleFunc("POST /api/me/oidc", h.limitIdentityStart("oidc", h.handleOIDCPortalStart))
-	mux.HandleFunc("GET /api/me/oidc/{handle}", h.limitIdentityPoll(h.handleOIDCPortalPoll))
+	mux.HandleFunc("POST /api/me/oidc/poll", h.handleOIDCPortalPoll)
 	mux.HandleFunc("POST /api/me/link/oidc", h.limitIdentityStart("oidc", h.handleOIDCLinkStart))
-	mux.HandleFunc("GET /api/me/link/oidc/{handle}", h.limitIdentityPoll(h.handleOIDCLinkPoll))
+	mux.HandleFunc("POST /api/me/link/oidc/poll", h.handleOIDCLinkPoll)
 	mux.HandleFunc("POST /api/me/identities/unlink", h.handleMeUnlinkIdentity)
 	mux.HandleFunc("POST /api/auth/oidc", h.limitAuth(h.handleOIDCOwnerStart))
-	mux.HandleFunc("GET /api/auth/oidc/{handle}", h.limitAuth(h.handleOIDCOwnerPoll))
+	mux.HandleFunc("POST /api/auth/oidc/poll", h.handleOIDCOwnerPoll)
 	// Public sign-in: yields a console session only to the browser that
 	// started the PIN, and only if the account owns the server.
 	mux.HandleFunc("POST /api/auth/pin", h.limitAuth(h.handleSignInStart))

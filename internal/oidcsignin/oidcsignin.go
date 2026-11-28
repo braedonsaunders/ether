@@ -9,11 +9,9 @@
 //
 // A flow has three random values. The state travels through the provider and
 // back to the callback. The binding is kept by the starting browser (the
-// caller stores it in a cookie) and must come back with the callback, so a
-// sign-in link forwarded to someone else's browser fails there instead of
-// signing that person in for the sender. The handle is returned only to the
-// browser that started the flow, which polls with it; the result is released
-// only to the holder of the handle.
+// caller stores it in a host-only cookie). Both the callback and redemption
+// must present the binding. The handle is returned to the page that started
+// the flow and is used only for redemption.
 package oidcsignin
 
 import (
@@ -24,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"slices"
@@ -68,6 +67,7 @@ type Settings struct {
 	Issuer       string
 	ClientID     string
 	ClientSecret string
+	Revision     uint64
 	// Scopes are requested in addition to openid, profile and email, for
 	// providers that send some claims (often groups) only when asked.
 	// Nothing else is added: providers may reject scopes they don't know.
@@ -82,6 +82,7 @@ func (s Settings) normalized() Settings {
 		Issuer:       strings.TrimSpace(s.Issuer),
 		ClientID:     strings.TrimSpace(s.ClientID),
 		ClientSecret: strings.TrimSpace(s.ClientSecret),
+		Revision:     s.Revision,
 		Scopes:       s.Scopes,
 		GroupsClaim:  strings.TrimSpace(s.GroupsClaim),
 	}
@@ -125,9 +126,10 @@ func SubjectFor(issuer, sub string) string { return issuer + "|" + sub }
 type Purpose string
 
 const (
-	PurposeOwner  Purpose = "owner"
-	PurposePortal Purpose = "viewer-portal"
-	PurposeLink   Purpose = "link"
+	PurposeOwner     Purpose = "owner"
+	PurposePortal    Purpose = "viewer-portal"
+	PurposeLink      Purpose = "link"
+	PurposeOwnerLink Purpose = "owner-link"
 )
 
 type flow struct {
@@ -179,8 +181,31 @@ func New(httpClient *http.Client) *Client {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 15 * time.Second, Transport: userAgent{next: http.DefaultTransport}}
 	}
+	client := *httpClient
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		first := via[0]
+		allowHTTP := first.URL.Scheme == "http" && via[len(via)-1].URL.Scheme == "http"
+		if _, err := providerURL(req.URL.String(), allowHTTP); err != nil {
+			return err
+		}
+		// A 307/308 can resend the token exchange body, including a
+		// client secret. Keep credential-bearing redirects on the origin
+		// that was advertised in discovery.
+		if first.Method == http.MethodPost || first.Header.Get("Authorization") != "" {
+			if req.URL.Scheme != first.URL.Scheme || !strings.EqualFold(req.URL.Host, first.URL.Host) {
+				return errors.New("oidcsignin: cross-origin redirect for a credential request")
+			}
+		}
+		if httpClient.CheckRedirect != nil {
+			return httpClient.CheckRedirect(req, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("oidcsignin: stopped after 10 redirects")
+		}
+		return nil
+	}
 	return &Client{
-		HTTP:      httpClient,
+		HTTP:      &client,
 		now:       time.Now,
 		byState:   map[string]*flow{},
 		byHandle:  map[string]*flow{},
@@ -192,8 +217,25 @@ func (c *Client) ctx(ctx context.Context) context.Context {
 	return oidc.ClientContext(ctx, c.HTTP)
 }
 
+func providerURL(raw string, allowHTTPLoopback bool) (*url.URL, error) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" || u.User != nil || u.Fragment != "" {
+		return nil, errors.New("oidcsignin: invalid provider URL")
+	}
+	host := u.Hostname()
+	loopback := strings.EqualFold(host, "localhost") || net.ParseIP(host).IsLoopback()
+	if u.Scheme != "https" && !(u.Scheme == "http" && allowHTTPLoopback && loopback) {
+		return nil, errors.New("oidcsignin: provider URLs must use HTTPS")
+	}
+	return u, nil
+}
+
 // provider returns the discovered provider for issuer, reusing a recent one.
 func (c *Client) provider(ctx context.Context, issuer string) (*oidc.Provider, error) {
+	issuerURL, err := providerURL(issuer, true)
+	if err != nil || strings.ContainsAny(issuer, "?#|") {
+		return nil, errors.New("oidcsignin: invalid issuer URL")
+	}
 	c.mu.Lock()
 	cached, ok := c.providers[issuer]
 	c.mu.Unlock()
@@ -203,6 +245,22 @@ func (c *Client) provider(ctx context.Context, issuer string) (*oidc.Provider, e
 	p, err := oidc.NewProvider(c.ctx(ctx), issuer)
 	if err != nil {
 		return nil, fmt.Errorf("oidcsignin: discover %s: %w", issuer, err)
+	}
+	var metadata struct {
+		JWKSURL string `json:"jwks_uri"`
+	}
+	if err := p.Claims(&metadata); err != nil {
+		return nil, fmt.Errorf("oidcsignin: read provider metadata: %w", err)
+	}
+	endpoint := p.Endpoint()
+	endpoints := []string{endpoint.AuthURL, endpoint.TokenURL, metadata.JWKSURL}
+	if userInfoURL := p.UserInfoEndpoint(); userInfoURL != "" {
+		endpoints = append(endpoints, userInfoURL)
+	}
+	for _, raw := range endpoints {
+		if _, err := providerURL(raw, issuerURL.Scheme == "http"); err != nil {
+			return nil, err
+		}
 	}
 	c.mu.Lock()
 	c.providers[issuer] = cachedProvider{issuer: issuer, p: p, fetched: c.now()}
@@ -312,7 +370,7 @@ func random() string {
 // prune drops expired flows. c.mu must be held.
 func (c *Client) prune(now time.Time) {
 	for k, f := range c.byHandle {
-		if now.After(f.expires) {
+		if !now.Before(f.expires) {
 			delete(c.byHandle, k)
 			delete(c.byState, f.state)
 		}
@@ -334,11 +392,11 @@ func (c *Client) Start(ctx context.Context, s Settings, redirectURL string, purp
 	if !s.Usable() {
 		return Started{}, ErrNotConfigured
 	}
-	if purpose == PurposeLink && viewerID <= 0 {
+	if (purpose == PurposeLink || purpose == PurposeOwnerLink) && viewerID <= 0 {
 		return Started{}, errors.New("oidcsignin: link requires a viewer")
 	}
 	u, err := url.Parse(redirectURL)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return Started{}, errors.New("oidcsignin: invalid redirect URL")
 	}
 	p, err := c.provider(ctx, s.Issuer)
@@ -378,7 +436,7 @@ func (c *Client) Start(ctx context.Context, s Settings, redirectURL string, purp
 // browser is rejected. It returns nil when the person is now verified and
 // waiting for the starting browser to collect the result. Every failure,
 // including a provider error, ends the flow, so a state is used at most once.
-func (c *Client) Callback(ctx context.Context, state, binding, code, providerError string) error {
+func (c *Client) Callback(ctx context.Context, state, binding, code, providerError string, revision uint64) error {
 	c.mu.Lock()
 	f, ok := c.byState[state]
 	if ok {
@@ -386,7 +444,7 @@ func (c *Client) Callback(ctx context.Context, state, binding, code, providerErr
 		delete(c.byState, state)
 	}
 	c.mu.Unlock()
-	if !ok || c.now().After(f.expires) || f.done {
+	if !ok || !c.now().Before(f.expires) || f.settings.Revision != revision {
 		return ErrExpired
 	}
 	var identity Identity
@@ -466,19 +524,22 @@ func (c *Client) complete(ctx context.Context, f *flow, code, providerError stri
 // has run. done is false while the person is still at the provider. A
 // finished flow is released once, and only for the purpose (and, for links,
 // the viewer) it was started with.
-func (c *Client) Take(handle string, purpose Purpose, viewerID int64) (id Identity, done bool, err error) {
+func (c *Client) Take(handle, binding string, revision uint64, purpose Purpose, viewerID int64) (id Identity, done bool, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	f, ok := c.byHandle[handle]
-	if !ok || f.purpose != purpose || (purpose == PurposeLink && f.viewerID != viewerID) {
+	if !ok || f.purpose != purpose || f.viewerID != viewerID {
 		return Identity{}, false, ErrExpired
 	}
+	if !c.now().Before(f.expires) || f.settings.Revision != revision {
+		delete(c.byHandle, handle)
+		delete(c.byState, f.state)
+		return Identity{}, false, ErrExpired
+	}
+	if subtle.ConstantTimeCompare([]byte(binding), []byte(f.binding)) != 1 {
+		return Identity{}, false, ErrRejected
+	}
 	if !f.done {
-		if c.now().After(f.expires) {
-			delete(c.byHandle, handle)
-			delete(c.byState, f.state)
-			return Identity{}, false, ErrExpired
-		}
 		return Identity{}, false, nil
 	}
 	delete(c.byHandle, handle)

@@ -6,11 +6,12 @@ import (
 	"html"
 	"net/http"
 	"net/netip"
-	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/clientnet"
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/oidcsignin"
@@ -20,24 +21,28 @@ import (
 type OIDCSignIn interface {
 	Check(ctx context.Context, s oidcsignin.Settings) error
 	Start(ctx context.Context, s oidcsignin.Settings, redirectURL string, purpose oidcsignin.Purpose, viewerID int64) (oidcsignin.Started, error)
-	Callback(ctx context.Context, state, binding, code, providerError string) error
-	Take(handle string, purpose oidcsignin.Purpose, viewerID int64) (oidcsignin.Identity, bool, error)
+	Callback(ctx context.Context, state, binding, code, providerError string, revision uint64) error
+	Take(handle, binding string, revision uint64, purpose oidcsignin.Purpose, viewerID int64) (oidcsignin.Identity, bool, error)
 }
 
 // oidcCallbackPath is the redirect URI path to register with the provider,
 // below each address people open Ether at.
 const oidcCallbackPath = "/ether/api/oidc/callback"
 
-func oidcSettings(c config.OIDC) oidcsignin.Settings {
+func oidcSettings(c config.OIDC, revision uint64) oidcsignin.Settings {
 	return oidcsignin.Settings{Issuer: c.Issuer, ClientID: c.ClientID, ClientSecret: c.ClientSecret,
-		Scopes: strings.Fields(c.Scopes), GroupsClaim: c.GroupsClaim}
+		Revision: revision, Scopes: strings.Fields(c.Scopes), GroupsClaim: c.GroupsClaim}
 }
 
 // oidcEnabled reports whether single sign-on is switched on, configured and
 // backed by the identity services it needs.
 func (h *Handler) oidcEnabled() bool {
-	c := h.deps.Config.Get().OIDC
-	return c.Enabled && oidcSettings(c).Usable() && h.deps.OIDC != nil &&
+	c, _ := h.deps.Config.OIDCSettings()
+	return h.oidcConfigured(c)
+}
+
+func (h *Handler) oidcConfigured(c config.OIDC) bool {
+	return c.Enabled && oidcSettings(c, 0).Usable() && h.deps.OIDC != nil &&
 		h.deps.LocalIdentity != nil && h.deps.IdentityGrants != nil
 }
 
@@ -59,12 +64,17 @@ func (h *Handler) oidcRedirectURL(r *http.Request) string {
 }
 
 func (h *Handler) oidcStart(w http.ResponseWriter, r *http.Request, purpose oidcsignin.Purpose, viewerID int64) {
-	if !h.oidcEnabled() {
+	cfg, revision := h.deps.Config.OIDCSettings()
+	if !h.oidcConfigured(cfg) {
 		writeError(w, http.StatusServiceUnavailable, "unavailable", "single sign-on is not set up")
 		return
 	}
 	redirect := h.oidcRedirectURL(r)
-	started, err := h.deps.OIDC.Start(r.Context(), oidcSettings(h.deps.Config.Get().OIDC), redirect, purpose, viewerID)
+	if !strings.HasPrefix(redirect, "https://") {
+		writeError(w, http.StatusForbidden, "oidc_requires_https", "open Ether over HTTPS to use single sign-on")
+		return
+	}
+	started, err := h.deps.OIDC.Start(r.Context(), oidcSettings(cfg, revision), redirect, purpose, viewerID)
 	switch {
 	case errors.Is(err, oidcsignin.ErrBusy):
 		writeError(w, http.StatusTooManyRequests, "rate_limit", "try again later")
@@ -74,41 +84,37 @@ func (h *Handler) oidcStart(w http.ResponseWriter, r *http.Request, purpose oidc
 		writeError(w, http.StatusBadGateway, "oidc_unavailable", "the sign-in provider could not be reached")
 		return
 	}
-	setOIDCBinding(w, redirect, started.State, started.Binding, int(oidcsignin.FlowTTL.Seconds()))
-	writeJSON(w, http.StatusOK, map[string]any{"handle": started.Handle, "authUrl": started.AuthURL})
+	setOIDCBinding(w, started.State, started.Binding, int(oidcsignin.FlowTTL.Seconds()))
+	writeJSON(w, http.StatusOK, map[string]string{"handle": started.Handle, "state": started.State, "authUrl": started.AuthURL})
 }
 
 // oidcBindingCookie names the cookie that ties one flow to the browser that
-// started it. It only proves "same browser" at the callback; it is never a
-// credential and no other route reads it.
+// started it. The __Host- prefix prevents sibling domains from setting it.
 func oidcBindingCookie(state string) string {
 	if len(state) > 16 {
 		state = state[:16]
 	}
-	return "ether_oidc_" + state
+	return "__Host-ether_oidc_" + state
 }
 
-// setOIDCBinding sets (maxAge > 0) or clears the binding cookie, scoped to the
-// callback path the provider returns the browser to. SameSite=Lax keeps it
-// on that top-level redirect and off cross-site subrequests.
-func setOIDCBinding(w http.ResponseWriter, redirect, state, binding string, maxAge int) {
-	path := oidcCallbackPath
-	secure := false
-	if u, err := url.Parse(redirect); err == nil {
-		if u.Path != "" {
-			path = u.Path
-		}
-		secure = u.Scheme == "https"
-	}
+// SameSite=Lax sends the cookie on the provider's top-level callback.
+func setOIDCBinding(w http.ResponseWriter, state, binding string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     oidcBindingCookie(state),
 		Value:    binding,
-		Path:     path,
+		Path:     "/",
 		MaxAge:   maxAge,
 		HttpOnly: true,
-		Secure:   secure,
+		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+func oidcBinding(r *http.Request, state string) string {
+	if cookie, err := r.Cookie(oidcBindingCookie(state)); err == nil {
+		return cookie.Value
+	}
+	return ""
 }
 
 // handleOIDCOwnerStart begins single sign-on for the owner console.
@@ -141,7 +147,14 @@ func (h *Handler) handleOIDCLinkStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "sign in required")
 		return
 	}
-	h.oidcStart(w, r, oidcsignin.PurposeLink, u.ID)
+	h.oidcStart(w, r, oidcLinkPurpose(u.IsOwner), u.ID)
+}
+
+func oidcLinkPurpose(owner bool) oidcsignin.Purpose {
+	if owner {
+		return oidcsignin.PurposeOwnerLink
+	}
+	return oidcsignin.PurposeLink
 }
 
 // handleOIDCCallback receives the provider's redirect. It finishes the
@@ -150,16 +163,10 @@ func (h *Handler) handleOIDCLinkStart(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	state := q.Get("state")
-	binding := ""
-	if c, e := r.Cookie(oidcBindingCookie(state)); e == nil {
-		binding = c.Value
-	}
-	err := errors.New("unavailable")
-	if h.deps.OIDC != nil && state != "" {
-		err = h.deps.OIDC.Callback(r.Context(), state, binding, q.Get("code"), q.Get("error"))
-	}
-	if binding != "" {
-		setOIDCBinding(w, h.oidcRedirectURL(r), state, "", -1)
+	cfg, revision := h.deps.Config.OIDCSettings()
+	err := oidcsignin.ErrExpired
+	if h.oidcConfigured(cfg) && state != "" {
+		err = h.deps.OIDC.Callback(r.Context(), state, oidcBinding(r, state), q.Get("code"), q.Get("error"), revision)
 	}
 	if err != nil && !errors.Is(err, oidcsignin.ErrExpired) {
 		h.log.Warn("oidc: sign-in callback", "err", err)
@@ -196,25 +203,26 @@ func (h *Handler) handleOIDCPortalPoll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) oidcSignInPoll(w http.ResponseWriter, r *http.Request, purpose oidcsignin.Purpose, surface string) {
-	if !h.oidcEnabled() {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "single sign-on is not set up")
-		return
-	}
-	who, done, err := h.deps.OIDC.Take(r.PathValue("handle"), purpose, 0)
-	if !h.oidcPending(w, done, err) {
+	who, cfg, ready := h.oidcTake(w, r, purpose, 0)
+	if !ready {
 		return
 	}
 	ip, _ := identity.ClientNet(r, h.proxyPrefixes()...)
 	viewerID, identityID, err := h.deps.LocalIdentity.OIDCViewer(r.Context(), who.Subject)
-	if err != nil && purpose == oidcsignin.PurposePortal {
-		viewerID, identityID, err = h.oidcAutoViewer(r.Context(), who, ip)
+	if errors.Is(err, core.ErrUnauthorized) && purpose == oidcsignin.PurposePortal {
+		viewerID, identityID, err = h.oidcAutoViewer(r.Context(), cfg, who, ip)
 	}
 	if err != nil {
 		h.emitLoginFailed(who.Display, "oidc", "not_linked", "Ether browser", "Web", ip.String())
 		writeError(w, http.StatusForbidden, "not_linked", "That account isn't linked to anyone here. Sign in another way and link it from your account page first.")
 		return
 	}
-	token, refused := h.issueBrowserLogin(r, viewerID, &identityID, surface)
+	token, refused := h.issueBrowserLogin(r, viewerID, &identityID, surface, true)
+	if refused == "owner_link_required" {
+		h.emitLoginFailed(who.Display, "oidc", refused, "Ether browser", "Web", ip.String())
+		writeError(w, http.StatusForbidden, "not_linked", "Sign in another way and confirm this sign-in method after becoming the owner.")
+		return
+	}
 	if refused == "not_owner" {
 		h.emitLoginFailed(who.Display, "oidc", refused, "Ether browser", "Web", ip.String())
 		writeError(w, http.StatusForbidden, "not_owner", "That account doesn't own this server. Sign in as the owner.")
@@ -233,8 +241,7 @@ func (h *Handler) oidcSignInPoll(w http.ResponseWriter, r *http.Request, purpose
 // oidcAutoViewer applies the owner's automatic options to a provider account
 // that is not linked yet: link it to a matching viewer, or create one. Neither
 // can reach the owner, and both need the required group when one is set.
-func (h *Handler) oidcAutoViewer(ctx context.Context, who oidcsignin.Identity, ip netip.Addr) (int64, int64, error) {
-	c := h.deps.Config.Get().OIDC
+func (h *Handler) oidcAutoViewer(ctx context.Context, c config.OIDC, who oidcsignin.Identity, ip netip.Addr) (int64, int64, error) {
 	if group := strings.TrimSpace(c.RequiredGroup); group != "" && !slices.Contains(who.Groups, group) {
 		return 0, 0, identity.ErrNoMatch
 	}
@@ -247,12 +254,13 @@ func (h *Handler) oidcAutoViewer(ctx context.Context, who oidcsignin.Identity, i
 		match.Username = who.Username
 	}
 	if match.Email != "" || match.Username != "" {
-		if id, err := h.deps.LocalIdentity.MatchOIDCViewer(ctx, match); err == nil {
-			if err = h.deps.LocalIdentity.LinkOIDC(ctx, id, who.Subject, who.Display); err != nil {
-				return 0, 0, err
-			}
+		id, err := h.deps.LocalIdentity.AutoLinkOIDC(ctx, match, who.Subject, who.Display)
+		if err == nil {
 			h.log.Info("oidc: linked a first sign-in to an existing viewer", "viewer", id, "by_email", match.Email != "", "by_username", match.Username != "", "remote", ip.String())
 			return h.deps.LocalIdentity.OIDCViewer(ctx, who.Subject)
+		}
+		if !errors.Is(err, identity.ErrNoMatch) {
+			return 0, 0, err
 		}
 	}
 	if !c.AutoProvision {
@@ -285,15 +293,11 @@ func (h *Handler) handleOIDCLinkPoll(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "sign in required")
 		return
 	}
-	if !h.oidcEnabled() {
-		writeError(w, http.StatusServiceUnavailable, "unavailable", "single sign-on is not set up")
+	who, _, ready := h.oidcTake(w, r, oidcLinkPurpose(u.IsOwner), u.ID)
+	if !ready {
 		return
 	}
-	who, done, err := h.deps.OIDC.Take(r.PathValue("handle"), oidcsignin.PurposeLink, u.ID)
-	if !h.oidcPending(w, done, err) {
-		return
-	}
-	if err = h.deps.LocalIdentity.LinkOIDC(r.Context(), u.ID, who.Subject, who.Display); err != nil {
+	if err := h.deps.LocalIdentity.LinkOIDC(r.Context(), u.ID, who.Subject, who.Display, u.IsOwner); err != nil {
 		if errors.Is(err, identity.ErrIdentityLinked) {
 			writeError(w, http.StatusConflict, "identity_conflict", "That account already signs in as someone else.")
 			return
@@ -304,6 +308,39 @@ func (h *Handler) handleOIDCLinkPoll(w http.ResponseWriter, r *http.Request) {
 	ip, _ := identity.ClientNet(r, h.proxyPrefixes()...)
 	h.resetOIDCLimit(r, ip)
 	writeJSON(w, http.StatusOK, map[string]any{"done": true})
+}
+
+func (h *Handler) oidcTake(w http.ResponseWriter, r *http.Request, purpose oidcsignin.Purpose, viewerID int64) (oidcsignin.Identity, config.OIDC, bool) {
+	if !csrfOK(r) {
+		writeError(w, http.StatusForbidden, "csrf", "request rejected")
+		return oidcsignin.Identity{}, config.OIDC{}, false
+	}
+	var body struct {
+		Handle string `json:"handle"`
+		State  string `json:"state"`
+	}
+	controller := http.NewResponseController(w)
+	_ = controller.SetReadDeadline(time.Now().Add(5 * time.Second))
+	err := decodeLoginJSON(w, r, &body)
+	_ = controller.SetReadDeadline(time.Time{})
+	if err != nil || body.Handle == "" || body.State == "" {
+		writeError(w, http.StatusBadRequest, "invalid", "invalid request")
+		return oidcsignin.Identity{}, config.OIDC{}, false
+	}
+	if !h.allowIdentityPoll(w, r, body.Handle) {
+		return oidcsignin.Identity{}, config.OIDC{}, false
+	}
+	cfg, revision := h.deps.Config.OIDCSettings()
+	if !h.oidcConfigured(cfg) {
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "single sign-on is not set up")
+		return oidcsignin.Identity{}, config.OIDC{}, false
+	}
+	binding := oidcBinding(r, body.State)
+	who, done, err := h.deps.OIDC.Take(body.Handle, binding, revision, purpose, viewerID)
+	if binding != "" && done {
+		setOIDCBinding(w, body.State, "", -1)
+	}
+	return who, cfg, h.oidcPending(w, done, err)
 }
 
 // resetOIDCLimit clears this client's single sign-on start budget after a
@@ -338,7 +375,7 @@ func (h *Handler) handleMeUnlinkIdentity(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	u, err := h.portalViewer(r)
-	if err != nil || h.deps.LocalIdentity == nil {
+	if err != nil {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "sign in required")
 		return
 	}
@@ -349,8 +386,13 @@ func (h *Handler) handleMeUnlinkIdentity(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "invalid", "invalid request")
 		return
 	}
-	if err = h.deps.LocalIdentity.UnlinkOIDC(r.Context(), u.ID, body.ID); err != nil {
+	err = h.deps.IdentityGrants.UnlinkOIDC(r.Context(), u.ID, body.ID)
+	if errors.Is(err, core.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not_found", "no such sign-in method")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "could not disconnect the sign-in method")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -380,5 +422,5 @@ func (h *Handler) handleTestOIDC(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "unavailable", "single sign-on is unavailable")
 		return
 	}
-	h.runTest(w, r, func(ctx context.Context) error { return h.deps.OIDC.Check(ctx, oidcSettings(cfg)) })
+	h.runTest(w, r, func(ctx context.Context) error { return h.deps.OIDC.Check(ctx, oidcSettings(cfg, 0)) })
 }

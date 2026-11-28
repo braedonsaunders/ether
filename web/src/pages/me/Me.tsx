@@ -10,7 +10,13 @@ import SignInMethods, { MIN_LOCAL_PASSWORD } from "./SignInMethods";
 const SESSION_KEY = "ether.viewerPortal";
 const CODE_LENGTH = 6;
 type Method = "plex" | "local";
-type Viewer = { id: number; username?: string; title?: string; needsSignInSetup: boolean };
+type Viewer = {
+  id: number;
+  username?: string;
+  title?: string;
+  isOwner?: boolean;
+  needsSignInSetup: boolean;
+};
 type Approval = { ok: boolean; device?: string; app?: string };
 
 const APP_NAMES: Record<string, string> = {
@@ -257,7 +263,7 @@ export default function Me() {
     const popup = window.open("", `${kind}-viewer-sign-in`, "width=560,height=720");
     const route = kind === "plex" ? "/pin" : "/oidc";
     try {
-      const pin = await request<{ handle: string; authUrl: string }>(route, "", {});
+      const pin = await request<{ handle: string; state?: string; authUrl: string }>(route, "", {});
       if (cancelled.current) return;
       if (kind === "plex") setPinURL(pin.authUrl);
       if (popup) {
@@ -269,8 +275,9 @@ export default function Me() {
         await new Promise((resolve) => setTimeout(resolve, 2000));
         if (cancelled.current) return;
         const result = await request<{ done: boolean; token?: string }>(
-          `${route}/${encodeURIComponent(pin.handle)}`,
+          kind === "plex" ? `${route}/${encodeURIComponent(pin.handle)}` : `${route}/poll`,
           "",
+          kind === "oidc" ? { handle: pin.handle, state: pin.state } : undefined,
         );
         if (result.done && result.token) {
           sessionStorage.setItem(SESSION_KEY, result.token);
@@ -609,7 +616,12 @@ export default function Me() {
           <>
             <ConnectApps base="/me" token={token} />
             <PortalTrakt token={token} />
-            <SignInMethods base="/me" token={token} oidcName={oidcName} />
+            <SignInMethods
+              base="/me"
+              token={token}
+              oidcName={oidcName}
+              viewerIsOwner={viewer?.isOwner}
+            />
           </>
         ) : null}
       </div>
@@ -686,7 +698,11 @@ function FirstPassword({
     setError("");
     const popup = window.open("", "_blank", "width=560,height=720");
     try {
-      const pin = await request<{ handle: string; authUrl: string }>(`/link/${kind}`, token, {});
+      const pin = await request<{ handle: string; state?: string; authUrl: string }>(
+        `/link/${kind}`,
+        token,
+        {},
+      );
       if (cancelled.current) return;
       if (kind === "plex") setPinURL(pin.authUrl);
       if (popup) {
@@ -698,8 +714,9 @@ function FirstPassword({
         await new Promise((resolve) => setTimeout(resolve, 2000));
         if (cancelled.current) return;
         const result = await request<{ done: boolean }>(
-          `/link/${kind}/${encodeURIComponent(pin.handle)}`,
+          kind === "plex" ? `/link/plex/${encodeURIComponent(pin.handle)}` : "/link/oidc/poll",
           token,
+          kind === "oidc" ? { handle: pin.handle, state: pin.state } : undefined,
         );
         if (result.done) {
           onDone(

@@ -69,7 +69,7 @@ func (h *Handler) localLogin(w http.ResponseWriter, r *http.Request, surface str
 		writeError(w, 401, "unauthorized", "invalid credentials")
 		return
 	}
-	token, refused := h.issueBrowserLogin(r, viewerID, &identityID, surface)
+	token, refused := h.issueBrowserLogin(r, viewerID, &identityID, surface, false)
 	if refused != "" {
 		h.emitLoginFailed(body.Username, "password", refused, "Ether browser", "Web", ip.String())
 		writeError(w, 401, "unauthorized", "invalid credentials")
@@ -86,13 +86,19 @@ func (h *Handler) localLogin(w http.ResponseWriter, r *http.Request, surface str
 // issueBrowserLogin issues a browser grant for an identity that has already
 // been verified. The owner surface admits only an active owner. A refusal
 // returns the reason recorded with the failed sign-in event.
-func (h *Handler) issueBrowserLogin(r *http.Request, viewerID int64, identityID *int64, surface string) (token, refused string) {
+func (h *Handler) issueBrowserLogin(r *http.Request, viewerID int64, identityID *int64, surface string, oidc bool) (token, refused string) {
 	issue := h.deps.IdentityGrants.IssueLogin
 	if surface == "owner" {
 		issue = h.deps.IdentityGrants.IssueOwnerLogin
 	}
+	if oidc {
+		issue = h.deps.IdentityGrants.IssueOIDCLogin
+	}
 	token, err := issue(r.Context(), viewerID, identityID, surface, core.Device{Client: "Ether browser"})
 	if err != nil {
+		if errors.Is(err, identity.ErrOIDCOwnerApproval) {
+			return "", "owner_link_required"
+		}
 		// The identity was verified for an active viewer, so an owner-only
 		// refusal means the viewer does not own this server.
 		if surface == "owner" && errors.Is(err, core.ErrUnauthorized) {
@@ -230,7 +236,7 @@ func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, 200, map[string]any{
-		"id": u.ID, "username": username, "title": u.Title, "needsSignInSetup": needsSetup,
+		"id": u.ID, "username": username, "title": u.Title, "isOwner": u.IsOwner, "needsSignInSetup": needsSetup,
 	})
 }
 func (h *Handler) handleApproveQuickConnect(w http.ResponseWriter, r *http.Request) {
@@ -708,18 +714,24 @@ func (h *Handler) handleCreateInviteViewer(w http.ResponseWriter, r *http.Reques
 // polling must not exhaust password-login attempts. Key by opaque handle.
 func (h *Handler) limitIdentityPoll(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if h.deps.PollLimiter == nil {
-			writeError(w, 503, "unavailable", "polling unavailable")
-			return
+		if h.allowIdentityPoll(w, r, r.PathValue("handle")) {
+			next(w, r)
 		}
-		ip, _ := identity.ClientNet(r, h.proxyPrefixes()...)
-		ok, err := h.deps.PollLimiter.Allow(identity.WithRateLimitApp(r.Context(), "Ether viewer portal"), r.PathValue("handle"), ip)
-		if err != nil || !ok {
-			writeError(w, 429, "rate_limit", "try again later")
-			return
-		}
-		next(w, r)
 	}
+}
+
+func (h *Handler) allowIdentityPoll(w http.ResponseWriter, r *http.Request, handle string) bool {
+	if h.deps.PollLimiter == nil {
+		writeError(w, 503, "unavailable", "polling unavailable")
+		return false
+	}
+	ip, _ := identity.ClientNet(r, h.proxyPrefixes()...)
+	ok, err := h.deps.PollLimiter.Allow(identity.WithRateLimitApp(r.Context(), "Ether viewer portal"), handle, ip)
+	if err != nil || !ok {
+		writeError(w, 429, "rate_limit", "try again later")
+		return false
+	}
+	return true
 }
 
 func (h *Handler) handleListLockouts(w http.ResponseWriter, r *http.Request) {
