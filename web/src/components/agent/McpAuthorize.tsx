@@ -5,15 +5,22 @@ import { t } from "../../i18n";
 import { apiFetch } from "../../lib/api";
 import { ErrorPanel } from "../feedback";
 
+type AuthorizationDetails = {
+  name: string;
+  scope: string;
+  redirectHost?: string;
+  redirectLocal?: boolean;
+};
+
 export function McpAuthorize() {
   const [params] = useSearchParams();
   const request = params.get("request") ?? "";
-  const [details, setDetails] = useState<{ name: string; scope: string } | null>(null);
+  const [details, setDetails] = useState<AuthorizationDetails | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let active = true;
-    apiFetch<{ name: string; scope: string }>(
+    apiFetch<AuthorizationDetails>(
       `/agent/mcp/authorization?request=${encodeURIComponent(request)}`,
     )
       .then((value) => {
@@ -52,6 +59,24 @@ export function McpAuthorize() {
           <p className="text-sm text-fg-muted">
             {details.scope === "read" ? t("Access: read") : t("Access: full")}
           </p>
+          {details.redirectHost ? (
+            <div
+              className={
+                details.redirectLocal
+                  ? "rounded-lg border border-border bg-bg px-3 py-2 text-xs text-fg-muted"
+                  : "rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-fg"
+              }
+            >
+              <div>
+                {t("Redirects to: {host}", { host: details.redirectHost })}
+              </div>
+              {!details.redirectLocal ? (
+                <div className="mt-1 text-fg-muted">
+                  {t("External host: make sure you recognize this address before approving.")}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <p className="text-sm text-fg-muted">
             {t("Changes to your server still need your approval.")}
           </p>
