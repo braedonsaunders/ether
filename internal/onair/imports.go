@@ -87,9 +87,7 @@ func (s *Service) importHTTPClient() (*http.Client, func()) {
 
 func importClient() *http.Client {
 	c := egress.Client(egress.CapPlugins, 10*time.Minute)
-	// egress shares one transport per capability; the guarded dialer is ours alone.
-	tr := c.Transport.(*http.Transport).Clone()
-	c.Transport = tr
+	tr := c.Transport.(*http.Transport)
 	dial := tr.DialContext
 	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		conn, e := dial(ctx, network, addr)
