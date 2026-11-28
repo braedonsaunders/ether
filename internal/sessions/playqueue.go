@@ -439,6 +439,7 @@ func QueueItemIndex(items []QueueItem, id int64) int {
 // newly allocated identity. This also applies when the requested state repeats.
 func (s *PlayQueues) Reshuffle(q *PlayQueue, shuffled bool) {
 	oldVersion := q.Version
+	saved := *q // the slices are replaced, never edited in place
 	if shuffled {
 		original := append([]QueueItem(nil), q.Original...)
 		if q.Shuffled {
@@ -463,6 +464,9 @@ func (s *PlayQueues) Reshuffle(q *PlayQueue, shuffled bool) {
 		var err error
 		minted, err = s.Preallocate(keys)
 		if err != nil {
+			// Leave the queue as it was: reordered items with their old ids
+			// would be saved as if the control had succeeded.
+			*q = saved
 			return
 		}
 	}
