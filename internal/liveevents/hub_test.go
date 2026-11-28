@@ -948,3 +948,28 @@ func TestHubClusterLeaderOnlyPollingAndFanout(t *testing.T) {
 	cancel()
 	wg.Wait()
 }
+
+func TestHubOverflowOnlyPublishesChanges(t *testing.T) {
+	hub := NewHub(Options{MaxEventsPerFeed: 2, MaxTotalEvents: 3})
+	defer hub.Close()
+	const before = "2026-11-22T18:00:00Z"
+	events := []core.LiveEvent{
+		sampleEvent("a", core.LiveEventStatePre, "0", "0", before),
+		sampleEvent("b", core.LiveEventStatePre, "0", "0", before),
+		sampleEvent("c", core.LiveEventStatePre, "0", "0", before),
+	}
+	if got := hub.ingestEvents("plug", "feed", events, false); len(got) != len(events) {
+		t.Fatalf("initial changes = %d, want %d", len(got), len(events))
+	}
+	if got := hub.ingestEvents("plug", "feed", events, false); len(got) != 0 {
+		t.Fatalf("unchanged overflow re-emitted %d events", len(got))
+	}
+	events[0].Status.State = core.LiveEventStateIn
+	got := hub.ingestEvents("plug", "feed", events, false)
+	if len(got) != 1 || got[0].ID != "plug:feed:a" {
+		t.Fatalf("updated overflow = %+v", got)
+	}
+	if len(hub.events) != 2 {
+		t.Fatalf("cached events = %d, want 2", len(hub.events))
+	}
+}
