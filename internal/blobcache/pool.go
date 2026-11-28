@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -275,10 +276,15 @@ func (n *Namespace) remoteBusy(kind, id string) bool {
 }
 
 func (n *Namespace) refreshPartials() error {
-	entries, err := os.ReadDir(n.partialsDir())
+	dir, err := os.OpenRoot(n.partialsDir())
 	if os.IsNotExist(err) {
 		return nil
 	}
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	entries, err := fs.ReadDir(dir.FS(), ".")
 	if err != nil {
 		return err
 	}
@@ -303,7 +309,10 @@ func (n *Namespace) refreshPartials() error {
 		if !ok || len(id) != 64 || n.partialLocks[id] != nil {
 			continue
 		}
-		st, err := e.Info()
+		// On Windows, directory entries can report the pre-write size of
+		// open files. Lstat on the root queries the file by handle and
+		// shares delete access with the writer.
+		st, err := dir.Lstat(e.Name())
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue

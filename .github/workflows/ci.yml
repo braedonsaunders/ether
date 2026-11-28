@@ -523,6 +523,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Check out the hosted Music fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: braedonsaunders/ether-plugin-music
+          ref: f1b147485a022aa28e96b1410e0065aacc32a1b3
+          path: perf-gate-music
+          persist-credentials: false
+      # Checkout requires a workspace-relative path.
+      - name: Move the Music fixture to runner temp
+        run: mv -- "$GITHUB_WORKSPACE/perf-gate-music" "$RUNNER_TEMP/ether-plugin-music"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -534,6 +544,7 @@ jobs:
         env:
           CGO_ENABLED: "0"
           ETHER_PERF_GATE: "1"
+          ETHER_PERF_GATE_MUSIC_SOURCE: ${{ runner.temp }}/ether-plugin-music
           ETHER_PERF_GATE_REPORT: ${{ runner.temp }}/perf-gate.md
           ETHER_PERF_GATE_KEEP: ${{ runner.temp }}/perf-gate-private
         run: go test ./internal/app -run '^TestPerformanceGate$' -count=1 -timeout 60m -v

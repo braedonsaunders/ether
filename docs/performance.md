@@ -152,6 +152,9 @@ The gate loads that checkout with network permission revoked, seeds artists,
 albums and tracks, and reads the Subsonic method list from its dispatcher.
 A full or Subsonic-selected run fails before replay if the checkout is missing
 or the adapter cannot be installed and mounted.
+For `ETHER_PERF_GATE_MUSIC_SOURCE`, CI uses `braedonsaunders/ether-plugin-music`
+at commit `f1b147485a022aa28e96b1410e0065aacc32a1b3`. Use that revision to
+reproduce the CI matrix.
 
 ```sh
 mkdir -p "$HOME/.scratch/tmp/ether-perf"

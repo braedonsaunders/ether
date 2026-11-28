@@ -50,7 +50,7 @@ func speedArticles(ctx context.Context, doc *nzb.NZB) []speedArticle {
 }
 
 type speedReads struct {
-	start, end                                    time.Time
+	start, end                                    time.Duration
 	bytes                                         int64
 	admitted, used, opened, refused, hits, misses int
 	failedReaders                                 int
@@ -142,7 +142,8 @@ func (f *Fetcher) SpeedTest(ctx context.Context, id string, docs []*nzb.NZB, pla
 			return r
 		default:
 			r.Bytes, r.Connections = run.bytes, run.used
-			r.MeasureTransfer(run.end.Sub(run.start))
+			r.Status = "unavailable"
+			r.MeasureTransfer(run.end - run.start)
 			return r
 		}
 	}
@@ -207,10 +208,10 @@ func (p *pool) readSpeedArticles(ctx context.Context, articles []speedArticle, w
 				local.used = 1
 				n, started, err := p.readSpeedBody(worker, c, articles[i])
 				if n > 0 && (err == nil || errors.Is(ctxErr(worker), context.DeadlineExceeded)) {
-					if local.start.IsZero() {
+					if local.bytes == 0 {
 						local.start = started
 					}
-					local.end = time.Now()
+					local.end = speedTransferTime()
 					local.bytes += n
 				}
 				switch {
@@ -249,12 +250,12 @@ func (p *pool) readSpeedArticles(ctx context.Context, articles []speedArticle, w
 		run.hits += local.hits
 		run.misses += local.misses
 		run.failedReaders += local.failedReaders
-		run.bytes += local.bytes
-		if !local.start.IsZero() && (run.start.IsZero() || local.start.Before(run.start)) {
-			run.start = local.start
-		}
-		if local.end.After(run.end) {
-			run.end = local.end
+		if local.bytes > 0 {
+			if run.bytes == 0 || local.start < run.start {
+				run.start = local.start
+			}
+			run.end = max(run.end, local.end)
+			run.bytes += local.bytes
 		}
 	}
 	return run
@@ -264,17 +265,17 @@ func speedConnectionRefused(err error) bool {
 	return errors.Is(err, ErrServiceUnavailable) || sockerr.IsConnRefused(err)
 }
 
-func (p *pool) readSpeedBody(ctx context.Context, c *Conn, a speedArticle) (int64, time.Time, error) {
+func (p *pool) readSpeedBody(ctx context.Context, c *Conn, a speedArticle) (int64, time.Duration, error) {
 	if p.o.UseGroup && len(a.groups) > 0 && !slices.Contains(a.groups, c.CurrentGroup()) {
 		if err := c.Group(ctx, a.groups[0]); err != nil && !errors.Is(err, ErrNoSuchGroup) {
-			return 0, time.Time{}, err
+			return 0, 0, err
 		}
 	}
 	reader, err := c.Body(ctx, a.id)
 	if err != nil {
-		return 0, time.Time{}, err
+		return 0, 0, err
 	}
-	started := time.Now()
+	started := speedTransferTime()
 	n, err := io.Copy(io.Discard, reader)
 	if closeErr := reader.Close(); err == nil {
 		err = closeErr
