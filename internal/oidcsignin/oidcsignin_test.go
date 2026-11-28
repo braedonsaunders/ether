@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -27,6 +28,10 @@ type fakeProvider struct {
 	key    *rsa.PrivateKey
 	secret string
 
+	// issuerSuffix is appended to the server URL to form the issuer, for
+	// providers whose issuer ends in a slash or a path.
+	issuerSuffix string
+
 	mu    sync.Mutex
 	codes map[string]pendingCode
 	// claims overrides fields of the next ID token.
@@ -38,16 +43,20 @@ type pendingCode struct {
 }
 
 func newFakeProvider(t *testing.T) *fakeProvider {
+	return newFakeProviderAt(t, "")
+}
+
+func newFakeProviderAt(t *testing.T, suffix string) *fakeProvider {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &fakeProvider{t: t, key: key, secret: "s3cret", codes: map[string]pendingCode{}}
+	p := &fakeProvider{t: t, key: key, secret: "s3cret", codes: map[string]pendingCode{}, issuerSuffix: suffix}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET "+strings.TrimSuffix(suffix, "/")+"/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"issuer":                                p.srv.URL,
+			"issuer":                                p.issuer(),
 			"authorization_endpoint":                p.srv.URL + "/authorize",
 			"token_endpoint":                        p.srv.URL + "/token",
 			"jwks_uri":                              p.srv.URL + "/jwks",
@@ -110,7 +119,7 @@ func (p *fakeProvider) token(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	claims := map[string]any{
-		"iss":                p.srv.URL,
+		"iss":                p.issuer(),
 		"sub":                "user-1",
 		"aud":                "ether",
 		"exp":                time.Now().Add(5 * time.Minute).Unix(),
@@ -136,8 +145,10 @@ func (p *fakeProvider) token(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "at", "token_type": "Bearer", "id_token": raw, "expires_in": 300})
 }
 
+func (p *fakeProvider) issuer() string { return p.srv.URL + p.issuerSuffix }
+
 func (p *fakeProvider) settings() Settings {
-	return Settings{Issuer: p.srv.URL, ClientID: "ether", ClientSecret: p.secret}
+	return Settings{Issuer: p.issuer(), ClientID: "ether", ClientSecret: p.secret}
 }
 
 const redirect = "https://ether.example.test/ether/api/oidc/callback"
@@ -300,7 +311,7 @@ func TestProfileClaims(t *testing.T) {
 			}
 			c := New(p.srv.Client())
 			s := p.settings()
-			s.Groups = true
+			s.Scopes = []string{"groups", " ", "openid"}
 			st, err := c.Start(context.Background(), s, redirect, PurposePortal, 0)
 			if err != nil {
 				t.Fatal(err)
@@ -323,5 +334,60 @@ func TestProfileClaims(t *testing.T) {
 				t.Fatalf("identity = %+v", id)
 			}
 		})
+	}
+}
+
+// Issuers are used exactly as configured: a trailing slash (Auth0, some
+// Keycloak and Entra setups) or a path stays part of the identity.
+func TestIssuerKeptExactly(t *testing.T) {
+	for _, suffix := range []string{"/", "/realms/home", "/application/o/ether/"} {
+		t.Run(suffix, func(t *testing.T) {
+			p := newFakeProviderAt(t, suffix)
+			c := New(p.srv.Client())
+			st, err := c.Start(context.Background(), p.settings(), redirect, PurposePortal, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			state, code := p.approve(t, st.AuthURL)
+			if err := c.Callback(context.Background(), state, st.Binding, code, ""); err != nil {
+				t.Fatal(err)
+			}
+			id, _, err := c.Take(st.Handle, PurposePortal, 0)
+			if err != nil || id.Subject != SubjectFor(p.issuer(), "user-1") {
+				t.Fatalf("identity = %+v %v", id, err)
+			}
+			// The same provider without its trailing slash is a different issuer.
+			if strings.HasSuffix(suffix, "/") {
+				s := p.settings()
+				s.Issuer = strings.TrimSuffix(s.Issuer, "/")
+				if _, err := c.Start(context.Background(), s, redirect, PurposePortal, 0); err == nil {
+					t.Fatal("an issuer that differs from discovery was accepted")
+				}
+			}
+		})
+	}
+}
+
+func TestGroupsClaimNameAndShape(t *testing.T) {
+	p := newFakeProvider(t)
+	p.claims = func(c map[string]any) { c["roles"] = "ether" }
+	c := New(p.srv.Client())
+	s := p.settings()
+	s.GroupsClaim = "roles"
+	st, err := c.Start(context.Background(), s, redirect, PurposePortal, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, _ := url.Parse(st.AuthURL)
+	if scope := u.Query().Get("scope"); scope != "openid profile email" {
+		t.Fatalf("scope = %q, want no extra scopes unless configured", scope)
+	}
+	state, code := p.approve(t, st.AuthURL)
+	if err := c.Callback(context.Background(), state, st.Binding, code, ""); err != nil {
+		t.Fatal(err)
+	}
+	id, _, _ := c.Take(st.Handle, PurposePortal, 0)
+	if len(id.Groups) != 1 || id.Groups[0] != "ether" {
+		t.Fatalf("groups = %v", id.Groups)
 	}
 }

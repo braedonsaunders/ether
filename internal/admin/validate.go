@@ -707,6 +707,12 @@ func ValidateConfig(cfg config.Config) []FieldError {
 	if cfg.OIDC.AutoLinkEmail != "" {
 		v.oneOf("oidc.autoLinkEmail", cfg.OIDC.AutoLinkEmail, config.OIDCAutoLinkVerified, config.OIDCAutoLinkAny)
 	}
+	if len(cfg.OIDC.Scopes) > 512 || strings.ContainsAny(cfg.OIDC.Scopes, "\"\\") {
+		v.add("oidc.scopes", "must be scope names separated by spaces")
+	}
+	if len(cfg.OIDC.GroupsClaim) > 128 || strings.ContainsAny(cfg.OIDC.GroupsClaim, " \t") {
+		v.add("oidc.groupsClaim", "must be one claim name")
+	}
 	if len(cfg.OIDC.RequiredGroup) > 256 {
 		v.add("oidc.requiredGroup", "must be at most 256 characters")
 	}

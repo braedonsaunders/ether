@@ -30,7 +30,7 @@ const oidcCallbackPath = "/ether/api/oidc/callback"
 
 func oidcSettings(c config.OIDC) oidcsignin.Settings {
 	return oidcsignin.Settings{Issuer: c.Issuer, ClientID: c.ClientID, ClientSecret: c.ClientSecret,
-		Groups: strings.TrimSpace(c.RequiredGroup) != ""}
+		Scopes: strings.Fields(c.Scopes), GroupsClaim: c.GroupsClaim}
 }
 
 // oidcEnabled reports whether single sign-on is switched on, configured and

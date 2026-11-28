@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -67,9 +68,13 @@ type Settings struct {
 	Issuer       string
 	ClientID     string
 	ClientSecret string
-	// Groups also asks for the "groups" scope, for providers that only
-	// send group membership when it is requested.
-	Groups bool
+	// Scopes are requested in addition to openid, profile and email, for
+	// providers that send some claims (often groups) only when asked.
+	// Nothing else is added: providers may reject scopes they don't know.
+	Scopes []string
+	// GroupsClaim names the claim that lists group membership ("groups"
+	// when empty). Its value may be a list of strings or one string.
+	GroupsClaim string
 }
 
 func (s Settings) normalized() Settings {
@@ -77,8 +82,16 @@ func (s Settings) normalized() Settings {
 		Issuer:       strings.TrimSpace(s.Issuer),
 		ClientID:     strings.TrimSpace(s.ClientID),
 		ClientSecret: strings.TrimSpace(s.ClientSecret),
-		Groups:       s.Groups,
+		Scopes:       s.Scopes,
+		GroupsClaim:  strings.TrimSpace(s.GroupsClaim),
 	}
+}
+
+func (s Settings) groupsClaim() string {
+	if s.GroupsClaim == "" {
+		return "groups"
+	}
+	return s.GroupsClaim
 }
 
 // Usable reports whether s names a provider and a client.
@@ -223,8 +236,10 @@ func oauthConfig(p *oidc.Provider, s Settings, redirectURL string) *oauth2.Confi
 
 func scopes(s Settings) []string {
 	out := []string{oidc.ScopeOpenID, "profile", "email"}
-	if s.Groups {
-		out = append(out, "groups")
+	for _, sc := range s.Scopes {
+		if sc = strings.TrimSpace(sc); sc != "" && !slices.Contains(out, sc) {
+			out = append(out, sc)
+		}
 	}
 	return out
 }
@@ -236,7 +251,27 @@ type profileClaims struct {
 	Email             string          `json:"email"`
 	EmailVerified     json.RawMessage `json:"email_verified"`
 	Name              string          `json:"name"`
-	Groups            []string        `json:"groups"`
+	Groups            []string        `json:"-"`
+}
+
+// readClaims decodes the profile claims and the configured groups claim,
+// which may hold a list of strings or a single string.
+func readClaims(decode func(any) error, groupsClaim string) profileClaims {
+	var c profileClaims
+	_ = decode(&c)
+	var all map[string]json.RawMessage
+	if decode(&all) == nil {
+		if raw, ok := all[groupsClaim]; ok {
+			var list []string
+			var one string
+			if json.Unmarshal(raw, &list) == nil {
+				c.Groups = list
+			} else if json.Unmarshal(raw, &one) == nil && one != "" {
+				c.Groups = []string{one}
+			}
+		}
+	}
+	return c
 }
 
 // merge fills claims missing from c with those from o.
@@ -395,16 +430,12 @@ func (c *Client) complete(ctx context.Context, f *flow, code, providerError stri
 	if strings.TrimSpace(idt.Subject) == "" {
 		return Identity{}, fmt.Errorf("%w: no subject", ErrRejected)
 	}
-	var claims profileClaims
-	_ = idt.Claims(&claims)
+	claims := readClaims(idt.Claims, f.settings.groupsClaim())
 	// Some providers keep profile claims out of the ID token. Userinfo
 	// answers count only for the same subject.
-	if claims.Email == "" || claims.PreferredUsername == "" || (f.settings.Groups && len(claims.Groups) == 0) {
+	if claims.Email == "" || claims.PreferredUsername == "" || len(claims.Groups) == 0 {
 		if info, err := p.UserInfo(c.ctx(ctx), oauth2.StaticTokenSource(tok)); err == nil && info.Subject == idt.Subject {
-			var more profileClaims
-			if info.Claims(&more) == nil {
-				claims.merge(more)
-			}
+			claims.merge(readClaims(info.Claims, f.settings.groupsClaim()))
 		}
 	}
 	display := idt.Subject

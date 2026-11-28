@@ -567,6 +567,8 @@ export interface EtherConfig {
     autoLinkUsername?: boolean;
     autoProvision?: boolean;
     requiredGroup?: string;
+    scopes?: string;
+    groupsClaim?: string;
   };
   mdblist?: { enabled: boolean };
   plexServers?: { enabled: boolean };

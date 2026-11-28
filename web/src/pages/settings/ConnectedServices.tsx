@@ -440,6 +440,8 @@ function mergeSection(
           autoLinkUsername: boolField(section, "autoLinkUsername", prev.autoLinkUsername ?? false),
           autoProvision: boolField(section, "autoProvision", prev.autoProvision ?? false),
           requiredGroup: textField(section, "requiredGroup", prev.requiredGroup ?? ""),
+          scopes: textField(section, "scopes", prev.scopes ?? ""),
+          groupsClaim: textField(section, "groupsClaim", prev.groupsClaim ?? ""),
         },
       };
     }

@@ -1078,7 +1078,10 @@ account themselves, and only the owner's linked account opens the console.
    `https://<address>/ether/api/oidc/callback` for each address people open
    Ether at, for example both the console and the viewer portal hostnames.
 2. Open **Integrations › Single sign-on**, enter the issuer URL exactly as the
-   provider's `/.well-known/openid-configuration` reports it, the client ID
+   provider's `/.well-known/openid-configuration` reports it, including any
+   trailing slash or path (Auth0 issuers end in `/`, Keycloak's include
+   `/realms/<name>`, Microsoft Entra needs the tenant-specific issuer, not
+   `common`), the client ID
    and, for a confidential client, the client secret. **Button name** sets the
    label, for example "Pocket ID". **Test connection** checks the issuer; only a
    real sign-in proves the client ID and secret.
@@ -1097,8 +1100,12 @@ isn't linked yet:
 - **Create a viewer for new accounts** creates a viewer, named after the
   provider username, when nothing matches.
 - **Required group** limits all of these to members of one provider group.
-  Ether then asks for the `groups` scope, and the provider must send a
-  `groups` claim.
+  The provider must send group membership in the ID token or userinfo, in
+  the claim named under **Groups claim** (`groups` by default; a list or a
+  single string). Some providers send it only for an extra scope: add it
+  under **Extra scopes** (`groups` for Pocket ID). Ether requests no scopes
+  beyond `openid`, `profile` and `email` on its own, because some providers
+  refuse scopes they don't know.
 
 Use e-mail or username linking only when people can't change their own
 e-mail or username at the provider (in Pocket ID, turn off letting users edit

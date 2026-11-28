@@ -717,6 +717,25 @@ export const OIDC: FieldGroup[] = localized(() => [
         help: t("Leave empty for a public client."),
       },
     ],
+    more: [
+      {
+        key: "scopes",
+        label: t("Extra scopes"),
+        kind: "text",
+        wide: true,
+        placeholder: "groups",
+        help: t(
+          "Requested besides openid, profile and email, separated by spaces. Add only scopes your provider knows; some providers refuse the sign-in otherwise.",
+        ),
+      },
+      {
+        key: "groupsClaim",
+        label: t("Groups claim"),
+        kind: "text",
+        placeholder: "groups",
+        help: t("The claim that lists a person's groups. Empty means groups."),
+      },
+    ],
   },
   {
     title: t("New accounts"),
@@ -759,7 +778,7 @@ export const OIDC: FieldGroup[] = localized(() => [
         kind: "text",
         placeholder: "ether",
         help: t(
-          "Optional. Only members of this provider group are linked or created automatically. Ether asks for the groups scope when this is set.",
+          "Optional. Only members of this provider group are linked or created automatically.",
         ),
       },
     ],

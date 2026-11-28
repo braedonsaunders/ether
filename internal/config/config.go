@@ -868,9 +868,14 @@ type OIDC struct {
 	// nor matched.
 	AutoProvision bool `json:"autoProvision,omitempty"`
 	// RequiredGroup, when set, limits automatic linking and creation to
-	// members of this provider group (the "groups" claim). Linked accounts
-	// sign in either way.
+	// members of this provider group. Linked accounts sign in either way.
 	RequiredGroup string `json:"requiredGroup,omitempty"`
+	// GroupsClaim names the ID token or userinfo claim that lists groups.
+	// Empty means "groups".
+	GroupsClaim string `json:"groupsClaim,omitempty"`
+	// Scopes are requested besides openid, profile and email, separated by
+	// spaces (for example "groups" for Pocket ID). Ether adds no others.
+	Scopes string `json:"scopes,omitempty"`
 }
 
 // OIDC automatic e-mail linking modes.
