@@ -211,6 +211,27 @@ func TestSharedIdleAdmissionUsesCompactCounter(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(newDir, "index.json"), []byte("invalid"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	// Read-only LookupKey and Quota checks must neither block on the pool
+	// allocation lock nor invalidate the .idle-usage snapshot.
+	lockFile, err := os.OpenFile(filepath.Join(dir, ".allocation.lock"), os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lockFile.Close()
+	if ok, err := tryFileLock(lockFile, true); err != nil || !ok {
+		t.Fatalf("tryFileLock = (%v, %v)", ok, err)
+	}
+	nsB := b.Namespace("games", Quota{MaxBytes: 500})
+	if q := nsB.Quota(); q.MaxBytes != 500 {
+		t.Fatalf("Quota().MaxBytes = %d, want 500", q.MaxBytes)
+	}
+	if _, ok := nsB.LookupKey("disc"); !ok {
+		t.Fatal("LookupKey missed published disc")
+	}
+	lockFile.Close()
+	if _, err := os.Stat(filepath.Join(dir, ".idle-usage")); err != nil {
+		t.Fatalf(".idle-usage removed by read-only LookupKey/Quota: %v", err)
+	}
 	if err := b.WithAllocation(func(a, r int64, _ segcache.FileCandidates) error {
 		if a != 3 || r != 0 {
 			t.Fatalf("counter = %d+%d", a, r)
@@ -442,5 +463,33 @@ func TestRecoverInterruptedFilePublication(t *testing.T) {
 	}
 	if u, r, err := c.FileUsage(); u != 4 || r != 0 || err != nil {
 		t.Fatalf("recovered usage %d+%d %v", u, r, err)
+	}
+}
+
+// A lock-free LookupKey must not reload the index over a local mutation that
+// has not been saved yet (a Put between updating memory and flushIndex).
+func TestSharedLookupKeepsUnsavedLocalIndex(t *testing.T) {
+	dir := t.TempDir()
+	a, b := sharedFileStore(t, dir, 1<<30), sharedFileStore(t, dir, 1<<30)
+	ctx := context.Background()
+	nsA := a.Namespace("games", Quota{MaxBytes: 1 << 20})
+	ref, err := nsA.Put(ctx, "one", strings.NewReader("first"), 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Namespace("games", Quota{MaxBytes: 1 << 20}).Put(ctx, "two", strings.NewReader("second"), 6); err != nil {
+		t.Fatal(err)
+	}
+	nsA.mu.Lock()
+	nsA.keys["pending"] = strings.TrimPrefix(string(ref), "blob:")
+	nsA.dirty = true
+	nsA.mu.Unlock()
+	nsA.LookupKey("two")
+	nsA.mu.Lock()
+	_, kept := nsA.keys["pending"]
+	dirty := nsA.dirty
+	nsA.mu.Unlock()
+	if !kept || !dirty {
+		t.Fatalf("unsaved local index entry dropped (kept=%v dirty=%v)", kept, dirty)
 	}
 }

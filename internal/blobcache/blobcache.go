@@ -948,10 +948,7 @@ func (n *Namespace) SetQuota(q Quota) {
 // Quota returns the namespace's current quota.
 func (n *Namespace) Quota() Quota {
 	if n.cache.options.Shared {
-		if unlock, err := n.cache.lockPool(context.Background()); err == nil {
-			_ = n.readOwnerQuota()
-			unlock()
-		}
+		_ = n.readOwnerQuota()
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -985,13 +982,27 @@ func (n *Namespace) storedStats() (bytes int64, blobs int) {
 // LookupKey checks if a blob was stored under key, is not expired, and still
 // exists on disk. If found, it returns its Ref ("blob:<sha256>").
 func (n *Namespace) LookupKey(key string) (Ref, bool) {
-	unlock, err := n.cache.guard(context.Background())
-	if err != nil {
-		return "", false
-	}
-	defer unlock()
 	if key == "" {
 		return "", false
+	}
+	if n.cache.options.CheckVolume != nil {
+		if err := n.cache.options.CheckVolume(); err != nil {
+			return "", false
+		}
+	}
+	if n.cache.options.Shared {
+		if _, err := os.Stat(filepath.Join(n.dir, ".publishing")); err == nil {
+			unlock, err := n.cache.readGuard()
+			if err != nil {
+				return "", false
+			}
+			unlock()
+		} else {
+			_ = n.readOwnerQuota()
+			if err := n.refreshIndexUnlocked(); err != nil {
+				return "", false
+			}
+		}
 	}
 	now := n.cache.now()
 	n.mu.Lock()
@@ -1008,7 +1019,7 @@ func (n *Namespace) LookupKey(key string) (Ref, bool) {
 	}
 	if n.isExpiredLocked(e, now) {
 		n.mu.Unlock()
-		n.sweep(0, "")
+		n.Sweep(0)
 		return "", false
 	}
 	n.mu.Unlock()

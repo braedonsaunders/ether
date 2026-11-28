@@ -153,13 +153,23 @@ func (c *Cache) refreshShared() error {
 	return nil
 }
 
-func (n *Namespace) refreshIndex() error {
+func (n *Namespace) refreshIndex() error { return n.reloadIndex(false) }
+
+// refreshIndexUnlocked is for readers that do not hold the pool lock: a
+// concurrent local mutation may not have saved its index yet, and reloading
+// the file would drop it, so unsaved local state wins.
+func (n *Namespace) refreshIndexUnlocked() error { return n.reloadIndex(true) }
+
+func (n *Namespace) reloadIndex(keepDirty bool) error {
 	info, err := os.Stat(n.indexPath())
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	if keepDirty && n.dirty {
+		return nil
+	}
 	if info != nil && n.indexInfo != nil && os.SameFile(info, n.indexInfo) && info.ModTime().Equal(n.indexInfo.ModTime()) {
 		return nil
 	}
