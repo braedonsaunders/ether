@@ -153,3 +153,60 @@ func TestEncoderDiesAfterParentExit(t *testing.T) {
 			bytes.Count(first, []byte("\n")), bytes.Count(second, []byte("\n")))
 	}
 }
+
+func TestPauseResumeNoOpAfterProcessDone(t *testing.T) {
+	t.Setenv("ETHER_TEST_ENCODER_MODE", "output")
+	p, err := (ExecRunner{}).Start(Command{Path: os.Args[0], Args: []string{"-test.run=^TestEncoderLifecycleHelper$"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-p.Done()
+	if err := p.Pause(); err != nil {
+		t.Fatalf("Pause after exit returned error: %v", err)
+	}
+	if err := p.Resume(); err != nil {
+		t.Fatalf("Resume after exit returned error: %v", err)
+	}
+
+	// Simulate PID reuse after exit: a live unrelated process now owns p.pid
+	// while p.done is already closed. Neither Pause nor Resume may signal it.
+	dir := t.TempDir()
+	heartbeat := filepath.Join(dir, "heartbeat")
+	victim := exec.Command(os.Args[0], "-test.run=^TestEncoderLifecycleHelper$")
+	victim.Env = append(os.Environ(), "ETHER_TEST_ENCODER_MODE=child", "ETHER_TEST_ENCODER_HEARTBEAT="+heartbeat)
+	if err := victim.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = victim.Process.Kill()
+		_ = victim.Wait()
+	}()
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); {
+		if b, err := os.ReadFile(heartbeat); err == nil && len(b) > 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	done := make(chan struct{})
+	close(done)
+	reused := &execProcess{pid: victim.Process.Pid, done: done}
+	if err := reused.Pause(); err != nil {
+		t.Fatalf("Pause on exited process with reused pid: %v", err)
+	}
+	before, err := os.ReadFile(heartbeat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(80 * time.Millisecond)
+	after, err := os.ReadFile(heartbeat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) <= len(before) {
+		t.Fatalf("Pause signaled reused pid %d and froze live process (%d -> %d bytes)", victim.Process.Pid, len(before), len(after))
+	}
+	reused.paused = true
+	if err := reused.Resume(); err != nil {
+		t.Fatalf("Resume on exited process with reused pid: %v", err)
+	}
+}
