@@ -477,7 +477,7 @@ func (c *Client) nzbRefusal(ctx context.Context, r core.Release) error {
 		if id == "" {
 			continue
 		}
-		if _, blocked := c.nzbStoreFailures[id]; blocked {
+		if until := c.nzbStoreFailures[id]; now.Before(until) {
 			return vault.ErrPayloadMissing
 		}
 		if until := c.nzbRefusals[id]; now.Before(until) {

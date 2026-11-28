@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -162,7 +163,7 @@ type Client struct {
 	nzbFlightMu      sync.Mutex
 	nzbFlights       map[string]*nzbFlight
 	nzbRefusals      map[string]time.Time
-	nzbStoreFailures map[string]struct{}
+	nzbStoreFailures map[string]time.Time
 
 	cfgMu            sync.RWMutex
 	eventMu          sync.RWMutex
@@ -2850,13 +2851,22 @@ func (c *Client) keepNZB(ctx context.Context, r core.Release, body []byte) {
 	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
 	if _, err := c.vault.Put(writeCtx, vault.PutRequest{Release: r, Source: r.IndexerID, Private: private, NZB: body, Aliases: aliases}); err != nil {
+		const nzbStoreFailureTTL = 5 * time.Minute
+		now := c.now()
+		until := now.Add(nzbStoreFailureTTL)
 		c.nzbFlightMu.Lock()
 		if c.nzbStoreFailures == nil {
-			c.nzbStoreFailures = make(map[string]struct{})
+			c.nzbStoreFailures = make(map[string]time.Time)
 		}
-		c.nzbStoreFailures[r.ID] = struct{}{}
+		if len(c.nzbStoreFailures) >= 4096 {
+			maps.DeleteFunc(c.nzbStoreFailures, func(_ string, deadline time.Time) bool { return !now.Before(deadline) })
+			if len(c.nzbStoreFailures) >= 4096 {
+				clear(c.nzbStoreFailures)
+			}
+		}
+		c.nzbStoreFailures[r.ID] = until
 		for _, alias := range aliases {
-			c.nzbStoreFailures[alias] = struct{}{}
+			c.nzbStoreFailures[alias] = until
 		}
 		c.nzbFlightMu.Unlock()
 		c.log.Warn("could not store indexer release in vault", "indexer", r.IndexerID)
