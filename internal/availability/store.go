@@ -120,6 +120,9 @@ CREATE TABLE availability_hidden_retired (
 	// delivered schema boundary.
 	store.RegisterAfter("availability_retention", "availability")
 	store.Register("availability_retention", 1, `CREATE INDEX availability_feed_items_seen ON availability_feed_items(seen_at); CREATE INDEX availability_releases_last_seen ON availability_releases(last_seen);`)
+	// Invalidate and the console evidence projection look releases up by
+	// checked_id; without an index every call scanned the whole table.
+	store.Register("availability_retention", 2, `CREATE INDEX availability_releases_checked_id ON availability_releases(checked_id);`)
 	store.Register("availability", 7, `ALTER TABLE availability_feeds ADD COLUMN last_new_at BIGINT NOT NULL DEFAULT 0;`)
 	store.Register("availability", 6, hiddenMigration)
 	// covered_since: since when a feed's head polls have overlapped without a

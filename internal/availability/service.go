@@ -765,9 +765,13 @@ func (s *Service) Candidates(ctx context.Context, t *core.Title) []core.Release 
 func (s *Service) Invalidate(ctx context.Context, id string) {
 	s.invalidateConsoleEvidence(ctx, id)
 	defer s.clearVisibility()
-	_, err := s.db.ExecContext(ctx, `UPDATE availability_releases SET revision=revision+1,verified_at=0,state='unknown',reason='Source health invalidated; awaiting a fresh check',next_check=0 WHERE id=? OR checked_id=?`, id, id)
-	if err != nil {
-		s.log.Debug("availability invalidation failed", "error", err)
+	// Two statements so each lookup uses its own index (id, checked_id); an
+	// OR over both scanned the table.
+	for _, where := range []string{"id=?", "checked_id=?"} {
+		_, err := s.db.ExecContext(ctx, `UPDATE availability_releases SET revision=revision+1,verified_at=0,state='unknown',reason='Source health invalidated; awaiting a fresh check',next_check=0 WHERE `+where, id)
+		if err != nil {
+			s.log.Debug("availability invalidation failed", "error", err)
+		}
 	}
 }
 
