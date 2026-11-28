@@ -58,6 +58,9 @@ func (s *Service) variants(ctx context.Context, req core.ResolveRequest, max int
 	if req.Client.Download {
 		hasOwnerPin = false
 	}
+	if hasOwnerPin && ownerPin.Fallback && !s.preferenceEligible(req.Title.Key, ownerPin.Release) {
+		hasOwnerPin = false // inside its failure memory: Auto is the normal pick
+	}
 	if !ok || len(results) == 0 {
 		playedRel, hasPlayed := s.playedReleaseForSlots(req)
 		if titleVC == nil && !hasPlayed {
@@ -134,6 +137,9 @@ func (s *Service) variants(ctx context.Context, req core.ResolveRequest, max int
 	if autoRemembered || !core.IsAutoVersionSelector(req.PlayedSelector) {
 		played = ""
 	}
+	if hasOwnerPin && ownerPin.Fallback && len(vs) > 0 && vs[0].Release.ID == ownerPin.Release.ID {
+		played = "" // an eligible preference won Auto; a past play does not relabel it
+	}
 	if played != "" && strict[0].trackPreference > 0 && !slices.ContainsFunc(pool, func(c candidate) bool {
 		return c.rel.ID == played && c.trackPreference >= strict[0].trackPreference
 	}) {
@@ -161,7 +167,8 @@ func (s *Service) variants(ctx context.Context, req core.ResolveRequest, max int
 			vs[i].Info = info
 		}
 		vs[i].Remembered = i == 0 && autoRemembered
-		vs[i].Pinned = hasOwnerPin && vs[i].Release.ID == ownerPin.Release.ID
+		// A preferred pin is marked only as the eligible Auto winner.
+		vs[i].Pinned = hasOwnerPin && vs[i].Release.ID == ownerPin.Release.ID && (!ownerPin.Fallback || (i == 0 && vs[i].Auto))
 		vs[i].Availability, vs[i].AvailabilityNote = s.classifyVariantAvailability(ctx, req.Title.Key, vs[i].Release, vs[i].Info, false, ok)
 		for _, c := range pool {
 			if c.rel.ID != vs[i].Release.ID {

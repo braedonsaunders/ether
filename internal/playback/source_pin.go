@@ -69,7 +69,17 @@ func (m *Manager) BindSource(id string, binding core.SourceBinding) {
 	if s.binding != core.SourceBindingExplicit {
 		s.binding = binding
 	}
+	auto := s.binding == core.SourceBindingAuto
 	s.mu.Unlock()
+	if auto {
+		// Opened by id, yet Auto: its preference is the Auto one.
+		pref, _ := m.preferredRelease(s)
+		s.mu.Lock()
+		if s.cur != nil {
+			s.notePreferenceLocked(pref, s.cur.releaseID())
+		}
+		s.mu.Unlock()
+	}
 }
 
 // replaceableLocked reports whether a failing exact or pinned session may

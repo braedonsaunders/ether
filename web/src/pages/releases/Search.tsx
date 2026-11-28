@@ -40,6 +40,7 @@ import { RecordDrawer } from "../sources/form";
 import { pagedTableLabels } from "../../i18n/appkit-labels";
 import { PinStatusBadge } from "./Pinned";
 import { SeasonPinDrawer } from "./SeasonPinDrawer";
+import { PinModeField, pinModeLabel } from "./pinMode";
 
 const pad = (n: number | undefined) => String(n ?? 0).padStart(2, "0");
 
@@ -247,6 +248,7 @@ export function ReleaseSearch({ onPinsChanged }: { onPinsChanged?: () => void })
   const [busy, setBusy] = useState(false);
   const [pinning, setPinning] = useState<ConsoleRelease | null>(null);
   const [note, setNote] = useState("");
+  const [fallback, setFallback] = useState(false);
   const [pinError, setPinError] = useState<unknown>(null);
   const [pinSaving, setPinSaving] = useState(false);
 
@@ -335,7 +337,7 @@ export function ReleaseSearch({ onPinsChanged }: { onPinsChanged?: () => void })
     setPinSaving(true);
     setPinError(null);
     try {
-      await releaseConsole.pin(key, pinning.release.id, note);
+      await releaseConsole.pin(key, pinning.release.id, note, fallback);
       toast.success(t("Release pinned"));
       setPinning(null);
       await result.reload();
@@ -426,6 +428,7 @@ export function ReleaseSearch({ onPinsChanged }: { onPinsChanged?: () => void })
                 <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-fg">
                   <PinIcon size={14} aria-hidden /> {t("Pinned release")}
                   <PinStatusBadge pin={data.pin} />
+                  <Badge variant="secondary">{pinModeLabel(data.pin.fallback)}</Badge>
                 </p>
                 <p className="break-all font-mono text-xs text-fg-muted">{data.pin.release.name}</p>
                 {data.pinNote ? <p className="text-xs text-warning">{data.pinNote}</p> : null}
@@ -608,6 +611,7 @@ export function ReleaseSearch({ onPinsChanged }: { onPinsChanged?: () => void })
                                 icon: PinIcon,
                                 onSelect: () => {
                                   setNote("");
+                                  setFallback(false);
                                   setPinError(null);
                                   setPinning(r);
                                 },
@@ -670,11 +674,7 @@ export function ReleaseSearch({ onPinsChanged }: { onPinsChanged?: () => void })
                 {pinning.release.indexer}
               </p>
             </div>
-            <p className="text-sm text-fg-muted">
-              {t(
-                "Every viewer gets this release first, whatever their quality profile, unless their app can't decode it, a viewer picks another version, or it fails its health check. Offline downloads keep their own profile.",
-              )}
-            </p>
+            <PinModeField id={`${id}-mode`} fallback={fallback} onChange={setFallback} />
             <Field
               label={t("Note")}
               htmlFor={`${id}-note`}

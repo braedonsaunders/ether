@@ -33,8 +33,9 @@ type raceResult struct {
 // a release, so the sequential failover tries them one after another.
 func (m *Manager) raceAlternates(ctx context.Context, s *session, tried []string, alternates []core.Release, fallback func(int64) core.MediaInfo, width int, accept func(*generation) error, prefer func(*generation) bool) (*generation, []string, error) {
 	var cands []core.Release
+	gate := m.preferenceGate(s, tried)
 	for _, alt := range alternates {
-		if alt.ID != "" && m.ownerPinAllows(s, alt.ID) && !alt.OpensOnDemand() && !slices.Contains(tried, alt.ID) && !m.titleReleaseRejected(ctx, s.ident.key, alt) && releaseMatchesTitle(alt, s.title) {
+		if alt.ID != "" && m.ownerPinAllows(s, alt.ID) && !gate.blocks(alt.ID) && !alt.OpensOnDemand() && !slices.Contains(tried, alt.ID) && !m.titleReleaseRejected(ctx, s.ident.key, alt) && releaseMatchesTitle(alt, s.title) {
 			cands = append(cands, alt)
 		}
 	}
@@ -235,8 +236,9 @@ func (m *Manager) raceInitialAlternates(openCtx context.Context, s *session, pro
 
 	var cands, remaining []core.Release
 	var skipped []string
+	gate := m.preferenceGate(s, tried)
 	for _, alt := range alternates {
-		if alt.ID == "" || !m.ownerPinAllows(s, alt.ID) || !m.channelSourceAllowed(s, alt) ||
+		if alt.ID == "" || !m.ownerPinAllows(s, alt.ID) || gate.blocks(alt.ID) || !m.channelSourceAllowed(s, alt) ||
 			slices.Contains(tried, alt.ID) || slices.Contains(s.caps.BroadcastExclude, alt.ID) ||
 			openFailed[alt.ID] || m.titleReleaseRejected(openCtx, s.ident.key, alt) || audioExcluded(audioRejected, alt) || !releaseMatchesTitle(alt, s.title) {
 			continue
@@ -250,7 +252,7 @@ func (m *Manager) raceInitialAlternates(openCtx context.Context, s *session, pro
 			remaining = append(remaining, alt)
 			continue
 		}
-		if m.ownerPinAllows(s, "") {
+		if !m.ownerChoiceCovers(s, alt.ID) {
 			if _, unverified := candidateNeedsAudioVerification(profile, s.title, alt); unverified {
 				remaining = append(remaining, alt)
 				continue

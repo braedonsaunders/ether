@@ -17,6 +17,7 @@ import { useAsync } from "../../lib/hooks";
 import { PIN_STATUS_LABEL, qualityLabel, releaseConsole, type Pin } from "../../lib/releases";
 import { ReleaseSearch } from "./Search";
 import { pagedTableLabels } from "../../i18n/appkit-labels";
+import { pinModeLabel } from "./pinMode";
 
 /** Last outcome of a pin: playing, failing, not playable for an app, or not tried yet. */
 export function PinStatusBadge({ pin }: { pin: Pin }) {
@@ -76,7 +77,7 @@ export function PinnedTab() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-2xl text-sm text-fg-muted">
           {t(
-            "A pinned release plays first for its title, ahead of the automatic ranking. When it fails, Ether falls back to the next best release and keeps the pin so you can see it.",
+            "A pinned release plays first for its title, ahead of the automatic ranking. When a strict pin can't play, Auto playback stops; a pin with fallback lets Ether play the next best release and tries the pin again later. Either way the pin stays so you can see why.",
           )}
         </p>
         <Button variant="outline" size="sm" onClick={() => void state.reload()}>
@@ -144,6 +145,11 @@ export function PinnedTab() {
               ),
             },
             {
+              key: "mode",
+              header: t("Mode"),
+              cell: (p) => <span className="text-fg-muted">{pinModeLabel(p.fallback)}</span>,
+            },
+            {
               key: "pinned",
               header: t("Pinned"),
               sortValue: (p) => p.pinnedAt,
@@ -161,7 +167,11 @@ export function PinnedTab() {
                 <span className="block">
                   <PinStatusBadge pin={p} />
                   {p.lastReason ? (
-                    <span className="mt-1 block text-xs text-fg-muted">{p.lastReason}</span>
+                    <span className="mt-1 block text-xs text-fg-muted">
+                      {p.fallback && p.lastStatus !== "healthy"
+                        ? t("Fell back: {reason}", { reason: p.lastReason })
+                        : p.lastReason}
+                    </span>
                   ) : null}
                   {p.lastStatus ? (
                     <span className="block text-[11px] text-fg-subtle">

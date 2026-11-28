@@ -230,8 +230,10 @@ func (s *Service) emitPinStatusEvent(p Pin, status PinStatus, reason, client str
 	}
 	titleKey := p.TitleKey.String()
 	corr := events.WithCorrelation(events.Correlation{TitleID: titleKey})
-	switch status {
-	case PinUnhealthy:
+	switch {
+	case status == PinUnhealthy && !p.Fallback:
+		// A preference that falls back is kept to be retried, so it must not
+		// drive "remove dead pins" flows or critical alerts.
 		s.publishEvent(events.EventResolverPinUnhealthy, events.ResolverPinUnhealthyPayload{
 			TitleKey:  titleKey,
 			TitleName: p.TitleName,
@@ -239,7 +241,7 @@ func (s *Service) emitPinStatusEvent(p Pin, status PinStatus, reason, client str
 			Status:    string(status),
 			Reason:    reason,
 		}, corr)
-	case PinRejected:
+	case status == PinRejected:
 		s.publishEvent(events.EventResolverPinRejected, events.ResolverPinRejectedPayload{
 			TitleKey:  titleKey,
 			TitleName: p.TitleName,

@@ -16,6 +16,7 @@ import {
   type ConsoleSeasonSearch,
 } from "../../lib/releases";
 import { RecordDrawer } from "../sources/form";
+import { PinModeField } from "./pinMode";
 
 export interface SeasonPinTarget {
   key?: string;
@@ -57,6 +58,7 @@ export function SeasonPinDrawer({
   const [sourceMode, setSourceMode] = useState("best");
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [note, setNote] = useState("");
+  const [fallback, setFallback] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<unknown>(null);
 
@@ -81,6 +83,7 @@ export function SeasonPinDrawer({
       setSourceMode("best");
       setChoices({});
       setNote("");
+      setFallback(false);
       setSaveError(null);
     }
   }, [open, targetKey]);
@@ -127,7 +130,7 @@ export function SeasonPinDrawer({
     setSaving(true);
     setSaveError(null);
     try {
-      const saved = await releaseConsole.pinBatch(selectedPins, note);
+      const saved = await releaseConsole.pinBatch(selectedPins, note, fallback);
       toast.success(tn(saved.length, "Pinned {count} episode", "Pinned {count} episodes"));
       onPinned?.();
       onClose();
@@ -277,6 +280,8 @@ export function SeasonPinDrawer({
             })}
           </ul>
         )}
+
+        <PinModeField id={`${id}-mode`} fallback={fallback} onChange={setFallback} />
 
         <Field
           label={t("Note")}

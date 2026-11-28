@@ -358,6 +358,9 @@ type childTitle struct {
 	Episode int    `json:"episode,omitempty"`
 	Aired   string `json:"aired,omitempty"`
 	Pinned  bool   `json:"pinned,omitempty"`
+	// Fallback is set when the pin is a preference that normal ranking
+	// replaces when it cannot be used.
+	Fallback bool `json:"fallback,omitempty"`
 }
 
 func (h *consoleAPI) children(w http.ResponseWriter, r *http.Request) {
@@ -384,7 +387,9 @@ func (h *consoleAPI) children(w http.ResponseWriter, r *http.Request) {
 		if date := cmp.Or(t.EpisodeAirDate, t.Released); !date.IsZero() {
 			c.Aired = date.Format("2006-01-02")
 		}
-		_, c.Pinned = h.s.PinFor(t.Key)
+		var p Pin
+		p, c.Pinned = h.s.PinFor(t.Key)
+		c.Fallback = c.Pinned && p.Fallback
 		out = append(out, c)
 	}
 	consoleJSON(w, http.StatusOK, map[string]any{"items": out})
@@ -458,6 +463,8 @@ func (h *consoleAPI) pin(w http.ResponseWriter, r *http.Request) {
 		Key       string `json:"key"`
 		ReleaseID string `json:"releaseId"`
 		Note      string `json:"note"`
+		// Fallback is optional: omitted or false keeps today's strict pin.
+		Fallback bool `json:"fallback"`
 	}
 	if !decodeBody(w, r, &in) {
 		return
@@ -487,7 +494,7 @@ func (h *consoleAPI) pin(w http.ResponseWriter, r *http.Request) {
 			name = consoleTitleName(t)
 		}
 	}
-	p, err := h.s.Pin(r.Context(), key, name, rel, in.Note)
+	p, err := h.s.PinWithFallback(r.Context(), key, name, rel, in.Note, in.Fallback)
 	if err != nil {
 		h.fail(w, err)
 		return
@@ -503,6 +510,8 @@ func (h *consoleAPI) pinBatch(w http.ResponseWriter, r *http.Request) {
 			ReleaseID string `json:"releaseId"`
 		} `json:"pins"`
 		Note string `json:"note"`
+		// Fallback applies to every pin in the batch; omitted means strict.
+		Fallback bool `json:"fallback"`
 	}
 	if !decodeBody(w, r, &in) {
 		return
@@ -553,7 +562,7 @@ func (h *consoleAPI) pinBatch(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]Pin, 0, len(ready))
 	for _, item := range ready {
-		p, err := h.s.Pin(r.Context(), item.key, item.name, item.rel, in.Note)
+		p, err := h.s.PinWithFallback(r.Context(), item.key, item.name, item.rel, in.Note, in.Fallback)
 		if err != nil {
 			h.fail(w, err)
 			return

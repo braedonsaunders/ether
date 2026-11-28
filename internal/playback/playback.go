@@ -1059,7 +1059,7 @@ func (m *Manager) prepareOwnedWithin(ctx context.Context, wait time.Duration, us
 						// recovery chain. Proven permanent failures remain
 						// in openFailures and the resolver's bad-source store.
 						s.invalidateDirectRetryLocked()
-						s.tried = nil
+						s.resetTriedForNewPlayLocked()
 						s.setViewerStateLocked("", now)
 						s.failovers, s.downFailovers, s.stallContinues = 0, 0, 0
 						if s.cur != nil {

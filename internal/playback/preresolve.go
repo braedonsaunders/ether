@@ -832,9 +832,16 @@ func (m *Manager) prewarm(requestCtx context.Context, user *core.User, key core.
 			e.originalAudio = true
 			e.originalLanguage = strings.TrimSpace(title.Language)
 		}
+		u = m.effectiveResolveUser(ctx, u)
+		session := newSession(randomID(16), id, &u, caps, title, e.profileKey, m.now())
+		defer session.stopCancel()
+		defer session.sources.seal()
 		fromResume := false
 		detailOnly := false
-		if res != nil && m.rememberedReleaseMatchesTitle(ctx, res.Release, title) && payloadMatchesTitle(res.NZB, title) {
+		// The resume release passes the same owner and viewer gates as on Play,
+		// so an untried preference is warmed instead of a remembered fallback.
+		if res != nil && m.rememberedReleaseMatchesTitle(ctx, res.Release, title) && payloadMatchesTitle(res.NZB, title) &&
+			m.ownerPinAllows(session, res.Release.ID) && m.preferenceAllows(session, res.Release.ID, nil) && m.rememberedChoiceAllows(session, res.Release.ID) {
 			fromResume = true
 			if reason == core.PrewarmDetail && !cachedMetadata {
 				// Reusing the remembered source skips Resolve/search. Recover only
@@ -849,10 +856,6 @@ func (m *Manager) prewarm(requestCtx context.Context, user *core.User, key core.
 				return
 			}
 		}
-		u = m.effectiveResolveUser(ctx, u)
-		session := newSession(randomID(16), id, &u, caps, title, e.profileKey, m.now())
-		defer session.stopCancel()
-		defer session.sources.seal()
 		maxAttempts := m.opts.MaxAttempts
 		if maxAttempts <= 0 {
 			maxAttempts = 4
@@ -926,6 +929,9 @@ func (m *Manager) prewarm(requestCtx context.Context, user *core.User, key core.
 					lastErr = err
 					break
 				}
+				if id := res.PreferenceFailed; id != "" && !slices.Contains(tried, id) {
+					tried = append(tried, id) // the warm-up does not return to a failed preference
+				}
 			}
 			m.mu.Lock()
 			e.sourceReady = true
@@ -954,7 +960,7 @@ func (m *Manager) prewarm(requestCtx context.Context, user *core.User, key core.
 				}
 			}
 			needsAudioProbe := false
-			if !cachedMetadata && !detailOnly && m.ownerPinAllows(session, "") {
+			if !cachedMetadata && !detailOnly && !m.ownerChoiceCovers(session, res.Release.ID) {
 				if langs, unverified := candidateNeedsAudioVerification(profile, title, res.Release); unverified {
 					if unknownAudioProbes >= maxUnknownAudioProbes {
 						lastRel, lastErr = res.Release, fmt.Errorf("audio is not in the profile's language (%s)", langs[0])
@@ -1230,8 +1236,9 @@ func (m *Manager) nextWarmResolution(ctx context.Context, s *session, tried *[]s
 		}
 	}
 	m.mu.Unlock()
+	gate := m.preferenceGate(s, exclude)
 	for i, alt := range alternates {
-		if alt.ID == "" || !m.ownerPinAllows(s, alt.ID) || !m.channelSourceAllowed(s, alt) || m.titleReleaseRejected(ctx, s.ident.key, alt) || m.releaseNamesakeRejected(ctx, s, alt) || slices.Contains(exclude, alt.ID) || audioExcluded(audioRejected, alt) || !releaseMatchesTitle(alt, s.title) {
+		if alt.ID == "" || !m.ownerPinAllows(s, alt.ID) || gate.blocks(alt.ID) || !m.channelSourceAllowed(s, alt) || m.titleReleaseRejected(ctx, s.ident.key, alt) || m.releaseNamesakeRejected(ctx, s, alt) || slices.Contains(exclude, alt.ID) || audioExcluded(audioRejected, alt) || !releaseMatchesTitle(alt, s.title) {
 			continue
 		}
 		vk := vault.KeyOf(alt)

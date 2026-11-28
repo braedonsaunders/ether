@@ -40,7 +40,8 @@ func (m *Manager) copySourceAtCapacity(ctx context.Context, s *session, profile 
 	d := decide(info, primary.res)
 	// Subtitle burn-in is part of the requested output. Keep the selected
 	// source when the encoder is needed to render its subtitle track.
-	if d.Kind == "" || d.Kind == core.DecisionDirectPlay || d.BurnSubtitles || !d.EncodesVideo(info) || !m.ownerPinAllows(s, "") {
+	// A strict pin, or a preferred release that is playing, is not replaced.
+	if d.Kind == "" || d.Kind == core.DecisionDirectPlay || d.BurnSubtitles || !d.EncodesVideo(info) || m.ownerChoiceCovers(s, primary.releaseID()) {
 		return nil
 	}
 	canCopy := func(info core.MediaInfo, res *core.Resolution) bool {

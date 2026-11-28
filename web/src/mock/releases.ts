@@ -498,6 +498,7 @@ export function createReleaseConsoleMock(catalog: FakeTitle[]) {
         season: s,
         episode: i + 1,
         pinned: pins.has(`${show.key}.s${s}.e${i + 1}`),
+        fallback: pins.get(`${show.key}.s${s}.e${i + 1}`)?.fallback,
       }));
       return ok({ items });
     }
@@ -715,6 +716,7 @@ export function createReleaseConsoleMock(catalog: FakeTitle[]) {
           titleName: known.title,
           release: known.rel,
           note: b.note || undefined,
+          fallback: (body as { fallback?: boolean } | undefined)?.fallback === true || undefined,
           pinnedAt: new Date().toISOString(),
           lastCheckedAt: "0001-01-01T00:00:00Z",
         };
@@ -725,6 +727,7 @@ export function createReleaseConsoleMock(catalog: FakeTitle[]) {
         const batch = (body ?? {}) as {
           pins?: { key?: string; releaseId?: string }[];
           note?: string;
+          fallback?: boolean;
         };
         const items = batch.pins ?? [];
         if (items.length === 0) return fail(400, "invalid", "at least one pin is required");
@@ -748,6 +751,7 @@ export function createReleaseConsoleMock(catalog: FakeTitle[]) {
             titleName: item.title,
             release: item.rel,
             note: batch.note || undefined,
+            fallback: batch.fallback === true || undefined,
             pinnedAt: now,
             lastCheckedAt: "0001-01-01T00:00:00Z",
           };

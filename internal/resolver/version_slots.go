@@ -154,6 +154,11 @@ func (s *Service) versionSlotsWithResults(ctx context.Context, req core.ResolveR
 	if req.Client.Download {
 		hasOwnerPin = false
 	}
+	if hasOwnerPin && ownerPin.Fallback && !s.preferenceEligible(req.Title.Key, ownerPin.Release) {
+		// A preference inside its failure memory is not tried; Auto is
+		// whatever normal ranking picks.
+		hasOwnerPin = false
+	}
 	if labels {
 		titleVC = s.viewerTitleChoiceForResolve(req, nil)
 		showVC := s.viewerShowChoiceForResolve(req)
@@ -196,6 +201,11 @@ func (s *Service) versionSlotsWithResults(ctx context.Context, req core.ResolveR
 					}
 				}
 				auto, autoRemembered = s.slotAutoWithSource(req, strictCands, matchPool, titleVC, showVC)
+				if hasOwnerPin && ownerPin.Fallback && auto.ID != ownerPin.Release.ID {
+					// The preference is not the eligible Auto winner, so it
+					// is labelled like any other release.
+					hasOwnerPin = false
+				}
 				if !autoRemembered && !hasOwnerPin {
 					if auto.ID != "" && auto.ID == req.PlayedRelease && req.Client.Protocol == "vela" && !core.IsExplicitVersionSlotSelector(req.PlayedSelector) {
 						autoReason = core.AutoResumeSource
@@ -253,7 +263,7 @@ func (s *Service) versionSlotsWithResults(ctx context.Context, req core.ResolveR
 			if i == 0 && !placeholder {
 				v.AutoSelectionReason = autoReason
 			}
-			v.Pinned = hasOwnerPin && !placeholder && r.ID == ownerPin.Release.ID
+			v.Pinned = hasOwnerPin && !placeholder && r.ID == ownerPin.Release.ID && (!ownerPin.Fallback || i == 0)
 			v.Availability, v.AvailabilityNote = s.classifyVariantAvailability(ctx, req.Title.Key, r, info, placeholder, searchWarm)
 		}
 		out[i] = v
@@ -434,7 +444,8 @@ func (s *Service) slotAutoWithSource(req core.ResolveRequest, strict, pool []can
 	}
 	autoReq := req
 	autoReq.Prefer = ""
-	if pin, _ := s.pinForResolve(autoReq); pin != nil {
+	if pin, _ := s.pinForResolve(autoReq); pin != nil && (!pin.Fallback || slotCandidate(strict, pool, pin.Release.ID)) {
+		// A preferred pin wins Auto only when it is an eligible candidate.
 		return pin.Release, false
 	}
 	if req.PlayedRelease != "" && !core.IsExplicitVersionSlotSelector(req.PlayedSelector) {
@@ -461,6 +472,11 @@ func (s *Service) slotAutoWithSource(req core.ResolveRequest, strict, pool []can
 		return c.rel, false
 	}
 	return core.Release{}, false
+}
+
+func slotCandidate(strict, pool []candidate, id string) bool {
+	has := func(c candidate) bool { return c.rel.ID == id }
+	return slices.ContainsFunc(strict, has) || slices.ContainsFunc(pool, has)
 }
 
 func slotChoices(slots []versionSlot, ranked []candidate, auto core.Release) []core.Release {

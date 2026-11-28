@@ -12,11 +12,18 @@ func (m *Manager) ObserveClientThroughput(id string, bps float64) {
 	}
 }
 
-func (m *Manager) hasAuthoritativeAutoChoice(s *session) bool {
+// hasAuthoritativeAutoChoice reports whether an owner or viewer choice, not
+// ranking, put releaseID in Auto: a strict pin, the preferred release itself,
+// or a viewer's remembered choice. Such a source is not replaced to fit an
+// estimate.
+func (m *Manager) hasAuthoritativeAutoChoice(s *session, releaseID string) bool {
 	if pin, ok := m.deps.Resolver.(interface {
 		PinnedReleaseID(core.ResolveRequest) string
 	}); ok &&
 		pin.PinnedReleaseID(core.ResolveRequest{Title: s.title, Client: s.caps, User: &s.user}) != "" {
+		return true
+	}
+	if id, _ := m.preferredRelease(s); id != "" && id == releaseID {
 		return true
 	}
 	reader, ok := m.deps.Resolver.(viewerChoiceReader)

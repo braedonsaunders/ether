@@ -113,7 +113,7 @@ func (m *Manager) preparedResolution(ctx context.Context, s *session, profile co
 		}
 	}
 	if res != nil && (prefer == "" || isAutoVersionSelector(prefer)) {
-		if budget := m.clientDeliveryBudget(s); budget > 0 && !m.hasAuthoritativeAutoChoice(s) {
+		if budget := m.clientDeliveryBudget(s); budget > 0 && !m.hasAuthoritativeAutoChoice(s, res.Release.ID) {
 			var dur time.Duration
 			var bitrate int
 			if s.title != nil {
@@ -149,7 +149,9 @@ func (m *Manager) preparedResolution(ctx context.Context, s *session, profile co
 			}
 		}
 	}
-	if res != nil && (!m.ownerPinAllows(s, res.Release.ID) || !m.rememberedChoiceAllows(s, res.Release.ID) || slices.Contains(s.caps.BroadcastExclude, res.Release.ID) || !m.channelSourceAllowed(s, res.Release) || m.titleReleaseRejected(ctx, s.ident.key, res.Release)) {
+	// An eligible preferred release the session has not tried is resolved
+	// before a warm or remembered source.
+	if res != nil && (!m.ownerPinAllows(s, res.Release.ID) || !m.preferenceAllows(s, res.Release.ID, nil) || !m.rememberedChoiceAllows(s, res.Release.ID) || slices.Contains(s.caps.BroadcastExclude, res.Release.ID) || !m.channelSourceAllowed(s, res.Release) || m.titleReleaseRejected(ctx, s.ident.key, res.Release)) {
 		return nil, nil, false
 	}
 	if res != nil && core.IsExplicitVersionSlotSelector(prefer) && m.isReleaseStale(s.ident.key, res.Release.ID) {
@@ -163,7 +165,7 @@ func (m *Manager) preparedResolution(ctx context.Context, s *session, profile co
 		}
 		return nil, nil, false
 	}
-	if fromResume && res != nil && s.caps.Protocol == "vela" && isAutoVersionSelector(prefer) && !m.hasAuthoritativeAutoChoice(s) {
+	if fromResume && res != nil && s.caps.Protocol == "vela" && isAutoVersionSelector(prefer) && !m.hasAuthoritativeAutoChoice(s, res.Release.ID) {
 		copy := *res
 		copy.AutoSelectionReason = core.AutoResumeSource
 		res = &copy
@@ -181,6 +183,13 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 	}
 	isSlot := core.IsExplicitVersionSlotSelector(s.prefer)
 	auto := !s.exact && isAutoVersionSelector(s.prefer)
+	if pref, _ := m.preferredRelease(s); true {
+		s.mu.Lock()
+		if s.preference != pref {
+			s.preference, s.preferenceFailed = pref, false
+		}
+		s.mu.Unlock()
+	}
 	res, cached, fromResume := m.preparedResolution(ctx, s, profile, original, s.prefer)
 	if res == nil && s.prefer != "" && !s.exact && !isSlot {
 		if auto, facts, remembered := m.preparedResolution(ctx, s, profile, original, ""); auto != nil {
@@ -260,6 +269,9 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 		s.mu.Lock()
 		s.tried = append(s.tried, tried...)
 		s.tried = append(s.tried, extraTried...)
+		// A session that fell back from its preferred release stays on its
+		// fallback and never jumps back to the preference.
+		s.notePreferenceLocked(s.preference, g.releaseID())
 		s.mu.Unlock()
 		if s.offlineOriginal == nil {
 			m.startGenerationFills(g)
@@ -440,7 +452,7 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 			cached = m.persistedProbe(ctx, s.ident.userID, s.ident.key, res.Release.ID, res.NZB)
 		}
 		needsAudioProbe := false
-		if !s.exact && m.ownerPinAllows(s, "") {
+		if !s.exact && !m.ownerChoiceCovers(s, res.Release.ID) {
 			if langs, unverified := candidateNeedsAudioVerification(profile, s.title, res.Release); unverified {
 				if unknownAudioProbes >= maxUnknownAudioProbes {
 					if reqLang := normalizedProfileLanguage(profile); reqLang != "" && strings.EqualFold(langs[0], reqLang) {
@@ -526,7 +538,7 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 		if err == nil && auto {
 			info := g.infoSnapshot()
 			audioOK := m.probedAudioAcceptable(s, profile, info)
-			if !audioOK && m.hasAuthoritativeAutoChoice(s) && m.ownerPinAllows(s, res.Release.ID) && m.rememberedChoiceAllows(s, res.Release.ID) {
+			if !audioOK && m.hasAuthoritativeAutoChoice(s, res.Release.ID) && m.ownerPinAllows(s, res.Release.ID) && m.rememberedChoiceAllows(s, res.Release.ID) {
 				audioOK = true
 			}
 			if burned || !audioOK {
@@ -704,8 +716,9 @@ func (m *Manager) nextResolutionTracking(ctx context.Context, s *session, tried 
 		// and cancelled its request, so the next eligible source may open.
 		var fetchErr error
 		fetched := 0
+		gate := m.preferenceGate(s, exclude)
 		for i, alt := range alternates {
-			if alt.ID == "" || !m.ownerPinAllows(s, alt.ID) || !m.channelSourceAllowed(s, alt) || m.titleReleaseRejected(ctx, s.ident.key, alt) || m.releaseNamesakeRejected(ctx, s, alt) || slices.Contains(exclude, alt.ID) || audioExcluded(audioRejected, alt) || !releaseMatchesTitle(alt, s.title) {
+			if alt.ID == "" || !m.ownerPinAllows(s, alt.ID) || gate.blocks(alt.ID) || !m.channelSourceAllowed(s, alt) || m.titleReleaseRejected(ctx, s.ident.key, alt) || m.releaseNamesakeRejected(ctx, s, alt) || slices.Contains(exclude, alt.ID) || audioExcluded(audioRejected, alt) || !releaseMatchesTitle(alt, s.title) {
 				continue
 			}
 			if m.opts.MaxAttempts > 0 && fetched >= m.opts.MaxAttempts {
@@ -806,6 +819,11 @@ func (m *Manager) nextResolutionTracking(ctx context.Context, s *session, tried 
 	}
 	if res == nil || res.Release.ID == "" || len(res.NZB) == 0 {
 		return nil, fmt.Errorf("%w: resolver returned no usable release", core.ErrNotAvailable)
+	}
+	if id := res.PreferenceFailed; id != "" && !slices.Contains(*tried, id) {
+		// The preferred release could not be used: later sequential and
+		// raced attempts of this session must not return to it.
+		*tried = append(*tried, id)
 	}
 	if isSlot && len(res.FailedReleases) > 0 {
 		for _, failedID := range res.FailedReleases {

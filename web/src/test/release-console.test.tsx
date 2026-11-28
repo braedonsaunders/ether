@@ -53,6 +53,35 @@ describe("Release search", () => {
     await waitFor(() => expect(screen.getAllByText("best mix")).toHaveLength(2));
   });
 
+  it("pins a release as a preference with fallback", async () => {
+    const { fake } = renderApp("/releases/pinned");
+    const movie = fake.catalog.filter((t) => t.type === "movie")[3]!;
+    await pickTitle(movie.title);
+    await screen.findByText("Plays first", {}, WAIT);
+    const menus = screen.getAllByRole("button", { name: /^Actions for / });
+    fireEvent.click(menus[1]!);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Pin to this title" }));
+    const drawer = await screen.findByRole("dialog", { name: "Pin release" });
+    // Strict is the default.
+    expect(within(drawer).getByRole("button", { name: "Mode" })).toHaveTextContent("Strict");
+    expect(within(drawer).getByText(/Auto playback stops/)).toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole("button", { name: "Mode" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Prefer, with fallback" }));
+    expect(await within(drawer).findByText(/picks the next best release/)).toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole("button", { name: "Pin release" }));
+    await waitFor(() => expect(calls(fake, "POST", "/releases/pins")).toHaveLength(1));
+    expect(calls(fake, "POST", "/releases/pins")[0]!.body).toMatchObject({
+      key: movie.key,
+      releaseId: `${movie.key}-r2`,
+      fallback: true,
+    });
+    // The search result and the pinned list both show the mode.
+    await waitFor(
+      () => expect(screen.getAllByText("Prefer, with fallback").length).toBeGreaterThanOrEqual(2),
+      WAIT,
+    );
+  });
+
   it("blocks a release with a reason and searches again without the cache", async () => {
     const { fake } = renderApp("/releases/pinned");
     const movie = fake.catalog.filter((t) => t.type === "movie")[4]!;
@@ -178,6 +207,32 @@ describe("Release search", () => {
       await screen.findByRole("link", { name: `${show.title} S01E01` }, WAIT),
     ).toBeInTheDocument();
   });
+  it("pins a season as preferences with fallback", async () => {
+    const { fake } = renderApp("/releases/pinned");
+    const show = fake.catalog.find((t) => t.type === "show")!;
+    await pickTitle(show.title);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Season" })).toBeEnabled(), WAIT);
+    await choose("Season", "Season 1");
+    const bulkBtn = await screen.findByRole(
+      "button",
+      { name: "Pin a release for every episode" },
+      WAIT,
+    );
+    await waitFor(() => expect(bulkBtn).toBeEnabled(), WAIT);
+    fireEvent.click(bulkBtn);
+    const drawer = await screen.findByRole(
+      "dialog",
+      { name: "Pin a release for every episode" },
+      WAIT,
+    );
+    await within(drawer).findByText("E01 · Chapter 1", {}, WAIT);
+    expect(within(drawer).getByRole("button", { name: "Mode" })).toHaveTextContent("Strict");
+    fireEvent.click(within(drawer).getByRole("button", { name: "Mode" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Prefer, with fallback" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: /^Pin \d+ episodes$/ }));
+    await waitFor(() => expect(calls(fake, "POST", "/releases/pins/batch")).toHaveLength(1));
+    expect(calls(fake, "POST", "/releases/pins/batch")[0]!.body).toMatchObject({ fallback: true });
+  });
 });
 
 describe("Pinned releases", () => {
@@ -197,6 +252,25 @@ describe("Pinned releases", () => {
       expect(calls(fake, "DELETE", `/releases/pins/${movie.key}`)).toHaveLength(1),
     );
     expect(await screen.findByText("No pinned releases", {}, WAIT)).toBeInTheDocument();
+  });
+  it("shows each pin's mode and why a preference fell back", async () => {
+    const { fake } = renderApp("/releases/pinned", {}, (f) => {
+      const movie = f.catalog.filter((t) => t.type === "movie")[0]!;
+      const pin = f.releaseConsole.pins.get(movie.key)!;
+      f.releaseConsole.pins.set(movie.key, {
+        ...pin,
+        fallback: true,
+        lastStatus: "unhealthy",
+        lastReason: "missing articles",
+      });
+    });
+    const movie = fake.catalog.filter((t) => t.type === "movie")[0]!;
+    expect(
+      await screen.findByRole("link", { name: `${movie.title} (${movie.year})` }, WAIT),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Mode" })).toBeInTheDocument();
+    expect(screen.getByText("Prefer, with fallback")).toBeInTheDocument();
+    expect(screen.getByText("Fell back: missing articles")).toBeInTheDocument();
   });
 });
 

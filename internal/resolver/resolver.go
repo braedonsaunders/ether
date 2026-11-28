@@ -893,7 +893,7 @@ func (s *Service) Resolve(ctx context.Context, req core.ResolveRequest) (*core.R
 	profile := dec.profile
 	req = s.withClientDeliveryBudget(req)
 	videoOff, _ := s.transcodeSettingsFor(req.Client)
-	key := fmt.Sprintf("%s|pin:%s|vc:%s|vt:%t|link:%d", flightKey(req, profile), s.PinnedReleaseID(req), s.viewerChoiceFlightKey(req), videoOff, req.ClientDeliveryBudgetKbps)
+	key := fmt.Sprintf("%s|pin:%s|vc:%s|vt:%t|link:%d", flightKey(req, profile), s.pinFlightKey(req), s.viewerChoiceFlightKey(req), videoOff, req.ClientDeliveryBudgetKbps)
 	if channelAvailabilityCheck(ctx) {
 		key += "/channel-availability"
 	}
@@ -964,6 +964,7 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 	var selector, slotRelease string
 	var slotAutoFulfilled bool
 	var failedReleases []string
+	var failedPreference string
 	defer func() {
 		if resolved != nil {
 			copy := *resolved
@@ -974,6 +975,7 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 			if len(failedReleases) > 0 {
 				copy.FailedReleases = failedReleases
 			}
+			copy.PreferenceFailed = failedPreference
 			resolved = &copy
 		}
 	}()
@@ -1050,8 +1052,24 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 	// The owner's pin for this title, when it applies to this request
 	// (pins.go). It is authoritative, including when it cannot be played,
 	// unless a viewer's show-level episode choice matches a healthy candidate.
+	// A preferred pin (Fallback) is tried the same way, but when it cannot be
+	// used this request continues as ordinary Auto without it.
 	pin, pinNote := s.pinForResolve(req)
 	trace.PinStatus = pinNote
+	if pin != nil && pin.Fallback && exclude[pin.Release.ID] {
+		// This playback already tried the preference; do not record a
+		// second outcome for it.
+		trace.PinStatus = "skipped: preferred release already tried"
+		failedPreference = pin.Release.ID
+		pin = nil
+	} else if pin != nil && pin.Fallback && !s.preferenceEligible(t.Key, pin.Release) {
+		// Inside its failure memory: neither validate it again nor record a
+		// new failure, so the original window is not extended.
+		trace.PinStatus = "skipped: preferred release failed recently"
+		failedPreference = pin.Release.ID
+		ctx = context.WithValue(ctx, skipPreferenceKey{}, pin.Release.ID)
+		pin = nil
+	}
 	pinID := ""
 	resolveOwnerPin := func() (*core.Resolution, error) {
 		pinID = pin.Release.ID
@@ -1082,8 +1100,37 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 		}
 		return out.resolution, nil
 	}
+	// preferOwnerPin tries a preferred release exactly as resolveOwnerPin
+	// tries a strict one. done reports an answer: the preference played,
+	// the request was cancelled, or a warm-up stopped at a source only a
+	// Play may open. Otherwise the outcome is on the pin and the request
+	// continues, unchanged, as ordinary Auto that skips the preference.
+	preferOwnerPin := func() (res *core.Resolution, err error, done bool) {
+		origReq, origSelector, origSlot := req, selector, slotRelease
+		res, err = resolveOwnerPin()
+		if err == nil || ctx.Err() != nil || errors.Is(err, core.ErrForegroundOnly) {
+			return res, err, true
+		}
+		id := pin.Release.ID
+		reason := candidateReason(&trace, id)
+		if trace.PinStatus != "" {
+			reason = trace.PinStatus
+		}
+		req, selector, slotRelease = origReq, origSelector, origSlot
+		trace.Err, trace.Pinned = "", ""
+		trace.PinStatus = "fell back: " + reason
+		failedPreference = id
+		pin, pinID = nil, ""
+		ctx = context.WithValue(ctx, skipPreferenceKey{}, id)
+		return nil, nil, false
+	}
 	if pin != nil && (showVC == nil || s.profileMatchesRelease(showVC.Profile, pin.Release)) {
-		return resolveOwnerPin()
+		if !pin.Fallback {
+			return resolveOwnerPin()
+		}
+		if res, err, done := preferOwnerPin(); done {
+			return res, err
+		}
 	}
 
 	ctx, inconclusive := withUnverifiedPool(ctx)
@@ -1280,7 +1327,13 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 			}
 		}
 		if pin != nil {
-			return resolveOwnerPin()
+			if !pin.Fallback {
+				return resolveOwnerPin()
+			}
+			if res, err, done := preferOwnerPin(); done {
+				return res, err
+			}
+			cands = slices.DeleteFunc(cands, func(c candidate) bool { return c.rel.ID == failedPreference })
 		}
 	}
 	// Logical version selectors are resolved only after normal discovery and
@@ -2101,6 +2154,7 @@ func (s *Service) rankCandidatesWith(ctx context.Context, req core.ResolveReques
 		env.exclude[id] = true
 	}
 	env.excludeReleases = req.ExcludeReleases
+	env.skipPreference, _ = ctx.Value(skipPreferenceKey{}).(string)
 	env.rcfg = s.resolverCfg()
 	env.lang = s.catalogLanguage()
 	env.audio(profile, req)
@@ -2117,6 +2171,7 @@ type rankEnv struct {
 	seaDex                *seaDexEntry
 	exclude               map[string]bool
 	excludeReleases       []core.Release
+	skipPreference        string // a preferred release this resolve already tried
 	feedRejections        map[core.RatingKey][]core.Release
 	rcfg                  config.Resolver
 	lang                  string
@@ -2270,6 +2325,10 @@ func (s *Service) rankPass(ctx context.Context, env rankEnv, req core.ResolveReq
 		movieLangs, movieOrig = movieTargetLanguages(profile, wanted, t)
 	}
 	for ri, rel := range results {
+		if env.skipPreference != "" && rel.ID == env.skipPreference {
+			// The preference attempt already traced this release.
+			continue
+		}
 		rel = s.applyVerifiedTitleIDs(rel, t, sreq)
 		rel = withTarget(rel, sreq)
 		if sreq.Type == core.TypeMovie && rel.Target != nil {
