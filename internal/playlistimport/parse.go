@@ -46,7 +46,7 @@ func parseM3U(text string) (string, []core.ImportTrack, error) {
 			name = strings.TrimSpace(strings.TrimPrefix(line, "#PLAYLIST:"))
 		case strings.HasPrefix(line, "#EXTINF:"):
 			info := strings.TrimPrefix(line, "#EXTINF:")
-			secs, rest, _ := strings.Cut(info, ",")
+			secs, rest := splitExtinf(info)
 			if i := strings.IndexByte(secs, ' '); i >= 0 {
 				secs = secs[:i] // attributes after the duration
 			}
@@ -79,6 +79,31 @@ func parseM3U(text string) (string, []core.ImportTrack, error) {
 	return name, out, nil
 }
 
+// splitExtinf finds the display-name comma outside quoted attributes.
+func splitExtinf(info string) (string, string) {
+	var quote byte
+	for i := range len(info) {
+		c := info[i]
+		if quote != 0 {
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			quote = c
+		case '\'':
+			if i > 0 && info[i-1] == '=' {
+				quote = c
+			}
+		case ',':
+			return info[:i], info[i+1:]
+		}
+	}
+	return info, ""
+}
+
 // splitArtistTitle reads "Artist - Title" (a leading track number dropped).
 func splitArtistTitle(s string) core.ImportTrack {
 	s = strings.TrimSpace(trackNumber.ReplaceAllString(strings.TrimSpace(s), ""))
@@ -100,14 +125,17 @@ func parseCSV(text string) (string, []core.ImportTrack, error) {
 		return "", nil, ErrUnreadable
 	}
 	col := map[string]int{}
-	durationMS := false
+	durationMS, artistList := false, false
 	for i, h := range rows[0] {
 		key := strings.ToLower(strings.TrimSpace(h))
 		switch {
 		case key == "title" || key == "track" || key == "track name" || key == "name" || key == "song":
 			setOnce(col, "title", i)
 		case strings.HasPrefix(key, "artist"):
-			setOnce(col, "artist", i)
+			if _, exists := col["artist"]; !exists {
+				col["artist"] = i
+				artistList = key == "artists" || key == "artist name(s)" || key == "artist names"
+			}
 		case key == "album" || key == "album name":
 			setOnce(col, "album", i)
 		case key == "isrc":
@@ -129,7 +157,11 @@ func parseCSV(text string) (string, []core.ImportTrack, error) {
 	}
 	var out []core.ImportTrack
 	for _, row := range rows[1:] {
-		t := core.ImportTrack{Title: cell(row, "title"), Artist: firstArtist(cell(row, "artist")), Album: cell(row, "album"), ISRC: strings.ToUpper(cell(row, "isrc"))}
+		artist := cell(row, "artist")
+		if artistList {
+			artist = firstArtist(artist)
+		}
+		t := core.ImportTrack{Title: cell(row, "title"), Artist: artist, Album: cell(row, "album"), ISRC: strings.ToUpper(cell(row, "isrc"))}
 		t.DurationSec = duration(cell(row, "duration"), durationMS)
 		if t.Title != "" {
 			out = append(out, t)
