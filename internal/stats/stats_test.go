@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -281,4 +282,62 @@ func TestObserveStateUsesLivePlayIndex(t *testing.T) {
 			t.Fatalf("ObserveState query did not use stats_plays_live for both subqueries:\n%s", plan)
 		}
 	}
+}
+
+func TestSampleSkipsIdleProviderAndSnapshotWrites(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	db, err := store.Open(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	now := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
+	provider := usenet.ProviderStats{ID: "primary"}
+	indexers := []newznab.Remaining{{Indexer: "ix", HitsUsed: 1, HitsRemaining: 99}}
+	s := New(db, Options{
+		Now:       func() time.Time { return now },
+		Providers: func() []usenet.ProviderStats { return []usenet.ProviderStats{provider} },
+		Indexers:  func(context.Context) ([]newznab.Remaining, error) { return indexers, nil },
+	})
+	defer s.Close(ctx)
+
+	s.Sample(ctx)
+	var rows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM stats_provider_days`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Fatalf("idle provider created %d stats_provider_days rows, want 0", rows)
+	}
+
+	// Lock the database writer: a subsequent idle Sample with unchanged provider
+	// counters and unchanged snapshot payloads must not issue any SQLite writes.
+	writerDB, err := sql.Open("sqlite", filepath.Join(dir, "ether.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writerDB.Close()
+	conn, err := writerDB.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
+		t.Fatal(err)
+	}
+
+	now = now.Add(30 * time.Second)
+	shortCtx, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
+	defer cancel()
+	if err := s.SnapshotProviders(shortCtx, []usenet.ProviderStats{provider}); err != nil {
+		_, _ = conn.ExecContext(ctx, `ROLLBACK`)
+		t.Fatalf("unchanged SnapshotProviders attempted a database write: %v", err)
+	}
+	if err := s.snapshot(shortCtx, "indexers", indexers); err != nil {
+		_, _ = conn.ExecContext(ctx, `ROLLBACK`)
+		t.Fatalf("unchanged indexer snapshot attempted a database write: %v", err)
+	}
+	_, _ = conn.ExecContext(ctx, `ROLLBACK`)
 }

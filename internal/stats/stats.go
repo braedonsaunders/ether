@@ -130,6 +130,8 @@ type Service struct {
 	// prevDebrid and prevStream are the last debrid samples (under mu).
 	prevDebrid map[string]DebridSample
 	prevStream StreamSample
+	snapMu     sync.Mutex
+	lastSnaps  map[string]string
 	// vmu serializes play records: viewings maps playback sessions onto
 	// history rows, and a row's writes must land in observation order.
 	vmu      sync.Mutex
@@ -518,8 +520,23 @@ func (s *Service) snapshot(ctx context.Context, kind string, v any) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO stats_snapshots(kind,payload,at) VALUES(?,?,?) ON CONFLICT(kind) DO UPDATE SET payload=excluded.payload,at=excluded.at`, kind, string(b), s.opts.Now().Unix())
-	return err
+	raw := string(b)
+	s.snapMu.Lock()
+	unchanged := raw != "" && s.lastSnaps[kind] == raw
+	s.snapMu.Unlock()
+	if unchanged {
+		return nil
+	}
+	if _, err = s.db.ExecContext(ctx, `INSERT INTO stats_snapshots(kind,payload,at) VALUES(?,?,?) ON CONFLICT(kind) DO UPDATE SET payload=excluded.payload,at=excluded.at`, kind, raw, s.opts.Now().Unix()); err != nil {
+		return err
+	}
+	s.snapMu.Lock()
+	if s.lastSnaps == nil {
+		s.lastSnaps = map[string]string{}
+	}
+	s.lastSnaps[kind] = raw
+	s.snapMu.Unlock()
+	return nil
 }
 func (s *Service) SnapshotProviders(ctx context.Context, ps []usenet.ProviderStats) error {
 	s.mu.Lock()
@@ -537,9 +554,17 @@ func (s *Service) SnapshotProviders(ctx context.Context, ps []usenet.ProviderSta
 			id = p.Host
 		}
 		old := s.previous[id]
-		_, err := s.db.ExecContext(ctx, `INSERT INTO stats_provider_days(provider,day,bytes,articles,misses,errors,backfill_saves,body_misses,body_takedowns,spillovers) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(provider,day) DO UPDATE SET bytes=stats_provider_days.bytes+excluded.bytes,articles=stats_provider_days.articles+excluded.articles,misses=stats_provider_days.misses+excluded.misses,errors=stats_provider_days.errors+excluded.errors,backfill_saves=stats_provider_days.backfill_saves+excluded.backfill_saves,body_misses=stats_provider_days.body_misses+excluded.body_misses,body_takedowns=stats_provider_days.body_takedowns+excluded.body_takedowns,spillovers=stats_provider_days.spillovers+excluded.spillovers`, id, day, delta(p.Bytes, old.Bytes), delta(p.Articles, old.Articles), delta(p.Misses, old.Misses), delta(p.Errors, old.Errors), delta(p.BackfillSaves, old.BackfillSaves), delta(p.BodyMisses, old.BodyMisses), delta(p.BodyTakedowns, old.BodyTakedowns), delta(p.Spillovers, old.Spillovers))
-		if err != nil {
-			return err
+		d := [8]int64{
+			delta(p.Bytes, old.Bytes), delta(p.Articles, old.Articles),
+			delta(p.Misses, old.Misses), delta(p.Errors, old.Errors),
+			delta(p.BackfillSaves, old.BackfillSaves), delta(p.BodyMisses, old.BodyMisses),
+			delta(p.BodyTakedowns, old.BodyTakedowns), delta(p.Spillovers, old.Spillovers),
+		}
+		if d != ([8]int64{}) {
+			_, err := s.db.ExecContext(ctx, `INSERT INTO stats_provider_days(provider,day,bytes,articles,misses,errors,backfill_saves,body_misses,body_takedowns,spillovers) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(provider,day) DO UPDATE SET bytes=stats_provider_days.bytes+excluded.bytes,articles=stats_provider_days.articles+excluded.articles,misses=stats_provider_days.misses+excluded.misses,errors=stats_provider_days.errors+excluded.errors,backfill_saves=stats_provider_days.backfill_saves+excluded.backfill_saves,body_misses=stats_provider_days.body_misses+excluded.body_misses,body_takedowns=stats_provider_days.body_takedowns+excluded.body_takedowns,spillovers=stats_provider_days.spillovers+excluded.spillovers`, id, day, d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7])
+			if err != nil {
+				return err
+			}
 		}
 		s.previous[id] = p
 	}
