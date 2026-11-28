@@ -110,13 +110,13 @@ func (a *App) buildLiveEvents() {
 			Poller:    hubAlertPoller{hub: hub},
 			Engine:    alertEngine,
 		})
-		hub.OnEventChange(func(_ *core.LiveEvent, next core.LiveEvent) {
+		hub.OnEventBatch(func(changed []core.LiveEvent) {
 			if !hub.IsLeading() {
 				return
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			_ = alertEngine.ProcessEvents(ctx, []core.LiveEvent{next})
+			_ = alertEngine.ProcessEvents(ctx, changed)
 		})
 	}
 

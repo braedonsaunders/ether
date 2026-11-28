@@ -973,3 +973,41 @@ func TestHubOverflowOnlyPublishesChanges(t *testing.T) {
 		t.Fatalf("cached events = %d, want 2", len(hub.events))
 	}
 }
+
+func TestHubAlertsObserveOneBatchAfterFanout(t *testing.T) {
+	src := newFakePluginSource(FeedInfo{PluginID: "plug", FeedID: "feed", MinIntervalSec: 10})
+	hub := NewHub(Options{Source: src})
+	defer hub.Close()
+	sub, err := hub.Subscribe(t.Context(), SubscribeRequest{EventIDs: []string{"plug:feed:a", "plug:feed:b"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sub.Close()
+	waitCall(t, src.called)
+
+	calls := 0
+	unsubscribe := hub.OnEventBatch(func(changed []core.LiveEvent) {
+		calls++
+		select {
+		case updates := <-sub.Updates():
+			if len(updates) != 2 || len(changed) != 2 || updates[0].ID != changed[0].ID || updates[1].ID != changed[1].ID {
+				t.Fatalf("subscriber got %+v, hook got %+v", updates, changed)
+			}
+		default:
+			t.Fatal("batch hook ran before subscriber fan-out")
+		}
+	})
+	const at = "2026-11-22T18:00:00Z"
+	batch := []core.LiveEvent{
+		sampleEvent("a", core.LiveEventStatePre, "0", "0", at),
+		sampleEvent("b", core.LiveEventStatePre, "0", "0", at),
+	}
+	hub.ingestEvents("plug", "feed", batch, false)
+	hub.ingestEvents("plug", "feed", batch, false)
+	unsubscribe()
+	batch[0].Status.State = core.LiveEventStateIn
+	hub.ingestEvents("plug", "feed", batch, false)
+	if calls != 1 {
+		t.Fatalf("batch hook called %d times, want 1", calls)
+	}
+}

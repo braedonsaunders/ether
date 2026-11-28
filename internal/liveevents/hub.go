@@ -267,6 +267,7 @@ type Hub struct {
 	remotePruneCancel   context.CancelFunc
 	nextChangeHookID    int64
 	changeHooks         map[int64]ChangeHandler
+	batchHooks          map[int64]func([]core.LiveEvent)
 	nextPollHookID      int64
 	pollHooks           map[int64]FeedPollHandler
 	watchEnricher       WatchEnricher
@@ -345,6 +346,7 @@ func NewHub(opts Options) *Hub {
 		pollers:             make(map[string]*feedPoller),
 		remoteInterests:     make(map[string]remotePeerInterest),
 		changeHooks:         make(map[int64]ChangeHandler),
+		batchHooks:          make(map[int64]func([]core.LiveEvent)),
 		pollHooks:           make(map[int64]FeedPollHandler),
 		watchEnricher:       opts.WatchEnricher,
 		detailWatchEnricher: opts.DetailWatchEnricher,
@@ -483,7 +485,7 @@ func (d hubAlertDeliverer) PublishAlert(viewerID int64, alert core.LiveEventAler
 
 // OnEventChange registers a callback invoked with raw (unmasked) event
 // transitions whenever the hub ingests a new or modified event. Returns an
-// unsubscribe function. Used by A7 alert detection.
+// unsubscribe function.
 func (h *Hub) OnEventChange(fn ChangeHandler) func() {
 	if h == nil || fn == nil {
 		return func() {}
@@ -496,6 +498,24 @@ func (h *Hub) OnEventChange(fn ChangeHandler) func() {
 	return func() {
 		h.mu.Lock()
 		delete(h.changeHooks, id)
+		h.mu.Unlock()
+	}
+}
+
+// OnEventBatch observes a whole ingest's raw changes after subscriber and
+// cluster fan-out. It returns a function that unregisters the callback.
+func (h *Hub) OnEventBatch(fn func([]core.LiveEvent)) func() {
+	if h == nil || fn == nil {
+		return func() {}
+	}
+	h.mu.Lock()
+	h.nextChangeHookID++
+	id := h.nextChangeHookID
+	h.batchHooks[id] = fn
+	h.mu.Unlock()
+	return func() {
+		h.mu.Lock()
+		delete(h.batchHooks, id)
 		h.mu.Unlock()
 	}
 }
@@ -2147,6 +2167,7 @@ func (h *Hub) ingestEvents(pluginID, feedID string, events []core.LiveEvent, bro
 	var changed []core.LiveEvent
 	var deltas []eventDelta
 	var hooks []ChangeHandler
+	var batchHooks []func([]core.LiveEvent)
 	var matchingSubs []*Subscription
 
 	h.mu.Lock()
@@ -2177,11 +2198,13 @@ func (h *Hub) ingestEvents(pluginID, feedID string, events []core.LiveEvent, bro
 			if ev.UpdatedAt == prev.event.UpdatedAt {
 				ev.UpdatedAt = bumpUpdatedAt(prev.event.UpdatedAt, now)
 			}
-			prevCopy := prev.event.Clone()
+			if len(h.changeHooks) != 0 {
+				prevCopy := prev.event.Clone()
+				deltas = append(deltas, eventDelta{prev: &prevCopy, next: ev})
+			}
 			prev.event = ev.Clone()
 			prev.hash = nextHash
 			changed = append(changed, ev.Clone())
-			deltas = append(deltas, eventDelta{prev: &prevCopy, next: ev.Clone()})
 		} else {
 			tombstone, evicted := h.eventTombstones[ev.ID]
 			if evicted && IsStaleUpdate(tombstone.updatedAt, ev.UpdatedAt) {
@@ -2206,7 +2229,9 @@ func (h *Hub) ingestEvents(pluginID, feedID string, events []core.LiveEvent, bro
 				continue
 			}
 			changed = append(changed, ev.Clone())
-			deltas = append(deltas, eventDelta{prev: nil, next: ev.Clone()})
+			if len(h.changeHooks) != 0 {
+				deltas = append(deltas, eventDelta{next: ev})
+			}
 		}
 	}
 
@@ -2217,6 +2242,9 @@ func (h *Hub) ingestEvents(pluginID, feedID string, events []core.LiveEvent, bro
 			for _, fn := range h.changeHooks {
 				hooks = append(hooks, fn)
 			}
+		}
+		for _, fn := range h.batchHooks {
+			batchHooks = append(batchHooks, fn)
 		}
 		for _, sub := range h.subs {
 			for _, ev := range changed {
@@ -2233,7 +2261,7 @@ func (h *Hub) ingestEvents(pluginID, feedID string, events []core.LiveEvent, bro
 		return nil
 	}
 
-	// Notify raw change observers (e.g. A7 alert detector).
+	// Notify raw transition observers.
 	for _, fn := range hooks {
 		for _, d := range deltas {
 			fn(d.prev, d.next.Clone())
@@ -2279,6 +2307,13 @@ func (h *Hub) ingestEvents(pluginID, feedID string, events []core.LiveEvent, bro
 
 	if broadcastCluster {
 		h.broadcastClusterUpdates(pluginID, feedID, changed)
+	}
+	for _, fn := range batchHooks {
+		batch := make([]core.LiveEvent, len(changed))
+		for i, ev := range changed {
+			batch[i] = ev.Clone()
+		}
+		fn(batch)
 	}
 	return changed
 }
