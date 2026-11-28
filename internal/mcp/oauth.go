@@ -124,12 +124,21 @@ func (p *Pairing) OAuthHandler() http.Handler {
 		}
 	})
 }
+func (p *Pairing) attemptKey(r *http.Request) string {
+	if p.opts.ClientIP != nil {
+		if ip, ok := p.opts.ClientIP(r); ok && ip.IsValid() {
+			return ip.String()
+		}
+	}
+	return r.RemoteAddr
+}
+
 func (p *Pairing) register(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(405)
 		return
 	}
-	if !p.allowAttempt(r.RemoteAddr) {
+	if !p.allowAttempt(p.attemptKey(r)) {
 		http.Error(w, "rate limited", 429)
 		return
 	}
@@ -217,7 +226,7 @@ func (p *Pairing) authorize(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(405)
 		return
 	}
-	if !p.allowAttempt(r.RemoteAddr) {
+	if !p.allowAttempt(p.attemptKey(r)) {
 		http.Error(w, "rate limited", 429)
 		return
 	}
@@ -265,13 +274,25 @@ func (p *Pairing) authorizationDetails(w http.ResponseWriter, r *http.Request) {
 	if _, ok := p.owner(w, r); !ok {
 		return
 	}
-	var name, scope string
-	err := p.opts.DB.QueryRowContext(r.Context(), `SELECT c.name,q.scope FROM mcp_oauth_requests q JOIN mcp_oauth_clients c ON c.id=q.client_id WHERE q.id=? AND q.expires>?`, r.URL.Query().Get("request"), p.now().UnixMilli()).Scan(&name, &scope)
+	var name, scope, redirectURI string
+	err := p.opts.DB.QueryRowContext(r.Context(), `SELECT c.name,q.scope,q.redirect_uri FROM mcp_oauth_requests q JOIN mcp_oauth_clients c ON c.id=q.client_id WHERE q.id=? AND q.expires>?`, r.URL.Query().Get("request"), p.now().UnixMilli()).Scan(&name, &scope, &redirectURI)
 	if err != nil {
 		http.Error(w, "request expired", 404)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"name": name, "scope": scope})
+	var redirectHost string
+	var redirectLocal bool
+	if u, err := url.Parse(redirectURI); err == nil && u.Host != "" {
+		redirectHost = u.Host
+		h := strings.ToLower(u.Hostname())
+		redirectLocal = h == "localhost" || h == "127.0.0.1" || h == "::1"
+	}
+	writeJSON(w, 200, map[string]any{
+		"name":          name,
+		"scope":         scope,
+		"redirectHost":  redirectHost,
+		"redirectLocal": redirectLocal,
+	})
 }
 func (p *Pairing) authorizationDecision(w http.ResponseWriter, r *http.Request) {
 	owner, ok := p.owner(w, r)
@@ -324,7 +345,7 @@ func (p *Pairing) token(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(405)
 		return
 	}
-	if !p.allowAttempt(r.RemoteAddr) {
+	if !p.allowAttempt(p.attemptKey(r)) {
 		http.Error(w, "rate limited", 429)
 		return
 	}

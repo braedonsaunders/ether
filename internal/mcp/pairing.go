@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +25,7 @@ type PairingOptions struct {
 	// Authorize returns the owner viewer id for a console request. The app
 	// implements it from the admin API's owner check.
 	Authorize    func(ctx context.Context) (int64, error)
+	ClientIP     func(*http.Request) (netip.Addr, bool)
 	Logger       *slog.Logger
 	AllowedHosts []string
 	Now          func() time.Time

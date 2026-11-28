@@ -38,6 +38,7 @@ func (a *App) buildMCPPairing() (*mcp.Pairing, error) {
 		DB:           a.db,
 		AllowedHosts: mcpAllowedHosts(),
 		Grants:       grants,
+		ClientIP:     a.frontendClientIP,
 		Logger:       a.log.With("component", "mcp-pairing"),
 		Authorize: func(ctx context.Context) (int64, error) {
 			if acc, ok := admin.RequestAccess(ctx); !ok || !acc.Owner {
