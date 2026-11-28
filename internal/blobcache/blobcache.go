@@ -539,8 +539,8 @@ func (c *Cache) enforceGlobalLimitLocked(need int64, protectNS *Namespace, prote
 // for wiring into plugins.KindBackends (spec §3.6, §5.4).
 //
 // quotaFor may be nil, in which case the namespace's existing or default quota
-// is used. CacheOpen and CacheDelete search only namespaces owned by pluginID
-// (or any namespace whose libraryKey starts with "pk-" + slug(pluginID) + "-").
+// is used. CacheOpen and CacheDelete search only namespaces explicitly bound
+// to pluginID via BindPluginLibrary.
 func (c *Cache) HostBackends(quotaFor func(pluginID, libraryKey string) Quota) (
 	cachePut func(ctx context.Context, pluginID, libraryKey, name string, r io.Reader) (string, error),
 	cacheOpen func(ctx context.Context, pluginID, blobRef string) (io.ReadSeekCloser, error),
@@ -680,16 +680,6 @@ func (c *Cache) namespacesForPlugin(pluginID string) ([]*Namespace, error) {
 				seen[ns] = true
 				out = append(out, ns)
 			}
-		}
-	}
-	// Also match by canonical plugin library key prefix if namespaces were
-	// loaded from disk on restart before BindPluginLibrary was called.
-	slug := slugify(pluginID)
-	prefix := "pk-" + slug + "-"
-	for key, ns := range c.namespaces {
-		if !seen[ns] && ((slug != "" && strings.HasPrefix(key, prefix)) || pluginID == "") {
-			seen[ns] = true
-			out = append(out, ns)
 		}
 	}
 	return out, nil

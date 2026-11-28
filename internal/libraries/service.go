@@ -383,6 +383,12 @@ func (s *Service) UpsertPluginLibrary(ctx context.Context, pluginID, kindKey str
 	return lib, nil
 }
 
+// ByPluginKind looks up a plugin-owned library by its exact (plugin_id, kind_key)
+// identity rather than its slugified key.
+func (s *Service) ByPluginKind(ctx context.Context, pluginID, kindKey string) (core.Library, error) {
+	return s.libraryForPluginKind(ctx, pluginID, kindKey)
+}
+
 func (s *Service) libraryForPluginKind(ctx context.Context, pluginID, kindKey string) (core.Library, error) {
 	var deleted int
 	if err := s.db.QueryRowContext(ctx, "SELECT deleted FROM libraries WHERE source='plugin' AND plugin_id=? AND kind_key=?", pluginID, kindKey).Scan(&deleted); err == nil && deleted != 0 {
