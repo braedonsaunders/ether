@@ -47,10 +47,24 @@ func (s *Service) NaturalSearch(ctx context.Context, u *core.User, query string,
 	}
 	return discoverySafe(u, titles), nil
 }
+func titleExceedsLimit(t core.Title, maxRating string) bool {
+	if maxRating == "" {
+		return false
+	}
+	enf := t.EnforcementRating
+	if enf == "" {
+		enf = t.ContentRating
+	}
+	if enf == contentrating.UncertifiedAdult {
+		return true
+	}
+	return contentrating.EnforceExceeds(enf, maxRating) || contentrating.Exceeds(t.ContentRating, maxRating)
+}
+
 func discoverySafe(u *core.User, titles []core.Title) []core.Title {
 	out := []core.Title{}
 	for _, t := range titles {
-		if t.Adult || (u != nil && contentrating.Exceeds(t.ContentRating, u.MaxContentRating)) {
+		if t.Adult || (u != nil && titleExceedsLimit(t, u.MaxContentRating)) {
 			continue
 		}
 		out = append(out, t)
@@ -91,7 +105,7 @@ func (s *Service) SeasonRecap(ctx context.Context, u *core.User, key core.Rating
 	var input strings.Builder
 	maxSeason, maxEpisode := t.Season, t.Episode
 	for _, ep := range episodes {
-		if ep.Type != core.TypeEpisode || statuses[ep.Key].ViewCount == 0 || ep.Summary == "" || ep.Adult || contentrating.Exceeds(ep.ContentRating, u.MaxContentRating) {
+		if ep.Type != core.TypeEpisode || statuses[ep.Key].ViewCount == 0 || ep.Summary == "" || ep.Adult || titleExceedsLimit(ep, u.MaxContentRating) {
 			continue
 		}
 		if maxSeason > 0 && (ep.Season > maxSeason || (t.Type == core.TypeEpisode && ep.Season == maxSeason && ep.Episode >= maxEpisode)) {
