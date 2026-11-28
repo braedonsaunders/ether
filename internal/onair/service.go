@@ -1071,6 +1071,18 @@ func (s *Service) watchUpcoming() {
 			return
 		case <-timerCh:
 		case <-s.upcomingWake:
+			// A burst of Ensure calls also queues specific clips. Fold its
+			// wakes into one full upcoming scan without delaying those clips.
+			arm(100 * time.Millisecond)
+			select {
+			case <-s.ctx.Done():
+				return
+			case <-timerCh:
+			}
+			select {
+			case <-s.upcomingWake:
+			default:
+			}
 		}
 	}
 }
