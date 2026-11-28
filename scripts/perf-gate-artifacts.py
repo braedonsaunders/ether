@@ -1,5 +1,6 @@
 """Retain gate work attribution without request credentials or database files."""
 
+import argparse
 import hashlib
 import json
 import os
@@ -42,7 +43,11 @@ def validate_trace(record):
 
 
 def main():
-    root = Path(sys.argv[1])
+    parser = argparse.ArgumentParser()
+    parser.add_argument("root", type=Path)
+    parser.add_argument("--matrix", action="store_true")
+    args = parser.parse_args()
+    root = args.root
     output = root / "perf-gate-artifacts"
     output.mkdir(exist_ok=True)
     # Explicit provenance allowlist; never dump the environment or config.
@@ -64,9 +69,16 @@ def main():
     # QueryStats stores SQL templates, not bound parameters. Also redact SQL
     # literals and comments; keep table names, call sites and all work counters.
     literals = re.compile(r"'(?:''|[^'])*'|\"(?:\"\"|[^\"])*\"|--[^\n]*|/\*.*?\*/", re.S)
-    complete = report.is_file()
-    for scale in ("small", "large"):
-        source = root / "perf-gate-private" / (scale + "-trace.jsonl")
+    private = root / "perf-gate-private"
+    traces = ("small", "large")
+    if args.matrix:
+        manifest = private / "matrix-cases.txt"
+        cases = manifest.read_text().splitlines() if manifest.is_file() else []
+        valid = len(set(cases)) == len(cases) and all(re.fullmatch(r"[a-z0-9-]+", name) for name in cases)
+        traces = tuple(f"matrix-{name}" for name in cases) if valid else ()
+    complete = report.is_file() and bool(traces)
+    for trace in traces:
+        source = private / (trace + "-trace.jsonl")
         status = {"records": 0, "tagged_records": 0, "malformed_lines": 0,
                   "invalid_records": 0, "present": source.is_file()}
         if source.is_file():
@@ -97,7 +109,7 @@ def main():
             status["sanitized_sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
         complete = (complete and status["tagged_records"] > 0
                     and status["malformed_lines"] == 0 and status["invalid_records"] == 0)
-        provenance[scale] = status
+        provenance[trace] = status
     provenance["evidence_complete"] = complete
     (output / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
     return 0 if complete else 1

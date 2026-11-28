@@ -118,6 +118,24 @@ func testPerformanceMatrix(t *testing.T) {
 			t.Fatalf("no matrix configurations match %q", only)
 		}
 	}
+	keep := os.Getenv("ETHER_PERF_GATE_KEEP")
+	if keep != "" {
+		if err := os.MkdirAll(keep, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		names := make([]string, 0, len(cases))
+		for _, c := range cases {
+			names = append(names, c.name)
+			// The observer appends. Clear all selected traces before replay
+			// so a failed local rerun cannot publish a previous case's data.
+			if err := os.WriteFile(filepath.Join(keep, "matrix-"+c.name+"-trace.jsonl"), nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.WriteFile(filepath.Join(keep, "matrix-cases.txt"), []byte(strings.Join(names, "\n")+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	fixture := perfMatrixFixture(t, ctx, cache)
 	for _, c := range cases {
 		if ctx.Err() != nil {
@@ -127,7 +145,7 @@ func testPerformanceMatrix(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			caseCtx, stopCase := context.WithTimeout(ctx, 3*time.Minute)
 			defer stopCase()
-			runPerfMatrixCase(t, caseCtx, fixture, c, music, clients, &report, writeReport)
+			runPerfMatrixCase(t, caseCtx, fixture, c, music, clients, keep, &report, writeReport)
 		})
 	}
 	if report.OffenderCount()+report.GapCount() != 0 {
@@ -200,7 +218,7 @@ var perfMatrixNewViewerQueries = []string{
 	"DELETE FROM state_watch WHERE user_id=(SELECT id FROM auth_users WHERE username='viewer01')",
 }
 
-func runPerfMatrixCase(t *testing.T, ctx context.Context, fixture string, c perfMatrixCase, music perfMusicFixture, clients []string, report *perfharness.MatrixReport, writeReport func()) {
+func runPerfMatrixCase(t *testing.T, ctx context.Context, fixture string, c perfMatrixCase, music perfMusicFixture, clients []string, keep string, report *perfharness.MatrixReport, writeReport func()) {
 	start := time.Now()
 	defer func() { t.Logf("replayed in %s", time.Since(start).Round(time.Second)) }()
 	dir, err := os.MkdirTemp(filepath.Dir(fixture), "case-")
@@ -315,6 +333,9 @@ func runPerfMatrixCase(t *testing.T, ctx context.Context, fixture string, c perf
 	}
 
 	trace := filepath.Join(dir, "trace.jsonl")
+	if keep != "" {
+		trace = filepath.Join(keep, "matrix-"+c.name+"-trace.jsonl")
+	}
 	t.Setenv(PerfTraceEnv, trace)
 	options := Options{DataDir: dir, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	if c.live {

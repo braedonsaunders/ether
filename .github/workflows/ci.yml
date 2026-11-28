@@ -537,9 +537,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      # Replays every protocol against a 50k and a 500k+ row synthetic
-      # library and fails when an endpoint's statements, rows read or
-      # database time grow with the library (docs/performance.md).
+      # Replays every protocol across the synthetic library configuration
+      # matrix and checks coverage and statement, row and write budgets.
       - name: Performance gate
         env:
           CGO_ENABLED: "0"
@@ -555,7 +554,7 @@ jobs:
           if [ -f "$RUNNER_TEMP/perf-gate.md" ]; then cat "$RUNNER_TEMP/perf-gate.md" >> "$GITHUB_STEP_SUMMARY"; fi
       - name: Prepare sanitized performance evidence
         if: always()
-        run: python3 scripts/perf-gate-artifacts.py "$RUNNER_TEMP"
+        run: python3 scripts/perf-gate-artifacts.py "$RUNNER_TEMP" --matrix
       - name: Retain performance evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
