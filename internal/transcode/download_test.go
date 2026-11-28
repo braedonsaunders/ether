@@ -656,6 +656,7 @@ func TestCleanStaleRemovesOnlyEtherOrphans(t *testing.T) {
 		"s-old-1234/rung-720p/00000.ts",
 		"s-old-1234/seg-0-00001.m4s",
 		"http-old-1234/pipe.mkv",
+		"continuous-old-1234/seg-00001.ts",
 		"downloads/dl-ab12cd34.mp4",
 		"downloads/dl-ab12cd34.mp4.part",
 	}
@@ -667,6 +668,7 @@ func TestCleanStaleRemovesOnlyEtherOrphans(t *testing.T) {
 		"downloads/dl-fresh99.mp4",
 		"downloads/dl-fresh99.mp4.part",
 		"s-notes.txt",
+		"continuous-notes.txt",
 	}
 	for _, rel := range append(append([]string{}, ether...), alien...) {
 		p := filepath.Join(dir, rel)
@@ -694,7 +696,10 @@ func TestCleanStaleRemovesOnlyEtherOrphans(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "http-old-1234")); !os.IsNotExist(err) {
 		t.Errorf("stale http session dir kept: %v", err)
 	}
-	for _, rel := range ether[6:] {
+	if _, err := os.Stat(filepath.Join(dir, "continuous-old-1234")); !os.IsNotExist(err) {
+		t.Errorf("stale continuous encoder dir kept: %v", err)
+	}
+	for _, rel := range ether[7:] {
 		if _, err := os.Stat(filepath.Join(dir, rel)); !os.IsNotExist(err) {
 			t.Errorf("ether orphan %s kept: %v", rel, err)
 		}
