@@ -392,3 +392,43 @@ func TestSQLFavoriteEntitiesReaderReadsFavoritesItemsTable(t *testing.T) {
 		t.Fatalf("ListEntityFavorites = %+v, want 2 entity favorites only", got)
 	}
 }
+
+func TestAlertEngineSeedsColdEventsSilently(t *testing.T) {
+	now := time.Date(2026, 11, 22, 18, 0, 0, 0, time.UTC)
+	hub := NewAlertHub()
+	sub := hub.SubscribeAlerts(10)
+	defer sub.Close()
+	favs := []EntityFavorite{{ViewerID: 10, Key: "demo:main:team:wolves"}}
+	engine := NewAlertEngine(AlertEngineOptions{InApp: hub, Now: func() time.Time { return now }})
+	alreadyLive := core.LiveEvent{
+		ID: "demo:main:live", Start: now.Add(-time.Hour).Format(time.RFC3339),
+		Status:      core.LiveEventStatus{State: core.LiveEventStateIn, Close: true},
+		Competitors: []core.LiveEventCompetitor{{EntityID: "wolves"}},
+	}
+	upcoming := alreadyLive.Clone()
+	upcoming.ID = "demo:main:upcoming"
+	upcoming.Status = core.LiveEventStatus{State: core.LiveEventStatePre}
+	if err := engine.ProcessEventsWithFavorites(t.Context(), []core.LiveEvent{alreadyLive, upcoming}, favs); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case alert := <-sub.C:
+		t.Fatalf("cold snapshot sent an alert: %+v", alert)
+	default:
+	}
+	upcoming.Status.State = core.LiveEventStateIn
+	alreadyLive.Status.State = core.LiveEventStatePost
+	if err := engine.ProcessEventsWithFavorites(t.Context(), []core.LiveEvent{upcoming, alreadyLive}, favs); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{core.LiveEventAlertStarted, core.LiveEventAlertFinal} {
+		select {
+		case alert := <-sub.C:
+			if alert.Kind != kind {
+				t.Fatalf("alert kind = %q, want %q", alert.Kind, kind)
+			}
+		default:
+			t.Fatalf("missing %s alert for observed transition", kind)
+		}
+	}
+}
