@@ -62,9 +62,6 @@ func compareCandidates(a, b candidate) bool {
 	if a.audioUnverified != b.audioUnverified {
 		return !a.audioUnverified
 	}
-	if a.trackPreference != b.trackPreference {
-		return a.trackPreference > b.trackPreference
-	}
 	// A file the owner already has plays before any release Ether would
 	// fetch, whatever their qualities (Resolver.PreferLocalFiles).
 	if a.localFirst != b.localFirst {
@@ -93,6 +90,11 @@ func compareCandidates(a, b candidate) bool {
 	}
 	if a.bandwidth != b.bandwidth {
 		return a.bandwidth > b.bandwidth
+	}
+	// Prefer wanted audio/subtitle tracks only within the same gate tier so a
+	// track match cannot override local-first, quality, policy, or bandwidth gates.
+	if a.trackPreference != b.trackPreference {
+		return a.trackPreference > b.trackPreference
 	}
 	// Source bands and add-on order (when any Stremio add-on keeps its own
 	// result order, each such add-on forms its own priority band and keeps its
@@ -381,26 +383,58 @@ func preferredSource(mode string) string {
 	return ""
 }
 
-// prioritizeOwnerTracks restores track preference after soft quality and
-// delivery promotions, keeping identity and required-audio checks first.
+// prioritizeOwnerTracks restores track preference within each quality and
+// delivery gate tier, keeping identity, required-audio, local-first, quality,
+// policy, language, and bandwidth gates first.
 func prioritizeOwnerTracks(cands []candidate) {
 	if len(cands) < 2 || !slices.ContainsFunc(cands[1:], func(c candidate) bool {
 		return c.trackPreference != cands[0].trackPreference
 	}) {
 		return
 	}
-	slices.SortStableFunc(cands, func(a, b candidate) int {
-		if a.identityWeak != b.identityWeak {
-			if a.identityWeak {
-				return 1
-			}
+	cmpBoolTrueFirst := func(a, b bool) int {
+		if a == b {
+			return 0
+		}
+		if a {
 			return -1
 		}
-		if a.audioUnverified != b.audioUnverified {
-			if a.audioUnverified {
-				return 1
+		return 1
+	}
+	slices.SortStableFunc(cands, func(a, b candidate) int {
+		if c := cmpBoolTrueFirst(!a.identityWeak, !b.identityWeak); c != 0 {
+			return c
+		}
+		if c := cmpBoolTrueFirst(!a.audioUnverified, !b.audioUnverified); c != 0 {
+			return c
+		}
+		if c := cmpBoolTrueFirst(a.localFirst, b.localFirst); c != 0 {
+			return c
+		}
+		if c := cmpBoolTrueFirst(!a.belowScore, !b.belowScore); c != 0 {
+			return c
+		}
+		if a.belowScore {
+			if c := cmp.Compare(b.counted, a.counted); c != 0 {
+				return c
 			}
-			return -1
+		}
+		if c := cmpBoolTrueFirst(!a.fallback, !b.fallback); c != 0 {
+			return c
+		}
+		if a.fallback {
+			if c := cmp.Compare(b.keys.height, a.keys.height); c != 0 {
+				return c
+			}
+		}
+		if c := cmp.Compare(a.policy.Fallback, b.policy.Fallback); c != 0 {
+			return c
+		}
+		if c := cmpBoolTrueFirst(a.langOK, b.langOK); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(b.bandwidth, a.bandwidth); c != 0 {
+			return c
 		}
 		return cmp.Compare(b.trackPreference, a.trackPreference)
 	})
