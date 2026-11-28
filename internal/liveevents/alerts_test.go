@@ -3,6 +3,7 @@ package liveevents
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -74,6 +75,7 @@ type fakeFeedPoller struct {
 	schedule      []core.LiveEvent
 	pollEvents    []core.LiveEvent
 	nextPollSec   int
+	pollErr       error
 }
 
 func (p *fakeFeedPoller) FetchSchedule(_ context.Context, _, _ string, _, _ time.Time) (FeedPollResult, error) {
@@ -88,7 +90,7 @@ func (p *fakeFeedPoller) PollEvents(_ context.Context, _, _ string, ids []string
 	defer p.mu.Unlock()
 	p.pollCalls++
 	p.lastPollIDs = append([]string(nil), ids...)
-	return FeedPollResult{Events: p.pollEvents, NextPollSec: p.nextPollSec}, nil
+	return FeedPollResult{Events: p.pollEvents, NextPollSec: p.nextPollSec}, p.pollErr
 }
 
 func TestAlertEngineTransitionsSpoilerFreeAndThreeChannelDelivery(t *testing.T) {
@@ -431,4 +433,36 @@ func TestAlertEngineSeedsColdEventsSilently(t *testing.T) {
 			t.Fatalf("missing %s alert for observed transition", kind)
 		}
 	}
+}
+
+func TestAlertSchedulerBacksOffFailedPolls(t *testing.T) {
+	now := time.Date(2026, 11, 22, 18, 0, 0, 0, time.UTC)
+	ev := core.LiveEvent{
+		ID: "demo:main:g1", Start: now.Format(time.RFC3339),
+		Status:      core.LiveEventStatus{State: core.LiveEventStatePre},
+		Competitors: []core.LiveEventCompetitor{{EntityID: "wolves"}},
+	}
+	favs := &fakeFavoritesStore{favs: []EntityFavorite{{ViewerID: 10, Key: "demo:main:team:wolves"}}}
+	poller := &fakeFeedPoller{schedule: []core.LiveEvent{ev}, pollErr: errors.New("poll failed")}
+	sched := NewAlertScheduler(AlertSchedulerOptions{
+		Favorites: favs, Poller: poller, Now: func() time.Time { return now },
+	})
+	step := func(delay time.Duration, calls int) {
+		t.Helper()
+		next, awake, err := sched.Step(t.Context())
+		if err != nil || !awake || !next.Equal(now.Add(delay)) || poller.pollCalls != calls {
+			t.Fatalf("next = %v, awake = %v, calls = %d, err = %v; want +%v and %d calls", next, awake, poller.pollCalls, err, delay, calls)
+		}
+	}
+	step(15*time.Second, 1)
+	now = now.Add(15 * time.Second)
+	step(30*time.Second, 2)
+	now = now.Add(15 * time.Second)
+	step(15*time.Second, 2)
+	now = now.Add(15 * time.Second)
+	poller.pollErr, poller.nextPollSec = nil, 20
+	step(20*time.Second, 3)
+	now = now.Add(20 * time.Second)
+	poller.pollErr, poller.nextPollSec = errors.New("poll failed again"), 0
+	step(15*time.Second, 4)
 }
