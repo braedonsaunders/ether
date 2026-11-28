@@ -372,6 +372,9 @@ export const api = {
   signInStart: () => post<{ handle: string; code: string; authUrl: string }>("/auth/pin"),
   signInPoll: (handle: string) =>
     apiFetch<{ done: boolean; token?: string }>(`/auth/pin/${encodeURIComponent(handle)}`),
+  oidcSignInStart: () => post<{ handle: string; authUrl: string }>("/auth/oidc"),
+  oidcSignInPoll: (handle: string) =>
+    apiFetch<{ done: boolean; token?: string }>(`/auth/oidc/${encodeURIComponent(handle)}`),
   /** Exchanges a pasted owner Plex token for a console session. */
   createSession: (plexToken: string) =>
     apiFetch<{ done: boolean; token: string }>("/auth/session", {
@@ -462,6 +465,7 @@ export const api = {
   llmModels: (cfg: EtherConfig["llm"], signal?: AbortSignal) =>
     post<{ models: LLMModel[]; error?: string }>("/llm/models", cfg, signal),
   testTrakt: (cfg: EtherConfig["trakt"]) => post<TestResult>("/test/trakt", cfg),
+  testOIDC: (cfg: NonNullable<EtherConfig["oidc"]>) => post<TestResult>("/test/oidc", cfg),
   checkOutbound: (cfg: EtherConfig["outbound"]) =>
     post<{
       sourceIp?: string;

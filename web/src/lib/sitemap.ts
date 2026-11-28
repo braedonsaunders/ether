@@ -401,6 +401,12 @@ const PAGES = localized<PageDef[]>(() => [
         keywords: searchTerms(msg("mdblist sync history")),
       },
       {
+        key: "oidc",
+        href: "/services/overview#oidc",
+        title: t("Single sign-on"),
+        keywords: searchTerms(msg("oidc sso openid pocket id authelia authentik keycloak login")),
+      },
+      {
         key: "llm",
         href: "/services/overview#llm",
         title: t("Language model"),

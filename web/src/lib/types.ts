@@ -557,6 +557,19 @@ export interface EtherConfig {
   };
   trakt: { enabled: boolean; clientId: string; clientSecret: string };
   simkl?: { enabled: boolean; clientId: string; clientSecret: string };
+  oidc?: {
+    enabled: boolean;
+    displayName?: string;
+    issuer: string;
+    clientId: string;
+    clientSecret: string;
+    autoLinkEmail?: "" | "verified" | "any";
+    autoLinkUsername?: boolean;
+    autoProvision?: boolean;
+    requiredGroup?: string;
+    scopes?: string;
+    groupsClaim?: string;
+  };
   mdblist?: { enabled: boolean };
   plexServers?: { enabled: boolean };
   markers?: {
@@ -821,7 +834,9 @@ export interface Bootstrap {
   version: string;
   setupComplete: boolean;
   ownerConfigured?: boolean;
-  signInMethods?: ("local" | "plex")[];
+  signInMethods?: ("local" | "plex" | "oidc")[];
+  /** Label for the single sign-on button ("Pocket ID"). */
+  oidcName?: string;
   authenticated: boolean;
   authRequired: boolean;
   serverName: string;

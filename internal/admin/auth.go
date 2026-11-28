@@ -204,7 +204,14 @@ func (h *Handler) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 	if plex {
 		signInMethods = append(signInMethods, "plex")
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	boot := map[string]any{}
+	if h.oidcEnabled() {
+		signInMethods = append(signInMethods, "oidc")
+		if name := h.oidcDisplayName(); name != "" {
+			boot["oidcName"] = name
+		}
+	}
+	for k, v := range map[string]any{
 		"ok":               true,
 		"version":          h.version,
 		"setupComplete":    cfg.SetupComplete,
@@ -215,7 +222,10 @@ func (h *Handler) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		"serverName":       cfg.Server.FriendlyName,
 		"startupAnimation": cfg.Server.StartupAnimation,
 		"plexEnabled":      cfg.Frontends == nil || cfg.Frontends["plex"].Enabled,
-	})
+	} {
+		boot[k] = v
+	}
+	writeJSON(w, http.StatusOK, boot)
 }
 
 func (h *Handler) proxyPrefixes() []netip.Prefix {

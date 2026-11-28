@@ -1065,6 +1065,68 @@ Plex viewers access shared libraries through their own Plex accounts. Refreshing
 Plex sharing removes revoked viewers' access. Stream links stop working when
 the viewer is inactive or the session ends.
 
+## Single sign-on (OIDC)
+
+Household members can sign in to the console and the viewer portal with an
+OpenID Connect provider such as Pocket ID, Authelia, Authentik or Keycloak.
+By default the provider only proves who someone is: people link their
+account themselves, and only the owner's linked account opens the console.
+
+1. At your provider, create an OIDC client. Ether asks for the `openid`,
+   `profile` and `email` scopes and uses the authorization code flow with
+   PKCE, so a public client (no secret) works. Register the redirect URI
+   `https://<address>/ether/api/oidc/callback` for each address people open
+   Ether at, for example both the console and the viewer portal hostnames.
+2. Open **Integrations › Single sign-on**, enter the issuer URL exactly as the
+   provider's `/.well-known/openid-configuration` reports it, including any
+   trailing slash or path (Auth0 issuers end in `/`, Keycloak's include
+   `/realms/<name>`, Microsoft Entra needs the tenant-specific issuer, not
+   `common`), the client ID
+   and, for a confidential client, the client secret. **Button name** sets the
+   label, for example "Pocket ID". **Test connection** checks the issuer; only a
+   real sign-in proves the client ID and secret.
+3. Each person signs in another way once, opens **Sign-in methods** at
+   `/ether/me` and chooses **Link … account**. A viewer who joined with an
+   invite link can link the account instead of choosing a password.
+
+Under **New accounts** you can let the viewer portal handle an account that
+isn't linked yet:
+
+- **Link by e-mail** links it to the one viewer with the same stored e-mail
+  (for example a viewer imported from Plex). **Verified e-mail only** needs
+  the provider to mark the address verified; **Any e-mail** trusts it as is.
+- **Link by username** links it to the one viewer whose sign-in name or
+  username equals the provider's `preferred_username`.
+- **Create a viewer for new accounts** creates a viewer, named after the
+  provider username, when nothing matches.
+- **Required group** limits all of these to members of one provider group.
+  The provider must send group membership in the ID token or userinfo, in
+  the claim named under **Groups claim** (`groups` by default; a list or a
+  single string). Some providers send it only for an extra scope: add it
+  under **Extra scopes** (`groups` for Pocket ID). Ether requests no scopes
+  beyond `openid`, `profile` and `email` on its own, because some providers
+  refuse scopes they don't know.
+
+Use e-mail or username linking only when people can't change their own
+e-mail or username at the provider (in Pocket ID, turn off letting users edit
+their account), or someone could rename themselves to match another viewer.
+None of this ever applies to the owner, links a viewer that already has an
+account from the same provider, or runs from the console sign-in page; a
+match must name exactly one viewer.
+
+After that, **Sign in with …** appears on the console sign-in page and on
+`/ether/me`. A linked account that isn't the owner's is refused on the
+console. To sign in a TV or phone app, sign in at `/ether/me` with single
+sign-on and approve the app's Quick Connect code there; Jellyfin and Emby
+password sign-in still needs an Ether password.
+
+Ether matches people by the provider's issuer and subject, never by e-mail or
+username, so renaming someone at the provider keeps their link, and changing
+the issuer URL means everyone links again. **Disconnect** under **Sign-in
+methods** removes a link. Pending sign-ins are kept in memory for ten minutes
+on the node that started them; in a cluster, the provider must return people
+to the same node.
+
 ## Plex account watch sync
 
 Ether can keep a viewer's watched marks and ratings in step with that

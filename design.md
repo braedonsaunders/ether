@@ -43,6 +43,30 @@ A stable GUID, rating key, compact Silo file ID or handle digest is an identifie
 not authorization; resolve through viewer policy before returning metadata or
 opening media. Namespace separation prevents cross-kind collisions.
 
+### Single sign-on
+
+OIDC sign-in uses the authorization code flow with PKCE (S256), a random
+state and a nonce, and verifies the ID token's signature, issuer, audience,
+expiry and nonce against the provider's discovery document. The state goes
+through the provider. A random binding goes to the starting browser in an
+HttpOnly, SameSite=Lax cookie scoped to the callback path, and the callback
+must present it, so a sign-in link forwarded to another browser fails there
+instead of signing that person in for the sender. The cookie is never a
+credential and no other route reads it. A separate random handle goes only to
+the starting page's script; the callback returns nothing to its tab, and the
+starting page collects the result once with its handle. A state is consumed
+by its first callback. Identities are keyed by issuer and subject, never by
+e-mail or username. By default they resolve only to an active viewer linked
+from a signed-in portal session. The owner may opt in to linking a first
+viewer portal sign-in by stored e-mail (optionally only a provider-verified
+one) or by username, and to creating viewers, optionally limited to one
+provider group. These automatic steps never match the owner, never take over
+a viewer already linked at the same provider, need exactly one match, and
+never run from the console; an unverified e-mail is not stored on a created
+viewer. Console sessions additionally require an owner,
+checked when the grant is issued. The client secret is sealed at rest and is
+restored on save or test only while the issuer and client ID are unchanged.
+
 ### Quick Connect
 
 The short displayed code is an approval locator, never a bearer credential.

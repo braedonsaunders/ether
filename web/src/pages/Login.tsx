@@ -19,8 +19,13 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
   const methods = boot.signInMethods ?? [];
   const localEnabled = methods.includes("local");
   const plexEnabled = methods.includes("plex");
+  const oidcEnabled = methods.includes("oidc");
+  const oidcName = boot.oidcName?.trim() || "SSO";
   const [error, setError] = useState<unknown>(null);
-  const [pending, setPending] = useState<{ code: string; authUrl: string } | null>(null);
+  const [pending, setPending] = useState<{
+    kind: "plex" | "oidc";
+    authUrl: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -51,22 +56,27 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
     };
   }, []);
 
-  const signIn = async () => {
+  const signIn = async (kind: "plex" | "oidc") => {
     setError(null);
     setBusy(true);
     // Open the window inside the click so popup blockers allow it.
-    const popup = window.open("", "plex-sign-in", "width=560,height=720");
+    const popup = window.open("", `${kind}-sign-in`, "width=560,height=720");
     popupRef.current = popup;
+    const poll = kind === "plex" ? api.signInPoll : api.oidcSignInPoll;
     try {
-      const pin = await api.signInStart();
+      const pin = await (kind === "plex" ? api.signInStart() : api.oidcSignInStart());
       if (cancelled.current) return;
-      setPending({ code: pin.code, authUrl: pin.authUrl });
-      if (popup) popup.location.href = pin.authUrl;
+      setPending({ kind, authUrl: pin.authUrl });
+      if (popup) {
+        // The provider's page must not be able to navigate this tab.
+        popup.opener = null;
+        popup.location.href = pin.authUrl;
+      }
       const deadline = Date.now() + SIGN_IN_TIMEOUT_MS;
       while (!cancelled.current && Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, POLL_MS));
         if (cancelled.current) return;
-        const res = await api.signInPoll(pin.handle);
+        const res = await poll(pin.handle);
         if (cancelled.current) return;
         if (res.done && res.token) {
           setToken(res.token);
@@ -79,14 +89,27 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
     } catch (err) {
       if (cancelled.current) return;
       popup?.close();
+      const notOwner = err instanceof ApiError && err.code === "not_owner";
+      const notLinked = err instanceof ApiError && err.code === "not_linked";
       setError(
-        err instanceof ApiError && err.code === "not_owner"
+        notOwner && kind === "plex"
           ? new Error(
               t(
                 "That Plex account doesn't own this server. Sign in with the account that set Ether up.",
               ),
             )
-          : err,
+          : notOwner
+            ? new Error(
+                t("That {provider} account doesn't own this server.", { provider: oidcName }),
+              )
+            : notLinked
+              ? new Error(
+                  t(
+                    "That {provider} account isn't linked yet. Sign in another way, then link it under Sign-in methods at /ether/me.",
+                    { provider: oidcName },
+                  ),
+                )
+              : err,
       );
     } finally {
       popup?.close();
@@ -147,12 +170,12 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
               size="lg"
               variant={localEnabled ? "outline" : undefined}
               className="mt-5 w-full"
-              onClick={() => void signIn()}
+              onClick={() => void signIn("plex")}
               disabled={busy}
             >
-              {pending ? t("Waiting for Plex…") : t("Sign in with Plex")}
+              {pending?.kind === "plex" ? t("Waiting for Plex…") : t("Sign in with Plex")}
             </Button>
-            {pending ? (
+            {pending?.kind === "plex" ? (
               <p className="mt-3 text-center text-xs text-fg-muted">
                 {tx("Finish signing in in the Plex window. No window? {link}.", {
                   link: (
@@ -171,7 +194,40 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
             <TokenFallback onReady={onReady} />
           </>
         ) : null}
-        {!localEnabled && !plexEnabled ? (
+        {oidcEnabled ? (
+          <>
+            <Button
+              type="button"
+              size="lg"
+              variant={localEnabled || plexEnabled ? "outline" : undefined}
+              className="mt-5 w-full"
+              onClick={() => void signIn("oidc")}
+              disabled={busy}
+            >
+              {pending?.kind === "oidc"
+                ? t("Waiting for {provider}…", { provider: oidcName })
+                : t("Sign in with {provider}", { provider: oidcName })}
+            </Button>
+            {pending?.kind === "oidc" ? (
+              <p className="mt-3 text-center text-xs text-fg-muted">
+                {tx("Finish signing in in the {provider} window. No window? {link}.", {
+                  provider: oidcName,
+                  link: (
+                    <a
+                      className="font-medium text-primary underline-offset-4 hover:underline"
+                      href={pending.authUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {t("Open the sign-in page")}
+                    </a>
+                  ),
+                })}
+              </p>
+            ) : null}
+          </>
+        ) : null}
+        {!localEnabled && !plexEnabled && !oidcEnabled ? (
           <p className="mt-5 text-sm text-fg-muted">
             {t("No sign-in method is available. Contact the server owner.")}
           </p>

@@ -2,6 +2,7 @@ package admin
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"path/filepath"
 	"sort"
@@ -59,6 +60,31 @@ func (v *validator) httpURL(field, s string, required bool) {
 		v.add(field, "must be an http(s) URL")
 	}
 }
+
+// oidcIssuer requires HTTPS, except for loopback test providers: the
+// discovery document and signing keys are trusted for sign-in.
+func (v *validator) oidcIssuer(field, s string, required bool) {
+	if s == "" {
+		if required {
+			v.add(field, "is required when single sign-on is enabled")
+		}
+		return
+	}
+	u, err := url.Parse(s)
+	if err != nil || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+		v.add(field, "must be the provider's issuer URL")
+		return
+	}
+	host := u.Hostname()
+	loopback := host == "localhost"
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		loopback = true
+	}
+	if u.Scheme != "https" && !(u.Scheme == "http" && loopback) {
+		v.add(field, "must use https")
+	}
+}
+
 func (v *validator) oneOf(field, s string, allowed ...string) {
 	for _, a := range allowed {
 		if s == a {
@@ -671,6 +697,27 @@ func ValidateConfig(cfg config.Config) []FieldError {
 	}
 	if cfg.Simkl.Enabled && strings.TrimSpace(cfg.Simkl.ClientID) == "" {
 		v.add("simkl.clientId", "is required when Simkl is enabled")
+	}
+	if cfg.OIDC.Enabled || strings.TrimSpace(cfg.OIDC.Issuer) != "" {
+		v.oidcIssuer("oidc.issuer", strings.TrimSpace(cfg.OIDC.Issuer), cfg.OIDC.Enabled)
+	}
+	if cfg.OIDC.Enabled && strings.TrimSpace(cfg.OIDC.ClientID) == "" {
+		v.add("oidc.clientId", "is required when single sign-on is enabled")
+	}
+	if cfg.OIDC.AutoLinkEmail != "" {
+		v.oneOf("oidc.autoLinkEmail", cfg.OIDC.AutoLinkEmail, config.OIDCAutoLinkVerified, config.OIDCAutoLinkAny)
+	}
+	if len(cfg.OIDC.Scopes) > 512 || strings.ContainsAny(cfg.OIDC.Scopes, "\"\\") {
+		v.add("oidc.scopes", "must be scope names separated by spaces")
+	}
+	if len(cfg.OIDC.GroupsClaim) > 128 || strings.ContainsAny(cfg.OIDC.GroupsClaim, " \t") {
+		v.add("oidc.groupsClaim", "must be one claim name")
+	}
+	if len(cfg.OIDC.RequiredGroup) > 256 {
+		v.add("oidc.requiredGroup", "must be at most 256 characters")
+	}
+	if len(cfg.OIDC.DisplayName) > 64 {
+		v.add("oidc.displayName", "must be at most 64 characters")
 	}
 	if cfg.Trakt.Enabled && strings.TrimSpace(cfg.Trakt.ClientID) == "" {
 		v.add("trakt.clientId", "is required when Trakt is enabled")

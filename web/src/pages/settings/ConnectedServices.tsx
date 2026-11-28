@@ -59,6 +59,7 @@ import * as S from "./schema";
 type Obj = Record<string, unknown>;
 
 export type ServiceTab =
+  | "oidc"
   | "postersplus"
   | "xrdb"
   | "betterposters"
@@ -88,6 +89,7 @@ const TAB_ORDER: ServiceTab[] = [
   "trakt",
   "simkl",
   "mdblist",
+  "oidc",
   "llm",
   "opensubtitles",
   "subdl",
@@ -111,6 +113,7 @@ export function integrationTabs(
     trakt: "Trakt",
     simkl: "Simkl",
     mdblist: "MDBList",
+    oidc: t("Single sign-on"),
     plexservers: t("Plex Media Server Sync"),
     llm: t("Language model"),
     opensubtitles: "OpenSubtitles",
@@ -130,6 +133,7 @@ export function integrationTabs(
 interface Service {
   tab: Exclude<ServiceTab, "overview" | "ratings">;
   configKey:
+    | "oidc"
     | "plexServers"
     | "trakt"
     | "simkl"
@@ -156,7 +160,7 @@ interface Service {
   /** Why enabling must wait. The switch stays off and the setup drawer opens. */
   blockEnable?: (value: Obj) => string | null;
   /** Field the server requires before this integration may be enabled. */
-  requiredField?: "clientId" | "model";
+  requiredField?: "clientId" | "model" | "issuer";
 }
 
 const SERVICES: Service[] = localized(() => [
@@ -192,6 +196,23 @@ const SERVICES: Service[] = localized(() => [
     ),
     blockEnable: (v) => (String(v.clientId ?? "").trim() ? null : t("Needs a client ID")),
     requiredField: "clientId",
+  },
+  {
+    tab: "oidc",
+    configKey: "oidc",
+    endpoint: "oidc",
+    flag: "enabled",
+    label: t("Single sign-on"),
+    groups: S.OIDC,
+    testLabel: t("Test connection"),
+    test: (v) => api.testOIDC(v as NonNullable<EtherConfig["oidc"]>),
+    blockEnable: (v) =>
+      !String(v.issuer ?? "").trim()
+        ? t("Needs an issuer URL")
+        : !String(v.clientId ?? "").trim()
+          ? t("Needs a client ID")
+          : null,
+    requiredField: "issuer",
   },
   {
     tab: "mdblist",
@@ -395,6 +416,32 @@ function mergeSection(
           enabled: boolField(section, "enabled", prev.enabled),
           clientId: textField(section, "clientId", prev.clientId),
           clientSecret: textField(section, "clientSecret", prev.clientSecret),
+        },
+      };
+    }
+    case "oidc": {
+      const prev = base.oidc ?? {
+        enabled: false,
+        displayName: "",
+        issuer: "",
+        clientId: "",
+        clientSecret: "",
+      };
+      return {
+        ...base,
+        oidc: {
+          enabled: boolField(section, "enabled", prev.enabled),
+          displayName: textField(section, "displayName", prev.displayName ?? ""),
+          issuer: textField(section, "issuer", prev.issuer),
+          clientId: textField(section, "clientId", prev.clientId),
+          clientSecret: textField(section, "clientSecret", prev.clientSecret),
+          autoLinkEmail: textField(section, "autoLinkEmail", prev.autoLinkEmail ?? "") as
+            "" | "verified" | "any",
+          autoLinkUsername: boolField(section, "autoLinkUsername", prev.autoLinkUsername ?? false),
+          autoProvision: boolField(section, "autoProvision", prev.autoProvision ?? false),
+          requiredGroup: textField(section, "requiredGroup", prev.requiredGroup ?? ""),
+          scopes: textField(section, "scopes", prev.scopes ?? ""),
+          groupsClaim: textField(section, "groupsClaim", prev.groupsClaim ?? ""),
         },
       };
     }
@@ -1025,11 +1072,13 @@ export function ConnectedServices({
                     ? "/playback/subtitles"
                     : s.tab === "llm"
                       ? "/recommendations"
-                      : s.tab === "trakt"
-                        ? ownerPath === "/viewers"
-                          ? "/viewers"
-                          : `${ownerPath}/sign-in?signin=sync`
-                        : "/viewers"
+                      : s.tab === "oidc"
+                        ? "/viewers"
+                        : s.tab === "trakt"
+                          ? ownerPath === "/viewers"
+                            ? "/viewers"
+                            : `${ownerPath}/sign-in?signin=sync`
+                          : "/viewers"
               }
               usage={
                 s.tab === "introdb"
@@ -1038,11 +1087,15 @@ export function ConnectedServices({
                     ? t("Supplies subtitles during playback.")
                     : s.tab === "llm"
                       ? t("Powers search, collections and Home recommendations.")
-                      : s.tab === "trakt"
+                      : s.tab === "oidc"
                         ? t(
-                            "Connect Trakt under each viewer's Sign-in & devices tab, or let viewers connect at /ether/me.",
+                            "People link their account under Sign-in methods at /ether/me, then sign in here and in the viewer portal with it.",
                           )
-                        : t("Connect viewer accounts to sync watch history.")
+                        : s.tab === "trakt"
+                          ? t(
+                              "Connect Trakt under each viewer's Sign-in & devices tab, or let viewers connect at /ether/me.",
+                            )
+                          : t("Connect viewer accounts to sync watch history.")
               }
             >
               {s.form ? (
@@ -1393,6 +1446,29 @@ function ServiceOverview({
           busy={locked || busyId === "plexservers"}
           disabled={switchesHeld}
           onToggle={(next) => onToggle(service("plexservers"), next)}
+        />
+      </IntegrationGroup>
+      <IntegrationGroup title={t("Sign-in")}>
+        <IntegrationAppCard
+          identity={{ id: "oidc", name: t("Single sign-on") }}
+          description={t(
+            "Sign in with Pocket ID, Authelia, Authentik, Keycloak or another OpenID Connect provider.",
+          )}
+          status={switchStatus(
+            on("oidc"),
+            !service("oidc").blockEnable?.(saved("oidc")),
+            service("oidc").blockEnable?.(saved("oidc")) ?? "",
+          )}
+          enabled={on("oidc")}
+          busy={locked || busyId === "oidc"}
+          disabled={switchesHeld}
+          onToggle={(next) => onToggle(service("oidc"), next)}
+          configureHref="/services/oidc"
+          configureLabel={
+            on("oidc")
+              ? t("Manage {app}", { app: t("Single sign-on") })
+              : t("Set up single sign-on")
+          }
         />
       </IntegrationGroup>
       <>

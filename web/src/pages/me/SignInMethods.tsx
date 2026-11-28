@@ -34,6 +34,8 @@ function providerLabel(provider: string): string {
       return t("Username & password");
     case "invite":
       return t("Joined with an invite link");
+    case "oidc":
+      return t("Single sign-on");
     default:
       return provider;
   }
@@ -57,6 +59,7 @@ export default function SignInMethods({
   showInvite = false,
   beforeDevices,
   quickConnect,
+  oidcName = null,
 }: {
   base: string;
   token: string;
@@ -67,6 +70,8 @@ export default function SignInMethods({
   quickConnect?: ReactNode;
   /** Invite links mint a new viewer account and stay off individual viewer profiles. */
   showInvite?: boolean;
+  /** The single sign-on provider's name when it is on; viewers may link it. */
+  oidcName?: string | null;
 }) {
   const [methods, setMethods] = useState<Method[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
@@ -193,6 +198,53 @@ export default function SignInMethods({
       }
     }
   }
+  async function linkOIDC() {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    const popup = window.open("", "_blank", "width=560,height=720");
+    try {
+      const flow = await call<{ handle: string; authUrl: string }>("/link/oidc", {});
+      if (cancelled.current) return;
+      if (popup) {
+        popup.opener = null;
+        popup.location.href = flow.authUrl;
+      }
+      const deadline = Date.now() + 10 * 60 * 1000;
+      while (!cancelled.current && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        if (cancelled.current) return;
+        const result = await call<{ done: boolean }>(
+          `/link/oidc/${encodeURIComponent(flow.handle)}`,
+        );
+        if (result.done) {
+          await load();
+          setMessage(t("{provider} account linked.", { provider: oidcName ?? "" }));
+          return;
+        }
+      }
+      if (!cancelled.current) setError(t("Sign-in timed out. Try again."));
+    } catch {
+      if (!cancelled.current)
+        setError(t("The {provider} account could not be linked.", { provider: oidcName ?? "" }));
+    } finally {
+      popup?.close();
+      if (!cancelled.current) setBusy(false);
+    }
+  }
+  async function unlink(id: number) {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await call("/identities/unlink", { id });
+      await load();
+    } catch {
+      setError(t("The request could not be completed. Try again."));
+    } finally {
+      setBusy(false);
+    }
+  }
   async function makeInvite() {
     setBusy(true);
     setError("");
@@ -214,6 +266,8 @@ export default function SignInMethods({
       (owner && methods.findIndex((other) => other.provider === "invite") === index),
   );
   const plexLinked = methods.some((m) => m.provider === "plex");
+  const oidcLinked = methods.some((m) => m.provider === "oidc");
+  const canLinkOIDC = !owner && Boolean(oidcName) && !oidcLinked;
   return (
     <div className="space-y-6">
       {error ? (
@@ -234,24 +288,40 @@ export default function SignInMethods({
             : t("Accounts that can sign in as you.")
         }
         footer={
-          !owner && !plexLinked ? (
+          !owner && (!plexLinked || canLinkOIDC) ? (
             <div className="flex flex-wrap items-center gap-3">
               <span className="mr-auto text-sm text-fg-muted">
-                {t("Link Plex to sign in here with your Plex account next time.")}
+                {!plexLinked
+                  ? t("Link Plex to sign in here with your Plex account next time.")
+                  : t("Link {provider} to sign in here with it next time.", {
+                      provider: oidcName ?? "",
+                    })}
               </span>
               {pinURL ? (
                 <a href={pinURL} target="_blank" rel="noreferrer" className="text-sm text-primary">
                   {t("Open Plex sign-in")}
                 </a>
               ) : null}
-              <Button
-                variant="outline"
-                type="button"
-                disabled={busy}
-                onClick={() => void linkPlex()}
-              >
-                {t("Link Plex account")}
-              </Button>
+              {!plexLinked ? (
+                <Button
+                  variant="outline"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void linkPlex()}
+                >
+                  {t("Link Plex account")}
+                </Button>
+              ) : null}
+              {canLinkOIDC ? (
+                <Button
+                  variant="outline"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void linkOIDC()}
+                >
+                  {t("Link {provider} account", { provider: oidcName ?? "" })}
+                </Button>
+              ) : null}
             </div>
           ) : null
         }
@@ -268,7 +338,26 @@ export default function SignInMethods({
               <SettingsRow
                 key={method.id}
                 title={method.display || providerLabel(method.provider)}
-                description={method.display ? providerLabel(method.provider) : undefined}
+                description={
+                  method.display
+                    ? method.provider === "oidc" && oidcName
+                      ? oidcName
+                      : providerLabel(method.provider)
+                    : undefined
+                }
+                control={
+                  method.provider === "oidc" && self && !owner ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void unlink(method.id)}
+                    >
+                      {t("Disconnect")}
+                    </Button>
+                  ) : undefined
+                }
               />
             ),
           )

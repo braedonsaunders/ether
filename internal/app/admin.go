@@ -23,6 +23,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/markers"
 	"github.com/braedonsaunders/ether/internal/newznab"
 	"github.com/braedonsaunders/ether/internal/notify"
+	"github.com/braedonsaunders/ether/internal/oidcsignin"
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/subtitles"
 	"github.com/braedonsaunders/ether/internal/tmdb"
@@ -90,6 +91,7 @@ func (a *App) buildAdmin() http.Handler {
 		Version:          a.opts.Version,
 		PlexAuth:         &plexAuth{app: a, pins: map[string]*plextv.PIN{}},
 		SignIn:           &plexSignIn{app: a, pins: map[string]*plextv.PIN{}},
+		OIDC:             oidcsignin.New(nil),
 		ResolveOwnerToken: func(ctx context.Context, token string) (*core.User, error) {
 			if auth.IsOwnerSession(token) {
 				return a.users.OwnerSession(ctx, token)

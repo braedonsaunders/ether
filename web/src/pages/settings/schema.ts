@@ -687,6 +687,104 @@ export const TRAKT: FieldGroup[] = localized(() => [
   },
 ]);
 
+export const OIDC: FieldGroup[] = localized(() => [
+  {
+    title: t("Single sign-on"),
+    description: t(
+      "Create an OpenID Connect client at your provider. Register the redirect URI https://<each address you open Ether at>/ether/api/oidc/callback.",
+    ),
+    fields: [
+      {
+        key: "displayName",
+        label: t("Button name"),
+        kind: "text",
+        placeholder: "Pocket ID",
+        help: t("Shown as “Sign in with …”."),
+      },
+      {
+        key: "issuer",
+        label: t("Issuer URL"),
+        kind: "text",
+        wide: true,
+        placeholder: "https://auth.example.com",
+        help: t("The provider's issuer, exactly as its discovery document reports it."),
+      },
+      { key: "clientId", label: t("Client ID"), kind: "text", wide: true },
+      {
+        key: "clientSecret",
+        label: t("Client secret"),
+        kind: "secret",
+        help: t("Leave empty for a public client."),
+      },
+    ],
+    more: [
+      {
+        key: "scopes",
+        label: t("Extra scopes"),
+        kind: "text",
+        wide: true,
+        placeholder: "groups",
+        help: t(
+          "Requested besides openid, profile and email, separated by spaces. Add only scopes your provider knows; some providers refuse the sign-in otherwise.",
+        ),
+      },
+      {
+        key: "groupsClaim",
+        label: t("Groups claim"),
+        kind: "text",
+        placeholder: "groups",
+        help: t("The claim that lists a person's groups. Empty means groups."),
+      },
+    ],
+  },
+  {
+    title: t("New accounts"),
+    description: t(
+      "What happens when someone signs in at /ether/me with an account that isn't linked yet. These never apply to the owner, who links their account by hand.",
+    ),
+    fields: [
+      {
+        key: "autoLinkEmail",
+        label: t("Link by e-mail"),
+        kind: "select",
+        options: [
+          { value: "", label: t("Off") },
+          { value: "verified", label: t("Verified e-mail only") },
+          { value: "any", label: t("Any e-mail") },
+        ],
+        help: t(
+          "Links the account to the one viewer with the same e-mail. Any e-mail trusts addresses the provider hasn't verified; use it only if people can't change their own e-mail there.",
+        ),
+      },
+      {
+        key: "autoLinkUsername",
+        label: t("Link by username"),
+        kind: "bool",
+        help: t(
+          "Links the account to the one viewer whose sign-in name matches the provider's username. Use it only if people can't change their own username there.",
+        ),
+      },
+      {
+        key: "autoProvision",
+        label: t("Create a viewer for new accounts"),
+        kind: "bool",
+        help: t(
+          "Anyone who can sign in at the provider gets a viewer, unless a group is required.",
+        ),
+      },
+      {
+        key: "requiredGroup",
+        label: t("Required group"),
+        kind: "text",
+        placeholder: "ether",
+        help: t(
+          "Optional. Only members of this provider group are linked or created automatically.",
+        ),
+      },
+    ],
+  },
+]);
+
 export const OPENSUBTITLES: FieldGroup[] = localized(() => [
   {
     title: "OpenSubtitles",
