@@ -15,6 +15,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/safefetch"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -71,7 +72,7 @@ func (p *ViewerPush) Register(ctx context.Context, viewer *core.User, subscripti
 	if err := p.Preferences.authorized(ctx, viewer); err != nil {
 		return err
 	}
-	if err := validatePush(&subscription); err != nil {
+	if err := validateViewerPush(&subscription); err != nil {
 		return err
 	}
 	if len(grantHash) != 64 {
@@ -225,7 +226,7 @@ func (p *ViewerPush) Drain(ctx context.Context) error {
 			return err
 		}
 		var subscription PushSubscription
-		if json.Unmarshal([]byte(plain), &subscription) != nil || validatePush(&subscription) != nil || pushHash(subscription.Endpoint) != item.hash {
+		if json.Unmarshal([]byte(plain), &subscription) != nil || validateViewerPush(&subscription) != nil || pushHash(subscription.Endpoint) != item.hash {
 			continue
 		}
 		res, err := p.Preferences.DB.ExecContext(ctx, `INSERT INTO viewer_push_claims(viewer_id,episode_key,endpoint_hash,claimed_at) VALUES(?,?,?,?) ON CONFLICT DO NOTHING`, item.id, item.key, item.hash, now.Unix())
@@ -300,7 +301,10 @@ func (p *ViewerPush) send(ctx context.Context, subscription PushSubscription, ev
 	if err != nil {
 		return err
 	}
-	resp, err := webpush.SendNotificationWithContext(ctx, payload, &webpush.Subscription{Endpoint: subscription.Endpoint, Keys: webpush.Keys{Auth: subscription.Keys.Auth, P256dh: subscription.Keys.P256dh}}, &webpush.Options{HTTPClient: p.Notifications.opts.Client, Subscriber: "https://ether.local", VAPIDPrivateKey: private, VAPIDPublicKey: public, TTL: 3600, Urgency: webpush.UrgencyHigh})
+	// Delivery goes through a public-only guard so viewer-supplied endpoints
+	// cannot reach loopback or private network hosts at dial time.
+	client := (&safefetch.Guard{}).Client(p.Notifications.opts.Client)
+	resp, err := webpush.SendNotificationWithContext(ctx, payload, &webpush.Subscription{Endpoint: subscription.Endpoint, Keys: webpush.Keys{Auth: subscription.Keys.Auth, P256dh: subscription.Keys.P256dh}}, &webpush.Options{HTTPClient: client, Subscriber: "https://ether.local", VAPIDPrivateKey: private, VAPIDPublicKey: public, TTL: 3600, Urgency: webpush.UrgencyHigh})
 	if err != nil {
 		return errors.New("browser push transport failed")
 	}
